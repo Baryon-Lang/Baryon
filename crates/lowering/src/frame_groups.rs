@@ -61,9 +61,7 @@ impl<'db> Builder<'db> {
         else {
             return self.unsupported(node, "this `groupby`");
         };
-        let grouping = self.grouping_call(node);
-        let by = grouping.and_then(|grouping| self.written(grouping).first().copied());
-        let Some(by) = by.map(|by| self.keyword_value(by)) else {
+        let Some((by, sorted)) = self.grouping_arguments(node) else {
             return self.unsupported(node, "this `groupby`");
         };
         let source = self.borrow(frame);
@@ -85,6 +83,10 @@ impl<'db> Builder<'db> {
             return;
         };
         self.drop_later(firsts);
+        // With `sort=False` the groups come in the order their first rows have.
+        let Some((firsts, turn)) = self.first_seen(firsts, sorted, node) else {
+            return;
+        };
         let mut made = Vec::with_capacity(result.len());
         for (key, column) in &keys {
             let rows = ("taken", &Place::from(firsts));
@@ -116,7 +118,17 @@ impl<'db> Builder<'db> {
             let Some(column) = column else {
                 return;
             };
-            made.push(Operand::Move(column));
+            let column = match &turn {
+                Some(turn) => {
+                    self.drop_later(column.local);
+                    self.chosen_column(column, new, ("taken", turn), argument)
+                }
+                None => Some(Operand::Move(column)),
+            };
+            let Some(column) = column else {
+                return;
+            };
+            made.push(column);
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
     }

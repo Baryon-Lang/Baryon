@@ -117,24 +117,14 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        let keys = match grouping.map(|grouping| self.arguments(grouping)) {
-            Some(Arguments {
-                positional,
-                keywords,
-            }) => match (positional.as_slice(), keywords.as_slice()) {
-                (&[by], []) => Some(by),
-                ([], &[(name, by)]) if self.tree.text(name, self.text) == "by" => Some(by),
-                _ => {
-                    self.untyped(&Arguments {
-                        positional,
-                        keywords,
-                    });
-                    None
-                }
-            },
+        let written = grouping.map(|grouping| self.arguments(grouping));
+        let by = match written.as_ref().map(|written| self.grouping_by(written)) {
+            Some(Ok(by)) => by,
+            // A keyword's own mistake is already reported.
+            Some(Err(())) => return None,
             None => None,
         };
-        let Some(by) = keys else {
+        let Some(by) = by else {
             self.lowerer.error(
                 grouping.unwrap_or(node),
                 "`groupby` takes the columns whose values make the groups",
@@ -169,6 +159,77 @@ impl<'db> Body<'db> {
             complete &= self.orderable(by, column, "group by");
         }
         Some((keys, result, complete))
+    }
+
+    /// The argument of `groupby` that names the key columns, from `written`, its arguments:
+    /// the one positional argument or `by=`. `as_index=False` and `sort=`, each `True` or
+    /// `False` written out, may follow (decision 0045's amendment, point 3); they change
+    /// no type, and lowering reads `sort` from the syntax. `Ok(None)`, with every argument
+    /// marked untyped, when the arguments are not these, and `Err` after reporting
+    /// `as_index=True`, which asks for an index a frame does not have, or a flag that is
+    /// not written out, or `dropna=`, which is not built yet.
+    fn grouping_by(&mut self, written: &Arguments) -> Result<Option<NodeId>, ()> {
+        let mut by = match written.positional.as_slice() {
+            [] => None,
+            &[by] => Some(by),
+            _ => {
+                self.untyped(written);
+                return Ok(None);
+            }
+        };
+        let mut seen: Vec<&str> = Vec::new();
+        for &(name, value) in &written.keywords {
+            let keyword = self.tree.text(name, self.text);
+            let flag = match self.tree.text(value, self.text) {
+                "True" => Some(true),
+                "False" => Some(false),
+                _ => None,
+            };
+            if keyword == "dropna" {
+                self.untyped(written);
+                self.lowerer.error(
+                    name,
+                    "`groupby` does not take `dropna=` yet",
+                    "not built yet",
+                    Some("a row whose key is missing is in no group"),
+                );
+                return Err(());
+            }
+            let known = match keyword {
+                "by" if by.is_none() => {
+                    by = Some(value);
+                    true
+                }
+                "as_index" | "sort" => !seen.contains(&keyword),
+                _ => false,
+            };
+            if !known {
+                self.untyped(written);
+                return Ok(None);
+            }
+            seen.push(keyword);
+            if keyword == "by" {
+                continue;
+            }
+            self.expression(value, None);
+            if flag.is_none() {
+                let message = format!("`{keyword}` of `groupby` is `True` or `False`, written out");
+                self.lowerer
+                    .error(value, &message, "not `True` or `False`", None);
+            } else if keyword == "as_index" && flag == Some(true) {
+                self.lowerer.error(
+                    value,
+                    "a `DataFrame` has no index for `as_index=True` to make of the keys",
+                    "no index",
+                    Some("leave it out or write `as_index=False`: keys are columns of the result"),
+                );
+            } else {
+                continue;
+            }
+            self.untyped(written);
+            return Err(());
+        }
+        Ok(by)
     }
 
     /// The element type of the column one argument of `agg` gives, `value` being
