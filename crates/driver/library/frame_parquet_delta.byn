@@ -1,0 +1,260 @@
+"""Parquet files: the delta encodings and the split byte streams, decoded in Baryon (roadmap
+3.14.6.3, decision 0045).
+
+`parquet_column` of `<std>/frame_parquet_pages.byn` calls these for the pages that do not
+store their values plainly or through a dictionary. Writers choose them for files of the
+format's version 2. A program cannot import this file.
+
+- `DELTA_BINARY_PACKED`, for whole numbers: the first value, then blocks of differences.
+  Each block gives the least difference in it and is cut into miniblocks, each of which
+  packs what its differences exceed that least one by, in as few bits as its largest
+  needs. Sums wrap around, as the format says, at the width of the column's type.
+- `DELTA_LENGTH_BYTE_ARRAY`, for text: every length, delta-packed, then every value's
+  bytes end to end.
+- `DELTA_BYTE_ARRAY`, for text: for each value how many bytes it shares with the start of
+  the one before, delta-packed, then what is left of each as `DELTA_LENGTH_BYTE_ARRAY`.
+- `BYTE_STREAM_SPLIT`, for floats and whole numbers: the first byte of every value, then the
+  second byte of every value, and so on, which compresses better than the bytes in order.
+
+A number of 64 bits is kept here as two halves of 32, the low and the high, so that adding
+two of them can wrap around without an `int` overflowing.
+
+Every function checks what it reads against the end of the page and gives a negative number
+or False for bytes that are cut short or make no sense, so damaged pages are an error and
+never a read outside the page.
+"""
+
+
+def parquet_grow(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
+    """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
+    is replaced by an array twice as long as is needed, holding the same first bytes, so
+    adding a byte at a time costs a constant on average."""
+    if used + more <= len(raw):
+        return
+    longer = Array.zeros(2 * (used + more), u8)
+    for at in range(used):
+        longer[at] = raw[at]
+    raw = longer
+
+
+def _varint(page: Array[u8, 1], cur: InOut[list[int]], stop: int) -> None:
+    """Reads a varint of up to 64 bits at `cur[0]` in `page`, which ends at `stop`, into
+    the halves `cur[1]`, low, and `cur[2]`, high, and moves `cur[0]` past it. `cur[0]`
+    becomes -1 when the page ends first or the varint is longer than ten bytes."""
+    low = 0
+    high = 0
+    shift = 0
+    at = cur[0]
+    while True:
+        if at < 0 or at >= stop or shift > 63:
+            cur[0] = -1
+            return
+        byte = int(page[at])
+        at += 1
+        part = byte & 127
+        if shift < 32:
+            low = low | ((part << shift) & 4294967295)
+            if shift > 25:
+                high = high | (part >> (32 - shift))
+        else:
+            high = (high | (part << (shift - 32))) & 4294967295
+        if byte < 128:
+            break
+        shift += 7
+    cur[0] = at
+    cur[1] = low
+    cur[2] = high
+
+
+def _unzigzag(cur: InOut[list[int]]) -> None:
+    """Turns the halves `cur[1]` and `cur[2]` of a zigzag number into the halves of the
+    signed number it stands for, in two's complement: the bits moved down by one, and all
+    flipped when the lowest bit was set."""
+    low = cur[1]
+    high = cur[2]
+    flip = 4294967295 if low & 1 == 1 else 0
+    cur[1] = ((low >> 1) | ((high & 1) << 31)) ^ flip
+    cur[2] = (high >> 1) ^ flip
+
+
+def _packed(page: Array[u8, 1], bit: int, width: int) -> int:
+    """The `width` bits, at most 32, that start at bit `bit` of `page`, lowest first. The
+    caller has checked that the bytes are there."""
+    if width == 0:
+        return 0
+    at = bit >> 3
+    shift = bit & 7
+    value = 0
+    for part in range((shift + width + 7) >> 3):
+        value = value | (int(page[at + part]) << (8 * part))
+    return (value >> shift) & ((1 << width) - 1)
+
+
+def parquet_delta(
+    page: Array[u8, 1],
+    start: int,
+    stop: int,
+    count: int,
+    width: int,
+    raw: InOut[Array[u8, 1]],
+    used: int,
+) -> int:
+    """Decodes `count` whole numbers in `DELTA_BINARY_PACKED` from byte `start` of `page`,
+    which ends at `stop`, and writes each as `width` bytes, 4 or 8, lowest first, into `raw`
+    from byte `used`, where there is room. Gives where the encoded numbers end, or -1 when
+    the bytes are cut short, the header makes no sense or it does not hold `count`
+    numbers."""
+    cur = [start, 0, 0]
+    _varint(page, cur, stop)
+    block = cur[1]
+    huge = cur[2] != 0
+    _varint(page, cur, stop)
+    minis = cur[1]
+    huge = huge or cur[2] != 0
+    _varint(page, cur, stop)
+    total = cur[1]
+    huge = huge or cur[2] != 0
+    _varint(page, cur, stop)
+    if cur[0] < 0 or huge or total != count:
+        return -1
+    if count == 0:
+        return cur[0]
+    if minis <= 0 or block <= 0 or block % minis != 0 or minis > 4096:
+        return -1
+    each = block // minis
+    if each % 8 != 0:
+        return -1
+    _unzigzag(cur)
+    low = cur[1]
+    high = cur[2]
+    done = 0
+    out = used
+    widths = [0 for mini in range(minis)]
+    while True:
+        for part in range(4):
+            raw[out + part] = u8((low >> (8 * part)) & 255)
+        if width == 8:
+            for part in range(4):
+                raw[out + 4 + part] = u8((high >> (8 * part)) & 255)
+        out += width
+        done += 1
+        if done == count:
+            break
+        # A new block starts after the first value and then after every `block` more.
+        place = (done - 1) % block
+        if place == 0:
+            _varint(page, cur, stop)
+            if cur[0] < 0 or cur[0] + minis > stop:
+                return -1
+            _unzigzag(cur)
+            for mini in range(minis):
+                widths[mini] = int(page[cur[0] + mini])
+                if widths[mini] > 64:
+                    return -1
+            cur[0] = cur[0] + minis
+        inside = place % each
+        bits = widths[place // each]
+        bit = 8 * cur[0] + inside * bits
+        if bit + bits > 8 * stop:
+            return -1
+        add_low = _packed(page, bit, min(bits, 32))
+        add_high = _packed(page, bit + 32, bits - 32) if bits > 32 else 0
+        # Three numbers of 64 bits are added in halves, with the carry from the low one.
+        sum = low + add_low + cur[1]
+        high = (high + add_high + cur[2] + (sum >> 32)) & 4294967295
+        low = sum & 4294967295
+        if inside == each - 1:
+            cur[0] = cur[0] + ((each * bits) >> 3)
+    # The last miniblock is written whole though its end holds no values; a writer that
+    # stops at the last value ends the page there.
+    place = (count - 2) % block if count > 1 else -1
+    if place >= 0 and place % each != each - 1:
+        cur[0] = min(stop, cur[0] + ((each * widths[place // each]) >> 3))
+    return cur[0]
+
+
+def _lengths(page: Array[u8, 1], start: int, stop: int, count: int, out: InOut[list[int]]) -> int:
+    """Decodes `count` lengths in `DELTA_BINARY_PACKED` from byte `start` of `page` into
+    `out`, which it replaces. Gives where they end, or -1 when they are damaged or one is
+    negative."""
+    raw = Array.zeros(4 * count, u8)
+    end = parquet_delta(page, start, stop, count, 4, raw, 0)
+    if end < 0:
+        return -1
+    found = [0 for k in range(count)]
+    for k in range(count):
+        at = 4 * k
+        length = int(raw[at]) | (int(raw[at + 1]) << 8) | (int(raw[at + 2]) << 16)
+        if raw[at + 3] >= u8(128):
+            return -1
+        found[k] = length | (int(raw[at + 3]) << 24)
+    out = found
+    return end
+
+
+def parquet_delta_text(
+    page: Array[u8, 1],
+    start: int,
+    stop: int,
+    count: int,
+    shared: bool,
+    raw: InOut[Array[u8, 1]],
+    ends: InOut[Array[i64, 1]],
+    used: int,
+    present: int,
+) -> int:
+    """Decodes `count` texts from byte `start` of `page`, which ends at `stop`, in
+    `DELTA_BYTE_ARRAY` when `shared` and in `DELTA_LENGTH_BYTE_ARRAY` otherwise. Their bytes
+    go end to end into `raw` from byte `used`, which grows as needed, and where each ends
+    into `ends` from position `present + 1`. Gives the bytes used in `raw` afterwards, or
+    -1 when the page is damaged."""
+    prefixes: list[int] = []
+    at = start
+    if shared:
+        at = _lengths(page, at, stop, count, prefixes)
+        if at < 0:
+            return -1
+    lengths: list[int] = []
+    at = _lengths(page, at, stop, count, lengths)
+    if at < 0:
+        return -1
+    out = used
+    last = used
+    for k in range(count):
+        prefix = prefixes[k] if shared else 0
+        length = lengths[k]
+        if at + length > stop or prefix > out - last:
+            return -1
+        parquet_grow(raw, out, prefix + length)
+        begin = out
+        for part in range(prefix):
+            raw[out + part] = raw[last + part]
+        out += prefix
+        for part in range(length):
+            raw[out + part] = page[at + part]
+        out += length
+        at += length
+        last = begin
+        ends[present + k + 1] = out
+    return out
+
+
+def parquet_split(
+    page: Array[u8, 1],
+    start: int,
+    stop: int,
+    count: int,
+    width: int,
+    raw: InOut[Array[u8, 1]],
+    used: int,
+) -> bool:
+    """Puts back together `count` values of `width` bytes stored in `BYTE_STREAM_SPLIT` from
+    byte `start` of `page`, which ends at `stop`, into `raw` from byte `used`, where there
+    is room. False when the page is too short."""
+    if start + count * width > stop:
+        return False
+    for part in range(width):
+        stream = start + part * count
+        for k in range(count):
+            raw[used + k * width + part] = page[stream + k]
+    return True

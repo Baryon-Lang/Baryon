@@ -74,6 +74,10 @@ The reader has what the common writers use by default:
   files with none, through the codecs of [Compression](compression.md);
 - values stored plainly (`PLAIN`), through a dictionary (`RLE_DICTIONARY` and the older
   `PLAIN_DICTIONARY`), and booleans stored as runs (`RLE`);
+- the encodings writers choose for the format's version 2: whole numbers as packed
+  differences (`DELTA_BINARY_PACKED`), text as lengths then bytes or as shared prefixes
+  (`DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`), and numbers as split byte streams
+  (`BYTE_STREAM_SPLIT`);
 - data pages of version 1 and version 2.
 
 ## Writing a file
@@ -134,7 +138,7 @@ lists them in its `Raises`, as with any [error](errors.md).
   | has a missing value where the field has no `None` | `trades.parquet: column 'volume', row 2: the value is missing, and the column's type has no None` |
   | holds a date, a time, a timestamp or a decimal | `trades.parquet: the column 'when' holds a date, a time, a decimal or another kind of value that is not read yet` |
   | holds a list, a map or a struct | `trades.parquet: the column 'items' is nested, which is not read yet` |
-  | uses an encoding or a codec the reader lacks | `trades.parquet: the column 'price' uses the encoding 5, which is not read yet` |
+  | uses a codec the reader lacks | `trades.parquet: the file is compressed with Brotli, which is not read yet` |
   | is damaged | `trades.parquet: the metadata of the file is damaged`, or `the pages of the column 'price' are damaged` |
 
   Rows count from 1. A damaged file is an error and never a read outside the file's bytes,
@@ -186,13 +190,11 @@ dictionaries, made 69 MB.
 - Columns of dates, times, timestamps and decimals, and of bytes that are not text: a frame
   has no column type for them yet.
 - Nested columns: lists, maps and structs.
-- The delta encodings (`DELTA_BINARY_PACKED`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`)
-  and `BYTE_STREAM_SPLIT`, which some writers use when asked for the format's version 2, and
-  the Brotli, LZO and older LZ4 codecs.
+- The Brotli, LZO and older LZ4 codecs.
+- A column whose name cannot be a field's name, such as one with a space or a colon in it.
 - Reading some of the row groups, or a file larger than memory.
 - Tests with pyarrow. Two files written by pyarrow 26.0.1 were read here, and pyarrow read a
   file written here with every value matching, but both were checked by hand and not in the
-  tests. The tests read files written by polars and files built by hand from the
-  specification, and polars reads the files written here. Files from Apache's
-  `parquet-testing` collection, written by Impala, by parquet-mr and by Arrow's C++ library,
-  were read by hand with the values polars reads from them.
+  tests. The tests read files written by polars, files built by hand from the specification
+  and ten files of Apache's `parquet-testing` collection, written by Impala, by parquet-mr
+  and by Arrow's C++ library, and polars reads the files written here.

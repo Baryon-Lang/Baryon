@@ -443,3 +443,37 @@ fn special_values_are_written() {
          no/such/directory/special.parquet\n"
     );
 }
+
+/// The program of `delta_encodings_and_split_streams_are_read`.
+const DELTA: &str = r#"
+class Row(Struct):
+    n: i64 | None
+    m: i32
+    k: i64
+    s: str
+    t: str | None
+    x: f64
+    y: f32
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    frame: DataFrame[Row] = DataFrame.read_parquet("delta.parquet")
+    frame.to_csv("out.csv", na_rep="<none>")
+    print(len(frame))
+"#;
+
+/// The encodings writers choose for the format's version 2 are read: whole numbers as packed
+/// differences, among them the ends of the `i64` and `i32` ranges, whose differences wrap
+/// around, and a column of one value, whose differences take no bits; text as shared
+/// prefixes and as lengths then bytes; and floats as split byte streams. Each column is in
+/// two pages, the first ending inside a block. The values are those the script that wrote
+/// the file put in, which polars reads from it too.
+#[test]
+fn delta_encodings_and_split_streams_are_read() {
+    let (ran, directory) = run("frame_parquet_delta", DELTA, &["delta.parquet"]).unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stderr), "");
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "300\n");
+    let expected = fs::read(Path::new(FIXTURES).join("delta.csv")).unwrap();
+    let written = fs::read(directory.join("out.csv")).unwrap();
+    assert!(written == expected, "the file was read differently");
+}

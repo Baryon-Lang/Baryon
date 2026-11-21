@@ -31,6 +31,13 @@ only; polars reads from them the values the tests expect.
   `n`, an `INT64` through a dictionary, in one page of bit-packed runs and one of repeated
   runs; `s`, text in two pages; `b`, booleans stored as runs; and `x`, a `DOUBLE` whose
   pages say they are not compressed, though the gzip file's other pages are.
+- `delta.parquet` holds 300 rows in the encodings writers choose for the format's version 2,
+  each column in two pages of version 2: `n`, `m` and `k` as `DELTA_BINARY_PACKED`, with the
+  ends of the `INT64` and `INT32` ranges, whose differences wrap around, and one column of
+  a single value; `s` as `DELTA_BYTE_ARRAY`; `t` as `DELTA_LENGTH_BYTE_ARRAY`, with missing
+  values; and `x` and `y`, a `DOUBLE` and a `FLOAT`, as `BYTE_STREAM_SPLIT`. polars writes
+  none of these, so the file is put together by hand; polars reads from it the values in
+  `delta.csv`, which the same script writes.
 - `other.parquet` holds three rows of what a schema can get wrong: a date, a timestamp, a
   decimal, a list, a column of whole numbers with a missing value, and one with a value
   past a `u8`.
@@ -106,8 +113,9 @@ for row in range(n):
 open("types.csv", "w", newline="").write(out.getvalue())
 ```
 
-The files of version 2 pages come from this script, run as `python pages.py pages_v2.parquet 0`
-and `python pages.py pages_v2_gzip.parquet 2`, the number being the codec:
+The files of version 2 pages come from this script, saved as `pages.py` and run as
+`python pages.py pages_v2.parquet 0` and `python pages.py pages_v2_gzip.parquet 2`, the
+number being the codec:
 
 ```text
 """Writes a Parquet file with version 2 data pages by hand, for reader tests."""
@@ -241,7 +249,137 @@ def write(path, codec):
     out.extend(footer); out.extend(struct.pack("<i", len(footer))); out.extend(b"PAR1")
     open(path, "wb").write(out)
 
-write(sys.argv[1], int(sys.argv[2]))
+if __name__ == "__main__":
+    write(sys.argv[1], int(sys.argv[2]))
+```
+
+`delta.parquet` and `delta.csv` come from this script, saved as `delta.py` beside the one
+above saved as `pages.py`, and run as `python delta.py`:
+
+```text
+"""Writes `delta.parquet`, a file in the delta encodings and split byte streams, by hand,
+and `delta.csv`, its values as CSV. Needs `pages.py` beside it and NumPy."""
+import csv, io, random, struct
+import numpy
+from pages import Struct, levels, page_v2, varint, zigzag
+
+
+def delta_packed(values, bits):
+    """`DELTA_BINARY_PACKED`: blocks of 128 differences in 4 miniblocks of 32."""
+    mask = (1 << bits) - 1
+    half = 1 << (bits - 1)
+    out = bytearray(varint(128) + varint(4) + varint(len(values)))
+    out += zigzag(values[0] if values else 0)
+    deltas = [((b - a + half) & mask) - half for a, b in zip(values, values[1:])]
+    for start in range(0, len(deltas), 128):
+        block = deltas[start:start + 128]
+        least = min(block)
+        out += zigzag(least)
+        over = [(d - least) & mask for d in block]
+        minis = [over[k:k + 32] for k in range(0, 128, 32)]
+        out += bytes(max(v.bit_length() for v in mini) if mini else 0 for mini in minis)
+        for mini in minis:
+            if mini:
+                width = max(v.bit_length() for v in mini)
+                total = 0
+                for k, value in enumerate(mini):
+                    total |= value << (k * width)
+                out += total.to_bytes(4 * width, "little")
+    return bytes(out)
+
+
+def split(raw, width):
+    """`BYTE_STREAM_SPLIT`: byte 0 of every value, then byte 1 of every value, and on."""
+    return b"".join(raw[part::width] for part in range(width))
+
+
+random.seed(11)
+rows = 300
+low, high = -(2 ** 63), 2 ** 63 - 1
+n = [random.choice([low, high, 0, random.randint(-1000, 1000), random.randint(low, high)])
+     if random.random() > 0.15 else None for _ in range(rows)]
+m = [random.choice([-(2 ** 31), 2 ** 31 - 1, 5, random.randint(-9, 9)]) for _ in range(rows)]
+k = [7] * rows
+stems = ["", "inter", "interval", "international", "日本", "日本語", "x"]
+s = [random.choice(stems) + random.choice(["", "s", "ly", "-9"]) for _ in range(rows)]
+t = [random.choice(stems) * random.randint(0, 3) if random.random() > 0.2 else None
+     for _ in range(rows)]
+x = [random.choice([0.0, -0.0, 1.5, 5e-324, 1.7976931348623157e308, random.uniform(-9, 9)])
+     for _ in range(rows)]
+y = [struct.unpack("<f", struct.pack("<f", random.uniform(-9, 9)))[0] for _ in range(rows)]
+
+out = bytearray(b"PAR1")
+chunks = []
+schema = []
+
+
+def column(name, kind, repetition, encoding, values, encode, text=False):
+    """Adds a column chunk of two pages of version 2, the second three rows long."""
+    start = len(out)
+    raw = 0
+    for part in (values[:-3], values[-3:]):
+        valid = [v is not None for v in part]
+        held = [v for v in part if v is not None]
+        marks = levels(valid) if repetition == 1 else b""
+        blob, size = page_v2(len(part), valid.count(False), len(part), encoding, marks,
+                             encode(held), 0)
+        out.extend(blob)
+        raw += size
+    meta = Struct().i32(1, kind).items(2, 5, [zigzag(encoding), zigzag(3)])
+    meta.items(3, 8, [varint(len(name)) + name.encode()]).i32(4, 0).i64(5, len(values))
+    meta.i64(6, raw).i64(7, len(out) - start).i64(9, start)
+    chunks.append(Struct().i64(2, start).struct(3, meta).done())
+    element = Struct().i32(1, kind).i32(3, repetition).text(4, name)
+    if text:
+        element.i32(6, 0).struct(10, Struct().struct(1, Struct()))
+    schema.append(element.done())
+
+
+def shared(values):
+    """`DELTA_BYTE_ARRAY`: shared prefix lengths, rest lengths, then the rests."""
+    raws = [v.encode() for v in values]
+    prefixes, rests = [], []
+    last = b""
+    for value in raws:
+        same = 0
+        while same < min(len(last), len(value)) and last[same] == value[same]:
+            same += 1
+        prefixes.append(same)
+        rests.append(value[same:])
+        last = value
+    lengths = delta_packed([len(r) for r in rests], 32)
+    return delta_packed(prefixes, 32) + lengths + b"".join(rests)
+
+
+def lengths(values):
+    """`DELTA_LENGTH_BYTE_ARRAY`: the lengths, then the bytes."""
+    raws = [v.encode() for v in values]
+    return delta_packed([len(r) for r in raws], 32) + b"".join(raws)
+
+
+column("n", 2, 1, 5, n, lambda held: delta_packed(held, 64))
+column("m", 1, 0, 5, m, lambda held: delta_packed(held, 32))
+column("k", 2, 0, 5, k, lambda held: delta_packed(held, 64))
+column("s", 6, 0, 7, s, shared, True)
+column("t", 6, 1, 6, t, lengths, True)
+column("x", 5, 0, 9, x, lambda held: split(b"".join(struct.pack("<d", v) for v in held), 8))
+column("y", 4, 0, 9, y, lambda held: split(b"".join(struct.pack("<f", v) for v in held), 4))
+root = Struct().text(4, "schema").i32(5, len(schema)).done()
+group = Struct().items(1, 12, chunks).i64(2, len(out) - 4).i64(3, rows).done()
+footer = Struct().i32(1, 2).items(2, 12, [root] + schema).i64(3, rows).items(4, 12, [group])
+footer = footer.text(6, "baryon test fixture").done()
+out.extend(footer)
+out.extend(struct.pack("<i", len(footer)))
+out.extend(b"PAR1")
+open("delta.parquet", "wb").write(out)
+
+text = io.StringIO()
+writer = csv.writer(text, lineterminator="\n")
+writer.writerow(["n", "m", "k", "s", "t", "x", "y"])
+for row in range(rows):
+    cells = [n[row], m[row], k[row], s[row], t[row], x[row], str(numpy.float32(y[row]))]
+    writer.writerow(["<none>" if cell is None else cell for cell in cells])
+open("delta.csv", "w", newline="").write(text.getvalue())
 ```
 
 And `other.parquet`:
@@ -269,3 +407,39 @@ pl.DataFrame(
     },
 ).write_parquet("other.parquet", compression="snappy", statistics=False)
 ```
+
+## `apache/`: files of other writers
+
+Ten files of Apache's [`parquet-testing`](https://github.com/apache/parquet-testing)
+collection, copied unchanged from its `data/` directory at commit
+`0e00127a431f83388d38eebb22cf644d06e86a15`. They are licensed under the Apache License 2.0
+and listed in [`THIRD-PARTY-NOTICES.md`](../../../../../THIRD-PARTY-NOTICES.md); the chief
+designer agreed to carry about ten of them on 2026-11-21. They are the reader's check against
+files it had no part in writing.
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `alltypes_plain.parquet` | Impala 1.3.0 | 8 rows of plain values, not compressed |
+| `alltypes_plain.snappy.parquet` | Impala 1.3.0 | 2 rows of plain values, Snappy |
+| `alltypes_dictionary.parquet` | Impala 1.3.0 | 2 rows through dictionaries (`PLAIN_DICTIONARY`) |
+| `datapage_v2.snappy.parquet` | parquet-mr 1.8.1 | 5 rows in version 2 pages, with a missing text and a list column |
+| `delta_binary_packed.parquet` | parquet-mr 1.10.0 | 200 rows of `DELTA_BINARY_PACKED`, one column for each bit width from 0 to 64 |
+| `delta_byte_array.parquet` | parquet-mr 1.10.0 | 1,000 rows of text as `DELTA_BYTE_ARRAY`, with missing values |
+| `delta_encoding_optional_column.parquet` | parquet-mr 1.10.0 | 100 rows, whole numbers and text in the delta encodings, with missing values |
+| `delta_length_byte_array.parquet` | not named in the file | 1,000 rows of text as `DELTA_LENGTH_BYTE_ARRAY`, Zstandard |
+| `lz4_raw_compressed.parquet` | Arrow's C++ library (parquet-cpp 1.5.1) | 4 rows, `LZ4_RAW` |
+| `rle_boolean_encoding.parquet` | not named in the file | 68 booleans as `RLE` in a version 2 page, with missing values, gzip |
+
+Beside each is a `.csv` of the same name: the frame `read_parquet` gives, written by `to_csv`
+with `na_rep="<none>"`. The schema of each is in the test,
+`tests/build/frame_parquet_apache.rs`: every column a frame has a type for, each with
+`| None`, less the `INT96` timestamp of the `alltypes` files and the list of `datapage_v2`.
+Two files are read in part to keep the CSV files small: ten of the 66 columns of
+`delta_binary_packed` (bit widths 0, 1, 7, 8, 31, 32, 33, 63 and 64, and `int_value`) and
+three of the nine of `delta_byte_array`.
+
+Each CSV was written by Baryon, not by polars, so it is only as good as this check, made
+when it was written: the same program also wrote each frame with `to_parquet`, and polars
+2.1.0 read that file as a table equal to the columns it reads from the Apache file, missing
+values included. The check was run for every readable column of the two wide files as well.
+
