@@ -15,7 +15,7 @@ imports and calls.
 | [`gzip`](#gzip) | gzip files (RFC 1952) of one member or several | `compress`, `decompress` |
 | [`compression.zstd`](#compressionzstd) | Zstandard frames (RFC 8878) | `compress`, `decompress` |
 | [`bz2`](#bz2) | bzip2 streams of one block or several | `compress`, `decompress` |
-| [`lzma`](#lzma) | xz files and `.lzma` files | `decompress`, `open` to read |
+| [`lzma`](#lzma) | xz files and `.lzma` files | `compress`, `decompress`, `open` to read |
 
 Python's functions take and give `bytes`. Baryon has no `bytes` type yet, so they take and give
 `Array[u8, 1]`, an array of bytes, which [`Array.fromfile`](files-and-processes.md#array-files)
@@ -451,8 +451,8 @@ Python's `bz2.compress` takes.
 
 xz files compress tighter than bzip2 and decompress faster; source archives, Linux packages and
 many data releases ship as `.xz`. Baryon's `lzma` module keeps Python's name and reads xz files
-and the older `.lzma` files, whole or through [`lzma.open`](#lzmaopen). Writing them is not
-built yet.
+and the older `.lzma` files, whole or through [`lzma.open`](#lzmaopen), and writes xz data with
+[`lzma.compress`](#lzmacompress).
 
 ```python
 import lzma
@@ -493,6 +493,29 @@ Python's message: all of 4,563 damaged and cut files in tests did.
 doubles. The probabilities take 7 to 50 KiB, and up to 12 MiB for a `.lzma` file with the
 largest literal context. Decoding takes about three times the time Python's takes.
 
+### `lzma.compress`
+
+`compress(data, preset=6)` gives `data` as one xz stream with a CRC-64 check, which any xz
+decoder reads, Python's `lzma` and the `xz` tool included. `preset` runs from 0, fastest, to 9,
+and sets the dictionary, from 256 KiB at 0 to 8 MiB at 6 and 64 MiB at 9, as XZ Utils sets it.
+A preset outside 0 to 9 raises `OSError` with the kind `INVALID_DATA` and Python's message,
+`Invalid or unsupported options`. The `format`, `check` and `filters` arguments, and
+`PRESET_EXTREME`, are not built.
+
+The encoder works as XZ Utils' fast mode, which liblzma uses for presets 0 to 3: hash chains
+find the longest match, and one step of lookahead decides between it, a match at one of the
+last four distances, and a literal. Data that does not shrink is stored. Presets 0 to 3 come
+within 3% of Python's size. For presets 4 to 9, liblzma searches for the cheapest way to code
+the whole data, which Baryon does not do yet, so Baryon searches as at preset 3 with the
+larger dictionary and its streams come out larger than Python's: about 28% larger on a 3.9 MB
+table of numbers, about 4% larger on 2.4 MB of `float64` samples. The bytes are Baryon's own
+([decision 0049](../decisions/0049-compression.md)); empty data and one byte give exactly
+Python's stream.
+
+**Cost.** Two passes over the data, plus the compressed copy, a 4 MiB hash table and 4 bytes
+for each byte of the dictionary, up to the data's length. On the table above, presets 0 to 3
+take about the time Python's take, and preset 6 takes 1.6 s where Python's takes 3.9 s.
+
 ### `lzma.open`
 
 `open(filename, mode="rb")` opens an xz or `.lzma` file to read and gives an `LZMAFile`, as
@@ -513,7 +536,7 @@ in `with`, which closes the file at the end of the block, or call `f.close()`.
 - **Reading only.** `"rb"`, `"r"` and `"rt"` are the modes built. `"rt"`, written as a literal,
   gives an `LZMATextFile` that reads `str` as the [gzip text modes](#text-modes) do, with
   `read()`, `readline()`, `readlines()` and `for line in f:`; it decodes the whole file at its
-  first read. The modes that write, such as `"wb"` and `"wt"`, wait on an `lzma.compress` and
-  raise `ValueError` until then, and any other mode raises `ValueError` `Invalid mode`, as in
-  Python. `read` on a closed file raises `ValueError`
+  first read. The modes that write, such as `"wb"` and `"wt"`, are not built yet and raise
+  `ValueError`; [`compress`](#lzmacompress) writes xz data whole. Any other mode raises
+  `ValueError` `Invalid mode`, as in Python. `read` on a closed file raises `ValueError`
   `I/O operation on closed file`.

@@ -64,6 +64,7 @@ mod list_choosers;
 mod list_slices;
 mod lz4;
 mod lzma;
+mod lzma_compress;
 mod managers;
 mod mask_truth;
 mod math;
