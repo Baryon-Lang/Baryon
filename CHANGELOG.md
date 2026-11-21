@@ -9,7 +9,7 @@ published to a package registry yet. Releases are time-based: one every two week
 
 The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief
 designer folded it into this one on 2026-11-21, so 0.3.0 holds everything in the 0.2.0 notes below
-and the 140 changes merged since, among them missing values in arrays and tables, CSV files, the
+and the 143 changes merged since, among them missing values in arrays and tables, CSV files, the
 rest of SciPy's special functions, numerical integration, and the fixes from two bug sweeps. [What
 builds today](docs/reference/status.md) lists, chapter by chapter, what the compiler does not build
 yet. Please [open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong,
@@ -124,7 +124,8 @@ A value that is absent is `None`, kept apart from the float `NaN`, as pandas kee
   the checker cannot type, members a standard module lacks, a non-integer index, `None` in an
   in-place operator, shifts and bitwise operators on arrays that are not whole numbers, type
   arguments that break their bounds or are written on built-in constructors, and values or
-  number conversions a type parameter cannot show.
+  number conversions a type parameter cannot show, `=`, `!r` and `!a` in f-strings, and tuples
+  and dicts that hold the bare type `None` (#559).
 
 ### Decisions made for this release
 
