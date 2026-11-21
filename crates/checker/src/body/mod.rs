@@ -157,6 +157,7 @@ pub(crate) fn check<'db>(
         conditionals: BTreeSet::new(),
         kept: BTreeSet::new(),
         typed: TypedBody::default(),
+        in_message: false,
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -247,6 +248,9 @@ struct Body<'db> {
     kept: BTreeSet<NodeId>,
     /// What the stages after the checker read about this body, filled as it is checked.
     typed: TypedBody<'db>,
+    /// Whether an `assert` message is being checked. Lowering does not compute one yet, so
+    /// what only lowering lacks, such as `!r` in an f-string, is not reported inside it.
+    in_message: bool,
 }
 
 impl<'db> Body<'db> {
@@ -328,7 +332,9 @@ impl<'db> Body<'db> {
                 let condition = child(Role::Condition);
                 self.condition(condition);
                 if let Some(message) = child(Role::Message) {
+                    self.in_message = true;
                     self.expression(message, None);
+                    self.in_message = false;
                 }
                 if let Some(condition) = condition {
                     let (yes, _) = self.facts(condition);

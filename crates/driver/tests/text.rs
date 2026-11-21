@@ -127,6 +127,41 @@ error: `q` is not a format specification
     );
 }
 
+/// `{value=}`, `!r` and `!a` are reported by the checker, which lowering does not build yet
+/// (roadmap 1.9.71); `!s` is allowed, and so is `!r` in an `assert` message, which lowering
+/// does not compute yet.
+#[test]
+fn equals_and_conversions_in_f_strings_are_reported() {
+    let program = r#"
+def show(xs: list[f64], name: str) -> str:
+    assert len(xs) > 0, f"{name!r} is empty"
+    return f"{xs=} {name!r} {name!a} {name!s}"
+"#;
+    assert_eq!(
+        check(program),
+        r#"error: `{value=}` in an f-string is not supported yet
+ --> main.byn:4:14
+  |
+4 |     return f"{xs=} {name!r} {name!a} {name!s}"
+  |              ^^^^^ not supported yet
+  = note: write the name before the value: `f"xs={xs}"`
+
+error: `!r` in an f-string is not supported yet
+ --> main.byn:4:20
+  |
+4 |     return f"{xs=} {name!r} {name!a} {name!s}"
+  |                    ^^^^^^^^ not supported yet
+  = note: leave out `!r`; for text, write the quotes: `f"'{name}'"`
+
+error: `!a` in an f-string is not supported yet
+ --> main.byn:4:29
+  |
+4 |     return f"{xs=} {name!r} {name!a} {name!s}"
+  |                             ^^^^^^^^ not supported yet
+  = note: leave out `!a`; the value is shown as `print` shows it"#
+    );
+}
+
 /// `encode` and `decode` take only the encoding `"utf-8"`, as `open` does, and `decode` needs
 /// an `Array[u8, 1]`; `decode` takes no `errors=` (decision 0064).
 #[test]

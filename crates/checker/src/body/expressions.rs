@@ -56,7 +56,7 @@ impl<'db> Body<'db> {
                         let written = expected_items.get(index).copied();
                         let ty = self.expression(item, written);
                         self.consume(item, ty);
-                        self.widened(written, ty)
+                        self.tuple_item(item, written, ty)
                     })
                     .collect();
                 Type::new(self.db, TypeKind::Tuple(items))
