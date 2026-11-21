@@ -7,20 +7,21 @@ published to a package registry yet. Releases are time-based: one every two week
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
-It holds everything merged to `main` since the 0.2.0 release commit: 140 changes, among them
-missing values in arrays and tables, CSV files, the rest of SciPy's special functions, numerical
-integration, and the fixes from two bug sweeps. [What builds today](docs/reference/status.md)
-lists, chapter by chapter, what the compiler does not build yet. Please
-[open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong, unclear or
-missing, with what `baryon --version` prints.
+The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief
+designer folded it into this one on 2026-11-21, so 0.3.0 holds everything in the 0.2.0 notes below
+and the 140 changes merged since, among them missing values in arrays and tables, CSV files, the
+rest of SciPy's special functions, numerical integration, and the fixes from two bug sweeps. [What
+builds today](docs/reference/status.md) lists, chapter by chapter, what the compiler does not build
+yet. Please [open an issue](https://github.com/Baryon-Lang/Baryon/issues) for anything wrong,
+unclear or missing, with what `baryon --version` prints.
 
 ### Platforms and install
 
-The same as 0.2.0: Linux on x86_64 with glibc 2.35 or newer and `clang` 15 or newer, and macOS
-13.5 or newer on Apple silicon. Download `baryon-0.3.0-x86_64-unknown-linux-gnu.tar.gz` or
-`baryon-0.3.0-aarch64-apple-darwin.tar.gz` as the
-[beginner's guide](docs/guide/README.md#1-install-baryon) shows, or build from source with
-`cargo`. Each archive holds both licenses, `THIRD-PARTY-NOTICES.md` and `CRATE-LICENSES.md`.
+As in the 0.2.0 notes below: Linux on x86_64 with glibc 2.35 or newer and `clang` 15 or newer, and
+macOS 13.5 or newer on Apple silicon. Download `baryon-0.3.0-x86_64-unknown-linux-gnu.tar.gz` or
+`baryon-0.3.0-aarch64-apple-darwin.tar.gz` as the [beginner's
+guide](docs/guide/README.md#1-install-baryon) shows, or build from source with `cargo`. Each archive
+holds both licenses, `THIRD-PARTY-NOTICES.md` and `CRATE-LICENSES.md`.
 
 ### Missing values
 
@@ -142,6 +143,9 @@ Decisions [0062](docs/decisions/0062-standard-library-reexports.md),
 - No packages outside the standard library, no interop with Python or C++, and no REPL yet.
 
 ## 0.2.0: Linux and macOS, real data and the first libraries
+
+Never published: its notes are kept here because 0.3.0 is the first release to carry these
+changes.
 
 Cut early, on the chief designer's call of 2026-11-13, as the first run of the full release process;
 the two-week schedule continues from it (roadmap R.5 and R.6). It holds everything merged to `main`
