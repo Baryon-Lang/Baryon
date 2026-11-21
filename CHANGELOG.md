@@ -138,10 +138,11 @@ Decisions [0062](docs/decisions/0062-standard-library-reexports.md),
 
 ### Known limits
 
-- [What builds today](docs/reference/status.md) lists what `baryon check` accepts that the compiler
-  does not build yet, among them Parquet files, writing HDF5 files, `df[mask] = ...`, `concat` of
-  frames with different columns, `quad` with `weight=`, `solve_ivp` and the rest of
-  `scipy.interpolate`. Each is reported as an error that names it, never miscompiled.
+- [What builds today](docs/reference/status.md) lists what is not built yet, among them Parquet
+  files, writing HDF5 files, `df[mask] = ...`, `concat` of frames with different columns, `quad`
+  with `weight=`, `solve_ivp` and the rest of `scipy.interpolate`.
+- A list of only `None` with no type written, `[None, None]`, passes `baryon check` but fails when
+  building (roadmap idea I.74). Write its type, such as `list[f64 | None]`.
 - `groupby`, `merge` and `read_csv` are slower than pandas on large tables, and every DataFrame
   operation runs on one core.
 - No packages outside the standard library, no interop with Python or C++, and no REPL yet.
