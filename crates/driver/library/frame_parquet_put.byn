@@ -1,0 +1,414 @@
+"""Parquet files written in Baryon: the columns of a frame as the plain bytes of a Parquet
+file (roadmap 3.14.6.4, decision 0045).
+
+The compiler calls one of these functions for each column of `df.to_parquet(path)`, by the
+type of the column: `parquet_put_f64` for a column of `f64`, and
+`parquet_put_optional_f64` for one of `f64 | None`, which takes the values and the
+validity bitmap as the frame stores them. Each gives what `parquet_chunks` of
+`<std>/frame_parquet_write.byn` makes of the column, its compressed chunks and their sizes,
+which the compiler hands to `parquet_write`. A program cannot import this file.
+
+Every function takes the column's kind as that file numbers them. A value that is missing
+is not written at all: only its bit in the definition levels says so.
+
+A float's bytes are worked out by arithmetic, since Baryon has no way yet to read a float
+as bytes: the power of two at or below the number is found in a table by halving, and the
+number divided by it, which is exact, gives the fraction. A NaN is written as the quiet NaN
+with no other bit set, whatever NaN the column held.
+"""
+
+from frame_parquet_write import parquet_chunks
+from math import copysign, inf
+
+
+def _there(bits: Array[u8, 1], row: int) -> bool:
+    """Whether the value of `row` is there: its bit in the validity bitmap `bits` is 1."""
+    return ((bits[row >> 3] >> u8(row & 7)) & u8(1)) == u8(1)
+
+
+def _held(bits: Array[u8, 1], rows: int) -> int:
+    """How many of the first `rows` rows have a value in the validity bitmap `bits`."""
+    there = 0
+    for row in range(rows):
+        if _there(bits, row):
+            there += 1
+    return there
+
+
+def _powers() -> Array[f64, 1]:
+    """The powers of two a normal `f64` can start with: `table[e]` is 2 to the power
+    `e - 1023`, for `e` from 1 to 2046, each exact, built by doubling and halving 1.0."""
+    table = Array.fill((2047,), 0.0)
+    table[1023] = 1.0
+    value = 1.0
+    for power in range(1024, 2047):
+        value = value * 2.0
+        table[power] = value
+    value = 1.0
+    for back in range(1022):
+        value = value / 2.0
+        table[1022 - back] = value
+    return table
+
+
+def _exponent(size: f64, table: Array[f64, 1], low: int, high: int) -> int:
+    """The greatest `e` from `low` to `high` with `table[e] <= size`, found by halving.
+    `table[low] <= size` holds."""
+    first = low
+    last = high
+    while first < last:
+        middle = (first + last + 1) >> 1
+        if table[middle] <= size:
+            first = middle
+        else:
+            last = middle - 1
+    return first
+
+
+def _store(raw: InOut[Array[u8, 1]], at: int, bits: int, width: int) -> None:
+    """Writes the low `width` bytes of `bits` at `at` in `raw`, lowest first."""
+    for part in range(width):
+        raw[at + part] = u8((bits >> (8 * part)) & 255)
+
+
+def _double(raw: InOut[Array[u8, 1]], at: int, value: f64, table: Array[f64, 1]) -> None:
+    """Writes the eight bytes of `value` at `at` in `raw`, lowest first: fifty-two bits of
+    fraction, eleven of exponent and the sign."""
+    if value != value:
+        _store(raw, at, 0, 6)
+        raw[at + 6] = u8(248)
+        raw[at + 7] = u8(127)
+        return
+    size = abs(value)
+    fraction = 0
+    exponent = 0
+    if size == inf:
+        exponent = 2047
+    elif size >= table[1]:
+        exponent = _exponent(size, table, 1, 2046)
+        fraction = int(size / table[exponent] * 4503599627370496.0) - 4503599627370496
+    else:
+        fraction = int(size / 5e-324)
+    _store(raw, at, fraction, 6)
+    top = (exponent << 4) | (fraction >> 48)
+    if copysign(1.0, value) < 0.0:
+        top = top | 32768
+    _store(raw, at + 6, top, 2)
+
+
+def _single(raw: InOut[Array[u8, 1]], at: int, value: f64, table: Array[f64, 1]) -> None:
+    """Writes the four bytes of the `f32` equal to `value` at `at` in `raw`, lowest first:
+    twenty-three bits of fraction, eight of exponent and the sign."""
+    bits = 0
+    size = abs(value)
+    if value != value:
+        bits = 2143289344
+    elif size == inf:
+        bits = 2139095040
+    elif size >= table[897]:
+        exponent = _exponent(size, table, 897, 1150)
+        fraction = int(size / table[exponent] * 8388608.0) - 8388608
+        bits = ((exponent - 896) << 23) | fraction
+    else:
+        bits = int(size / table[874])
+    if value == value and copysign(1.0, value) < 0.0:
+        bits = bits | 2147483648
+    _store(raw, at, bits, 4)
+
+
+def parquet_put_f64(
+    values: Array[f64, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `f64`."""
+    rows = len(values)
+    table = _powers()
+    raw = Array.zeros(8 * rows, u8)
+    for row in range(rows):
+        _double(raw, 8 * row, values[row], table)
+    return parquet_chunks(raw, Array.zeros(0, i64), Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_f64(
+    values: Array[f64, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `f64 | None`."""
+    rows = len(values)
+    table = _powers()
+    raw = Array.zeros(8 * _held(bits, rows), u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            _double(raw, at, values[row], table)
+            at += 8
+    return parquet_chunks(raw, Array.zeros(0, i64), bits, rows, kind)
+
+
+def parquet_put_f32(
+    values: Array[f32, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `f32`."""
+    rows = len(values)
+    table = _powers()
+    raw = Array.zeros(4 * rows, u8)
+    for row in range(rows):
+        _single(raw, 4 * row, float(values[row]), table)
+    return parquet_chunks(raw, Array.zeros(0, i64), Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_f32(
+    values: Array[f32, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `f32 | None`."""
+    rows = len(values)
+    table = _powers()
+    raw = Array.zeros(4 * _held(bits, rows), u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            _single(raw, at, float(values[row]), table)
+            at += 4
+    return parquet_chunks(raw, Array.zeros(0, i64), bits, rows, kind)
+
+
+def _wide(kind: int) -> int:
+    """The bytes of a whole number of the kind `kind` in the file: 8 for `i64` and `u64`,
+    and 4 for the rest, which Parquet stores as `INT32`."""
+    base = kind % 100
+    return 8 if base == 4 or base == 8 else 4
+
+
+def parquet_put_i64(values: Array[i64, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of whole numbers of the kind `kind`, given as `i64`: each as
+    the low bytes of its value, which is two's complement for a negative one."""
+    rows = len(values)
+    width = _wide(kind)
+    raw = Array.zeros(width * rows, u8)
+    for row in range(rows):
+        _store(raw, width * row, values[row], width)
+    return parquet_chunks(raw, Array.zeros(0, i64), Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_i64(
+    values: Array[i64, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of whole numbers of the kind `kind`, or `None`, given as
+    `i64`."""
+    rows = len(values)
+    width = _wide(kind)
+    raw = Array.zeros(width * _held(bits, rows), u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            _store(raw, at, values[row], width)
+            at += width
+    return parquet_chunks(raw, Array.zeros(0, i64), bits, rows, kind)
+
+
+def parquet_put_i8(values: Array[i8, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i8`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_i8(
+    values: Array[i8, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i8 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def parquet_put_i16(values: Array[i16, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i16`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_i16(
+    values: Array[i16, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i16 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def parquet_put_i32(values: Array[i32, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i32`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_i32(
+    values: Array[i32, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `i32 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def parquet_put_u8(values: Array[u8, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u8`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_u8(
+    values: Array[u8, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u8 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def parquet_put_u16(values: Array[u16, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u16`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_u16(
+    values: Array[u16, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u16 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def parquet_put_u32(values: Array[u32, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u32`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_i64(wide, kind)
+
+
+def parquet_put_optional_u32(
+    values: Array[u32, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u32 | None`, widened to `i64` first."""
+    wide = Array.zeros(len(values), i64)
+    for row in range(len(values)):
+        wide[row] = int(values[row])
+    return parquet_put_optional_i64(wide, bits, kind)
+
+
+def _unsigned(raw: InOut[Array[u8, 1]], at: int, value: u64) -> None:
+    """Writes the eight bytes of `value` at `at` in `raw`, lowest first, in two halves,
+    since the upper half of the `u64` range is past an `int`."""
+    _store(raw, at, int(value & u64(4294967295)), 4)
+    _store(raw, at + 4, int(value >> u64(32)), 4)
+
+
+def parquet_put_u64(
+    values: Array[u64, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u64`."""
+    rows = len(values)
+    raw = Array.zeros(8 * rows, u8)
+    for row in range(rows):
+        _unsigned(raw, 8 * row, values[row])
+    return parquet_chunks(raw, Array.zeros(0, i64), Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_u64(
+    values: Array[u64, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `u64 | None`."""
+    rows = len(values)
+    raw = Array.zeros(8 * _held(bits, rows), u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            _unsigned(raw, at, values[row])
+            at += 8
+    return parquet_chunks(raw, Array.zeros(0, i64), bits, rows, kind)
+
+
+def parquet_put_bool(
+    values: Array[bool, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `bool`."""
+    rows = len(values)
+    raw = Array.zeros(rows, u8)
+    for row in range(rows):
+        if values[row]:
+            raw[row] = u8(1)
+    return parquet_chunks(raw, Array.zeros(0, i64), Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_bool(
+    values: Array[bool, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `bool | None`."""
+    rows = len(values)
+    raw = Array.zeros(_held(bits, rows), u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            if values[row]:
+                raw[at] = u8(1)
+            at += 1
+    return parquet_chunks(raw, Array.zeros(0, i64), bits, rows, kind)
+
+
+def parquet_put_str(values: Array[str, 1], kind: int) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `str`: the UTF-8 bytes of every text end to end, and where
+    each ends."""
+    rows = len(values)
+    ends = Array.zeros(rows + 1, i64)
+    total = 0
+    for row in range(rows):
+        total += len(values[row].encode())
+        ends[row + 1] = total
+    raw = Array.zeros(total, u8)
+    for row in range(rows):
+        text = values[row].encode()
+        first = ends[row]
+        for part in range(len(text)):
+            raw[first + part] = text[part]
+    return parquet_chunks(raw, ends, Array.zeros(0, u8), rows, kind)
+
+
+def parquet_put_optional_str(
+    values: Array[str, 1], bits: Array[u8, 1], kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of a column of `str | None`."""
+    rows = len(values)
+    ends = Array.zeros(_held(bits, rows) + 1, i64)
+    total = 0
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            total += len(values[row].encode())
+            at += 1
+            ends[at] = total
+    raw = Array.zeros(total, u8)
+    at = 0
+    for row in range(rows):
+        if _there(bits, row):
+            text = values[row].encode()
+            first = ends[at]
+            for part in range(len(text)):
+                raw[first + part] = text[part]
+            at += 1
+    return parquet_chunks(raw, ends, bits, rows, kind)

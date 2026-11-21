@@ -421,6 +421,9 @@ impl<'db> Body<'db> {
         if let Some(nothing) = self.csv_method(function, base, callee, arguments) {
             return nothing;
         }
+        if let Some(nothing) = self.parquet_method(function, base, callee, arguments) {
+            return nothing;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {

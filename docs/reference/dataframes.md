@@ -120,7 +120,7 @@ the names of the schema's fields. The context names the type here too:
 `trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv")`.
 `trades.to_csv("trades.csv")` writes a frame as such a file, with no index column.
 `DataFrame.read_parquet(path)` reads a frame from a [Parquet file](parquet-files.md) the same
-way, each field from the file's column of its name.
+way, each field from the file's column of its name, and `trades.to_parquet(path)` writes one.
 
 ## Columns
 
