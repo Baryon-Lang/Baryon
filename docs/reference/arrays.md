@@ -790,8 +790,10 @@ Use it where terms cancel: an energy summed over a long orbital integration, a r
 check of a result computed another way. `sum` is the fast default: it compensates a list's sum
 and adds an array's [pairwise](#the-order-sum-adds-in),
 which is accurate enough for most data but can still lose digits when large terms cancel.
-`fsum` is several times slower than `sum`, about six float operations per element for each
-partial sum it keeps, and it keeps only a few for typical data. It allocates one small list.
+`fsum` costs about twelve float operations per element for numbers of like size, which it adds
+exactly as two floats, with no memory. Numbers too far apart for that are added a second time
+as partial sums, about six float operations per element for each partial it keeps, a few for
+typical data, in one small list. The result is the same bits either way.
 
 A list display such as `fsum([1, 2.5])` reads its numbers as `f64`s, as Python converts them.
 Other element types are an error that asks for a conversion: `f64(n)` of each `int`. A table,

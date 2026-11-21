@@ -143,6 +143,9 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
 - **Cost:** for `n` rows, a sort for each key column, which costs what it does in
   [`sort_values`](#sorting), then one pass over a column for each argument of `agg`. A
   column that is not `f64` or `i64` is converted to one of them first, which copies it.
+  A `sum` or a `mean` of floats by one key that is not a float reads the rows once in the
+  order they are stored when the keys lie close together, which whole numbers counted from
+  a small base, `bool`s and text do.
 - **Sums of floats are correctly rounded**: they use `math.fsum`, which loses nothing to
   the order of the values. pandas's sums are compensated but not exact, so a last digit can
   differ; so can that of `var` and `std` of an `f32` column, which are worked out in `f64`

@@ -13,9 +13,13 @@ value, and both take about `n` steps where a merge sort takes `n log n` comparis
 of `str` is sorted as the integers `text_codes` of `<std>/frame_joins.byn` gives it, and
 `ordered_flags` sorts a column of `bool`. Roadmap item 3.13.12 measured them: at 10 million
 rows, see `bench/dataframe/README.md`.
+
+Two functions here serve `groupby` by one key of whole numbers (roadmap 3.13.21):
+`run_starts` finds where each group starts in the sorted rows, and `keyed_sums` gives each
+group's sum or mean of a column of floats.
 """
 
-from math import inf
+from math import fsum, inf, nan
 
 
 def _merged[T: Number](
@@ -248,3 +252,109 @@ def ordered_flags(
     array of `n` integers."""
     numbers = Array([1 if flag else 0 for flag in column])
     return ordered(numbers, start, ascending)
+
+
+def run_starts(column: Array[i64, 1], order: Array[i64, 1]) -> Array[i64, 1]:
+    """Where each group starts in `order`, the rows sorted by `column` alone, and after the
+    last, where `order` ends: what `group_marks` and `group_starts` of `<std>/frames.byn`
+    give for one key column.
+
+    Rows of one value lie together, so the end of each run is found by doubling a step
+    until the value changes and then halving the gap. Cost: about `2 log2(m)` rows read for
+    a run of `m` rows, in place of every row; ten million rows in a thousand groups read
+    some fifty thousand."""
+    rows = len(order)
+    starts: list[int] = []
+    at = 0
+    while at < rows:
+        starts.append(at)
+        value = column[order[at]]
+        step = 1
+        probe = at + 1
+        while probe < rows and column[order[probe]] == value:
+            at = probe
+            step *= 2
+            probe = at + step
+        end = min(probe, rows)
+        while end - at > 1:
+            middle = (at + end) // 2
+            if column[order[middle]] == value:
+                at = middle
+            else:
+                end = middle
+        at = end
+    starts.append(rows)
+    return Array(starts)
+
+
+def keyed_sums(
+    column: Array[f64, 1],
+    key: Array[i64, 1],
+    order: Array[i64, 1],
+    starts: Array[i64, 1],
+    how: int,
+) -> Array[f64, 1]:
+    """The sum of each group's values of `column`, when `how` is 0, or their mean, when it
+    is 6, NaN left out: what `group_floats` of `<std>/frames.byn` gives, bit for bit, for
+    rows grouped by the one column `key`, with `order` and `starts` as `run_starts` gives.
+
+    When every row is in a group and the keys lie in a range no wider than the number of
+    rows and 1024 more, the rows are read once in the order they are stored, and each adds
+    to the sum
+    of its key's slot. A slot's sum is kept exactly as two floats, as `math.fsum` first
+    keeps one (`_add_pair` of `<std>/math.byn`), and one addition of the two is then the
+    exact sum rounded once. A slot that could not stay exact, and every group when the keys
+    are too far apart, is summed by `fsum` from the group's values gathered through `order`.
+
+    Cost: one pass over the rows and four arrays of one element for each key of the range,
+    in place of a list of each group's values reached through `order`, which at ten million
+    rows misses the cache for nearly every row."""
+    groups = len(starts) - 1
+    result = Array.zeros(groups)
+    if groups == 0:
+        return result
+    rows = len(order)
+    low = key[order[0]]
+    high = key[order[rows - 1]]
+    limit = rows + 1024
+    dense = rows == len(key) and low >= -limit and high <= limit and high - low <= limit
+    width = high - low + 1 if dense else 0
+    highs = Array.zeros(width)
+    lows = Array.zeros(width)
+    counts = Array.fill((width,), 0)
+    exact = Array.fill((width,), True)
+    if dense:
+        for row in range(rows):
+            value = column[row]
+            if value == value:
+                slot = key[row] - low
+                above = highs[slot] + value
+                part = above - highs[slot]
+                error = (highs[slot] - (above - part)) + (value - part)
+                below = lows[slot] + error
+                part = below - lows[slot]
+                if (lows[slot] - (below - part)) + (error - part) != 0.0:
+                    exact[slot] = False
+                highs[slot] = above
+                lows[slot] = below
+                counts[slot] += 1
+    for group in range(groups):
+        slot = key[order[starts[group]]] - low if dense else 0
+        total = 0.0
+        count = 0
+        if dense and exact[slot]:
+            total = highs[slot] + lows[slot]
+            count = counts[slot]
+        else:
+            values: list[f64] = []
+            for at in range(starts[group], starts[group + 1]):
+                value = column[order[at]]
+                if value == value:
+                    values.append(value)
+            total = fsum(values)
+            count = len(values)
+        if how == 0:
+            result[group] = total
+        else:
+            result[group] = total / f64(count) if count > 0 else nan
+    return result

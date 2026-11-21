@@ -99,8 +99,48 @@ def _round(sums: _Partials) -> f64:
     return high
 
 
+class _Pair(Struct, Copy):
+    """A running sum held exactly as two floats, while that is possible: the exact sum of the
+    values added so far is `high + low`. `exact` turns false, for good, when it is not."""
+
+    high: f64
+    low: f64
+    exact: bool
+
+
+def _add_pair(sums: _Pair, value: f64) -> _Pair:
+    """`sums` with `value` added.
+
+    Knuth's two-sum without a comparison adds `value` to `high` and gives what the addition
+    rounded away, exactly. That error is added to `low` the same way, and the pair stays exact
+    while this second addition rounds nothing away. It does so for values of like size, which
+    is nearly all data: the errors are then small whole multiples of one unit and `low` holds
+    their sum in its 53 bits. An infinity, a NaN or an overflow makes an error of NaN, which
+    is not zero, so the pair stops being exact there too.
+
+    Costs twelve float operations, with no branch and no memory, against about six for each
+    partial with a branch in `_add`."""
+    high = sums.high + value
+    part = high - sums.high
+    error = (sums.high - (high - part)) + (value - part)
+    low = sums.low + error
+    part = low - sums.low
+    lost = (sums.low - (low - part)) + (error - part)
+    return _Pair(high, low, sums.exact and lost == 0.0)
+
+
 def _fsum_list(values: list[f64]) -> f64:
-    """`math.fsum(values)` of a list of `f64`s: the exact sum, rounded once."""
+    """`math.fsum(values)` of a list of `f64`s: the exact sum, rounded once.
+
+    The sum is first kept as a `_Pair`. When that stays exact, one addition of its two floats
+    is the exact sum rounded to the nearest `f64`, ties to even, which is what `_round` gives
+    for the same values, bit for bit. When it does not, the values are added again as
+    partials, so the result never depends on which way was taken (roadmap 3.13.21)."""
+    pair = _Pair(0.0, 0.0, True)
+    for value in values:
+        pair = _add_pair(pair, value)
+    if pair.exact:
+        return pair.high + pair.low
     sums = _Partials([], 0, 0.0)
     for value in values:
         _add(sums, value)
@@ -108,7 +148,13 @@ def _fsum_list(values: list[f64]) -> f64:
 
 
 def _fsum_array(values: Array[f64, 1]) -> f64:
-    """`math.fsum(values)` of a rank-1 array of `f64`s: the exact sum, rounded once."""
+    """`math.fsum(values)` of a rank-1 array of `f64`s: the exact sum, rounded once, found as
+    `_fsum_list` finds it."""
+    pair = _Pair(0.0, 0.0, True)
+    for i in range(len(values)):
+        pair = _add_pair(pair, values[i])
+    if pair.exact:
+        return pair.high + pair.low
     sums = _Partials([], 0, 0.0)
     for i in range(len(values)):
         _add(sums, values[i])

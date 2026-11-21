@@ -53,46 +53,51 @@ so the checksums can be compared digit for digit:
 ## Results
 
 Linux x86-64, a shared cloud machine with 4 cores (Intel Xeon, 2.1 GHz) and 15 GB of memory,
-2026-11-19: pandas 3.0.5 on NumPy 2.5.3, `baryon build --release`. Seconds, fastest of 3. Your
+2026-11-21: pandas 3.0.5 on NumPy 2.5.3, `baryon build --release`. Seconds, fastest of 3. Your
 numbers will differ. Polars was not installed on this machine, so its column is `absent`; its
-numbers for the first six operations are in the run of the day before, below.
+numbers for the first six operations are in the run of 2026-11-18, below.
 
 ```text
 operation     Baryon    pandas    Polars  checksum
-filter         0.108     0.124    absent  identical
-assign         0.032     0.065    absent  identical
-groupby        0.870     0.177    absent  identical
-sort           0.907     1.255    absent  identical
-merge          0.948     0.916    absent  identical
-missing        0.198     0.152    absent  identical
-counts         1.648     1.817    absent  identical
-write         25.874    30.878    absent  identical
-read           4.026     2.684    absent  identical
+filter         0.094     0.121    absent  identical
+assign         0.049     0.069    absent  identical
+groupby        0.242     0.188    absent  identical
+sort           0.911     1.137    absent  identical
+merge          0.926     0.782    absent  identical
+missing        0.215     0.150    absent  identical
+counts         1.544     1.622    absent  identical
+write         24.915    29.302    absent  identical
+read           3.938     2.515    absent  identical
 ```
 
 What they say:
 
 - `filter`, `assign` and `missing` are single compiled loops over the columns. The first two
   are ahead of pandas on one core; `missing` is behind it.
-- `sort` is ahead of pandas and `merge` level with it. `sort_values` by a column of `f64`
+- `sort` is ahead of pandas and `merge` a little behind it. `sort_values` by a column of `f64`
   deals the values into buckets and sorts each one, and half of what is left is copying the
   three columns into their new order. `merge` sorts the keys of both frames by counting.
-- `groupby` is five times behind pandas. About half of its time is the sums: Baryon's `sum`
-  and `mean` of a group are correctly rounded (`math.fsum`), where pandas's are compensated
-  but not exact. The rest is gathering each group's values through the sorted positions.
+- `groupby` is 1.3 times behind pandas, and its sums are still correctly rounded, where
+  pandas's are compensated but not exact. It was five times behind, 0.870 s against 0.177 s,
+  on 2026-11-19, before roadmap 3.13.21. Three things changed, none of them a result: a sum
+  is kept exactly as two floats while that is possible, which it is for numbers of like
+  size; a sum or mean by one key of whole numbers reads the rows once as they are stored,
+  where it reached each group's rows through the sorted positions and missed the cache for
+  nearly every one; and the start of each group is found without reading every row. What
+  is left is mostly the sort of the rows by key, which the result's key column still needs.
 - `counts` is ahead of pandas. `nunique` numbers the column's values with a sort; `size`
   needs only the groups. How the time divides between them has not been measured.
 - `write` is ahead of pandas and writes the same bytes, 20 million floats among them, each
   in its shortest text that reads back exactly.
-- `read` is 1.5 times behind pandas. It was 2.9 times behind, 7.659 s against 2.909 s, in
-  the run of the same day before roadmap 3.14.4.3, which stopped copying each cell of a whole
+- `read` is 1.6 times behind pandas. It was 2.6 times behind, 7.659 s against 2.909 s, on
+  2026-11-19 before roadmap 3.14.4.3, which stopped copying each cell of a whole
   number and stopped `float` and `int` allocating for text without underscores. What is left
   is one copy of each cell of a float, made so that `float` can read it as text, and the index
   of the cells the reader builds before the columns.
 
 ### With Polars, 2026-11-18
 
-The same machine type a day earlier, with Polars 2.1.0, before `counts`, `write` and `read`
+The same machine type, with Polars 2.1.0, before `counts`, `write` and `read`
 were added:
 
 ```text

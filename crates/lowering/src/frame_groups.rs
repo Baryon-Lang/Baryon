@@ -8,7 +8,11 @@
 //! reduction is one pass over one column. The library reduces `f64` and `i64` columns only,
 //! so a column of another number type is converted here first, and the result converted
 //! back where pandas keeps the column's type. Cost for `n` rows: `n log n` comparisons for
-//! each key column, and one pass for each new column. A key of `str` is grouped by the
+//! each key column, and one pass for each new column. One key that is sorted as whole
+//! numbers takes two shorter ways, with the same results (roadmap 3.13.21): the library's
+//! `run_starts` finds where each group starts without reading every row, and its
+//! `keyed_sums` sums floats in one pass over the rows as they are stored. A key of `str`
+//! is grouped by the
 //! integers the library's `text_codes` gives for its text, and copied with `text_taken`; a
 //! column of `str` reduced by `agg` is read as those integers too. A row whose key is `None`
 //! is in no group, and a column that may hold `None` is reduced by the values that are there
@@ -41,6 +45,11 @@ pub(crate) struct Groups {
     /// may once its `None`s are left out. The library's `group_integers` reads the first
     /// row of every group, so such groups go through `group_present_integers`.
     pub(crate) gaps: bool,
+    /// The key column's place when the rows are grouped by one column of whole numbers:
+    /// the library's `keyed_sums` reads it to sum each group in one pass over the rows
+    /// (roadmap 3.13.21). `None` for several keys, a key of floats, or groups made from
+    /// other groups.
+    pub(crate) key: Option<Place>,
 }
 
 impl<'db> Builder<'db> {
@@ -188,23 +197,35 @@ impl<'db> Builder<'db> {
             order = self.frame_call("ordered", vec![key.1], arguments, positions, node)?;
             self.drop_later(order);
         }
-        let flags = self.array_of(boolean);
-        let unmarked = vec![Place::from(order)];
-        let mut marks = self.frame_call("no_marks", Vec::new(), unmarked, flags, node)?;
-        self.drop_later(marks);
-        for key in &sorted {
-            let arguments = vec![key.0.clone(), Place::from(order), Place::from(marks)];
-            marks = self.frame_call("group_marks", vec![key.1], arguments, flags, node)?;
+        // One key of whole numbers: the sorted rows of one value lie together, so the
+        // library finds where each run ends without reading every row.
+        let key = match sorted.as_slice() {
+            [(key, ty)] if *ty == int => Some(key.clone()),
+            _ => None,
+        };
+        let starts = if let Some(key) = &key {
+            let arguments = vec![key.clone(), Place::from(order)];
+            self.frame_call("run_starts", Vec::new(), arguments, positions, node)?
+        } else {
+            let flags = self.array_of(boolean);
+            let unmarked = vec![Place::from(order)];
+            let mut marks = self.frame_call("no_marks", Vec::new(), unmarked, flags, node)?;
             self.drop_later(marks);
-        }
-        let marks = vec![Place::from(marks)];
-        let starts = self.frame_call("group_starts", Vec::new(), marks, positions, node)?;
+            for key in &sorted {
+                let arguments = vec![key.0.clone(), Place::from(order), Place::from(marks)];
+                marks = self.frame_call("group_marks", vec![key.1], arguments, flags, node)?;
+                self.drop_later(marks);
+            }
+            let marks = vec![Place::from(marks)];
+            self.frame_call("group_starts", Vec::new(), marks, positions, node)?
+        };
         self.drop_later(starts);
         Some(Groups {
             order,
             starts,
             count,
             gaps: false,
+            key,
         })
     }
 
@@ -231,14 +252,26 @@ impl<'db> Builder<'db> {
             (false, _) => ("group_floats", float),
         };
         let values = self.converted(values, column.element, through, node);
+        // A sum (0) or a mean (6) of floats by one key of whole numbers is one pass over
+        // the rows in the library's `keyed_sums`, which takes the key column too.
+        let keyed = groups
+            .key
+            .clone()
+            .filter(|_| !whole && matches!(how, 0 | 6));
+        let function = if keyed.is_some() {
+            "keyed_sums"
+        } else {
+            function
+        };
         let how = Operand::Constant(Constant::integer(int, how));
         let how = self.held(int, how, node);
-        let arguments = vec![
-            values,
+        let mut arguments = vec![values];
+        arguments.extend(keyed);
+        arguments.extend([
             Place::from(groups.order),
             Place::from(groups.starts),
             Place::from(how),
-        ];
+        ]);
         let array = self.array_of(through);
         let reduced = self.frame_call(function, Vec::new(), arguments, array, node)?;
         if through == new.element {
