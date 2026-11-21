@@ -12,7 +12,7 @@ use types::{Declared, Item, Nominal, Type};
 /// function they call that the module does not define.
 pub struct Module<'a, 'db> {
     /// How to represent each type.
-    types: ty::Types<'a, 'db>,
+    pub(crate) types: ty::Types<'a, 'db>,
     /// The symbol of a function instance: an item with its type arguments.
     symbol: &'a dyn Fn(&Item<'db>, &[Type<'db>]) -> String,
     /// Each definition, in the order they were made: a function with the outlined `prange`
@@ -42,6 +42,7 @@ impl<'a, 'db> Module<'a, 'db> {
                 db,
                 declared,
                 names,
+                destructor: &crate::destructors::none,
             },
             symbol,
             definitions: Vec::new(),

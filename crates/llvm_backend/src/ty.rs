@@ -35,6 +35,8 @@ pub(crate) struct Types<'a, 'db> {
     pub(crate) declared: &'a dyn Fn(&Nominal<'db>) -> Declared<'db>,
     /// The name of each struct or enum and of its fields or members.
     pub(crate) names: &'a dyn Fn(&Nominal<'db>) -> ClassNames,
+    /// The `__del__` of each struct whose class has one (decision 0063).
+    pub(crate) destructor: &'a dyn Fn(&Nominal<'db>) -> Option<crate::Destructor<'db>>,
 }
 
 /// The LLVM representation of a language type.

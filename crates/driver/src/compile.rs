@@ -19,7 +19,7 @@ use crate::{Database, Profile, Session};
 use diagnostics::{Diagnostic, Severity};
 use functions::{Function, Test, is_generic};
 use instances::{Instance, Instances};
-use types::{Declaration, Item, TypeDb, TypeKind};
+use types::{Declaration, Item, Nominal, TypeDb, TypeKind};
 
 /// How a compiled program is split into LLVM modules.
 #[derive(Clone, Copy)]
@@ -243,7 +243,9 @@ impl Session {
         };
         let declared = queries::declared(database, package);
         let names = queries::names(database, package);
+        let destructor = queries::destructors(database, package);
         let mut module = llvm_backend::Module::new(database, self, &declared, &names, &symbol);
+        module.destructors(&destructor);
         if let Some(root) = root {
             module.debug_info(root);
         }
@@ -394,6 +396,10 @@ fn define<'db>(
     roots: Vec<Instance<'db>>,
 ) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
+    let package = *settings.package(db);
+    let declared = queries::declared(db, package);
+    let destructor =
+        |nominal: &Nominal<'db>| checker::destructor(db, package, nominal).map(|(item, _)| item);
     let mut instances = Instances::new(roots);
     // Each function's lowering errors once, however many instances of it there are.
     let mut reported = std::collections::HashSet::new();
@@ -402,6 +408,7 @@ fn define<'db>(
         match queries::ready_body(db, settings, wanted) {
             queries::Ready::Body(body) => {
                 instances.follow(body);
+                instances.follow_drops(db, body, &declared, &destructor);
                 match queries::written(db, settings, wanted) {
                     Some(Ok(written)) => module.absorb(written),
                     Some(Err(error)) => errors.push(error.clone()),

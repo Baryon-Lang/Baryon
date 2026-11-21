@@ -237,8 +237,8 @@ class GzipFile(Struct):
     Python and `gunzip` read a file of several members as the data of all of them joined.
     Baryon cannot yet add bytes to the end of a file, so the compressed members are held in
     memory and written to the file when it is closed: writing needs memory for the compressed
-    file, not for the data. A file that is dropped without being closed, outside `with`, is
-    not written.
+    file, not for the data. A file dropped without being closed is closed then, by `__del__`,
+    as CPython closes it (decision 0063); a failure to write it there panics.
     """
 
     name: str  # the path the file was opened with
@@ -264,6 +264,11 @@ class GzipFile(Struct):
 
     def __exit__(self: InOut[Self]) -> Raises[None, OSError]:
         """Closes the file at the end of a `with` block, as `close()` does."""
+        self.close()
+
+    def __del__(self: InOut[Self]) -> Raises[None, OSError]:
+        """Closes the file when it is dropped without `close()`, so a file opened to write is
+        written out, as CPython does (decision 0063). Closing a closed file does nothing."""
         self.close()
 
     def read(self: InOut[Self], size: int = -1) -> Raises[Array[u8, 1], OSError | ValueError]:
