@@ -91,8 +91,6 @@ impl<'db> Body<'db> {
             }
             return result;
         }
-        // `copy` on a `str` or a struct that does not define its own: a built-in method.
-        let copy = copy_signature(base);
         let receiver = Passed {
             node: value,
             mode: Mode::Borrow,
@@ -116,10 +114,27 @@ impl<'db> Body<'db> {
             TypeKind::Parameter { .. } => return self.parameter_method(function, base, arguments),
             _ => return self.untyped(arguments),
         };
-        if self.tree.text(attribute, self.text) == "__del__" {
+        if callee == "__del__" {
             return self.called_destructor(function, arguments);
         }
-        match self.member(function, &nominal, base, attribute) {
+        self.struct_member_call(node, function, attribute, &nominal, receiver, arguments)
+    }
+
+    /// The call `node` of the member `attribute` of a struct `nominal`, the callee `function`,
+    /// with `receiver` the value it is called on: one of its methods, a field holding a
+    /// function, or `copy` where the struct does not define its own, a built-in method.
+    fn struct_member_call(
+        &mut self,
+        node: NodeId,
+        function: NodeId,
+        attribute: NodeId,
+        nominal: &types::Nominal<'db>,
+        receiver: Passed<'db>,
+        arguments: &Arguments,
+    ) -> Type<'db> {
+        let callee = self.tree.text(attribute, self.text).to_owned();
+        let base = receiver.ty;
+        match self.member(function, nominal, base, attribute) {
             Some(Member::Method {
                 item,
                 parameters,
@@ -154,7 +169,14 @@ impl<'db> Body<'db> {
             }
             Some(Member::Copy) => {
                 let builtin = Callee::Builtin("struct.copy".to_owned());
-                self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)
+                self.check_call(
+                    node,
+                    &callee,
+                    &copy_signature(base),
+                    Some(receiver),
+                    builtin,
+                    arguments,
+                )
             }
             None => self.untyped(arguments),
         }
