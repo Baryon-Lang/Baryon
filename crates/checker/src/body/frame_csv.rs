@@ -19,11 +19,13 @@
 //! `pandas.DataFrame.to_csv(path, index=False)` writes: a frame has no row index (decision
 //! 0045), so no index column is written. It can fail with `OSError`.
 //!
-//! Each takes the path and `sep=`, the character between fields (roadmap 3.14.4.2): every
-//! other keyword pandas has is an error that names it, never silently ignored.
+//! Each takes the path and `sep=`, the character between fields; `read_csv` takes
+//! `na_values=`, more cells to read as missing, and `to_csv` takes `na_rep=`, the text to
+//! write for a missing value (roadmap 3.14.4.2). Every other keyword pandas has is an error
+//! that names it, never silently ignored.
 
-use super::Body;
 use super::calls::Arguments;
+use super::{Body, relations};
 use syntax::NodeId;
 use types::{Call, Callee, Key, Primitive, Type, TypeKind};
 
@@ -49,7 +51,7 @@ impl<'db> Body<'db> {
                 .lowerer
                 .error(node, &message, "not defined", Some(hint));
         }
-        if let Err(refused) = self.csv_keywords("`DataFrame.read_csv`", arguments) {
+        if let Err(refused) = self.csv_keywords(true, arguments) {
             return refused;
         }
         let &[path] = arguments.positional.as_slice() else {
@@ -108,41 +110,78 @@ impl<'db> Body<'db> {
         self.raises_library_errors(node, frame, &["OSError", "ValueError"])
     }
 
-    /// Checks the keyword arguments of `function`, `read_csv` or `to_csv` as a message names
-    /// it. `sep=` is the one built (roadmap 3.14.4.2): the character between fields, written
-    /// out as a string literal of one character, since a file split by a text the program
-    /// works out could not be checked here. `Err`, with the unknown type and every argument
-    /// marked untyped, after reporting a keyword that is not built yet or a separator that
-    /// is not one character.
-    fn csv_keywords(&mut self, function: &str, arguments: &Arguments) -> Result<(), Type<'db>> {
+    /// Checks the keyword arguments of `read_csv`, when `reading`, or of `to_csv` (roadmap
+    /// 3.14.4.2). Three are built. `sep=`, on both, is the character between fields.
+    /// `na_values=` of `read_csv` is a `str` or a `list[str]`: the cells read as missing
+    /// besides the empty one. `na_rep=` of `to_csv` is the `str` written for a missing
+    /// value. `Err`, with the unknown type and every argument marked untyped, after
+    /// reporting a keyword that is not built yet or a separator that is not one character.
+    fn csv_keywords(&mut self, reading: bool, arguments: &Arguments) -> Result<(), Type<'db>> {
+        let function = if reading {
+            "`DataFrame.read_csv`"
+        } else {
+            "`to_csv`"
+        };
+        let str = Type::new(self.db, TypeKind::Str);
         for &(keyword, value) in &arguments.keywords {
-            let name = self.tree.text(keyword, self.text);
-            if name != "sep" {
-                let message = format!("{function} does not take `{name}` yet");
-                self.untyped(arguments);
-                let hint = "this version takes the path and `sep=`, for a file with a header \
-                            row and no index column";
-                return Err(self
-                    .lowerer
-                    .error(keyword, &message, "not built yet", Some(hint)));
+            match (self.tree.text(keyword, self.text), reading) {
+                ("sep", _) => self.csv_separator(function, value, arguments)?,
+                ("na_values", true) => {
+                    let found = self.expression(value, None);
+                    let list = Type::new(self.db, TypeKind::List(str));
+                    if !relations::compatible(self.db, list, found) {
+                        self.expect(value, str, found, "`na_values` is a `list[str]` or a");
+                    }
+                }
+                ("na_rep", false) => {
+                    let found = self.expression(value, Some(str));
+                    self.expect(value, str, found, "`na_rep` is");
+                }
+                (name, _) => {
+                    let message = format!("{function} does not take `{name}` yet");
+                    self.untyped(arguments);
+                    let hint = if reading {
+                        "this version takes the path, `sep=` and `na_values=`, for a file \
+                         with a header row"
+                    } else {
+                        "this version takes the path, `sep=` and `na_rep=`, and writes a \
+                         header row and no index column"
+                    };
+                    return Err(self
+                        .lowerer
+                        .error(keyword, &message, "not built yet", Some(hint)));
+                }
             }
-            let written = self.literal_text(value);
-            let one = written.is_some_and(|text| {
-                text == "\\t"
-                    || (text.len() == 1 && !matches!(text, "\\" | "\"" | "'") && text.is_ascii())
-            });
-            if !one {
-                self.untyped(arguments);
-                let message = format!("`sep` of {function} is one character, written out");
-                let hint = "for example `sep=\";\"` or `sep=\"\\t\"`; a quote, a backslash and a \
-                            character outside ASCII cannot split fields";
-                return Err(self
-                    .lowerer
-                    .error(value, &message, "not one character", Some(hint)));
-            }
-            let str = Type::new(self.db, TypeKind::Str);
-            self.expression(value, Some(str));
         }
+        Ok(())
+    }
+
+    /// Checks `value`, the `sep=` of the call of `function` whose arguments are `arguments`:
+    /// a string literal of one character, since a file split by a text the program works
+    /// out could not be checked here, and `to_csv` would gain a way to fail. `Err`, as
+    /// `csv_keywords` gives it, after reporting a separator that is not one character.
+    fn csv_separator(
+        &mut self,
+        function: &str,
+        value: NodeId,
+        arguments: &Arguments,
+    ) -> Result<(), Type<'db>> {
+        let written = self.literal_text(value);
+        let one = written.is_some_and(|text| {
+            text == "\\t"
+                || (text.len() == 1 && !matches!(text, "\\" | "\"" | "'") && text.is_ascii())
+        });
+        if !one {
+            self.untyped(arguments);
+            let message = format!("`sep` of {function} is one character, written out");
+            let hint = "for example `sep=\";\"` or `sep=\"\\t\"`; a quote, a backslash and a \
+                        character outside ASCII cannot split fields";
+            return Err(self
+                .lowerer
+                .error(value, &message, "not one character", Some(hint)));
+        }
+        let str = Type::new(self.db, TypeKind::Str);
+        self.expression(value, Some(str));
         Ok(())
     }
 
@@ -179,7 +218,7 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        if let Err(refused) = self.csv_keywords("`to_csv`", arguments) {
+        if let Err(refused) = self.csv_keywords(false, arguments) {
             return Some(refused);
         }
         let &[path] = arguments.positional.as_slice() else {

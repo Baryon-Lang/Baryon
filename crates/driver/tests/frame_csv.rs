@@ -88,7 +88,7 @@ def unhandled():
    |
 12 |     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", usecols=["price"])
    |                                                                 ^^^^^^^ not built yet
-   = note: this version takes the path and `sep=`, for a file with a header row and no index column
+   = note: this version takes the path, `sep=` and `na_values=`, for a file with a header row
 
 error: `DataFrame.read_csv` needs the frame's type from the context
   --> main.byn:13:15
@@ -173,7 +173,7 @@ def main():
    |
 13 |     trades.to_csv("trades.csv", index=False)
    |                                 ^^^^^ not built yet
-   = note: this version takes the path and `sep=`, for a file with a header row and no index column
+   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column
 
 error: `to_csv` takes the path of the file to write
   --> main.byn:14:5
@@ -269,5 +269,70 @@ error: `sep` of `to_csv` is one character, written out
 17 |     trades.to_csv("out.csv", sep=9)
    |                                  ^ not one character
    = note: for example `sep=";"` or `sep="\t"`; a quote, a backslash and a character outside ASCII cannot split fields"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// `na_values=` of `read_csv` checks as a `str` or a `list[str]`, written out or worked out,
+/// and `na_rep=` of `to_csv` as a `str` (roadmap 3.14.4.2). A number, a list of numbers and
+/// a dict are reported at the value, and each keyword on the other function is not built.
+#[test]
+fn the_spellings_of_a_missing_value_are_text() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    words = ["NA", "-"]
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values="NA", sep=";")
+    listed: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=["NA", "-999"])
+    named: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=words)
+    trades.to_csv("out.csv", na_rep="NA")
+    trades.to_csv("out.csv", sep=";", na_rep=words[1])
+    number: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=-999)
+    numbers: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=[-999, 0])
+    each: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values={"price": "NA"})
+    trades.to_csv("out.csv", na_rep=0)
+    trades.to_csv("out.csv", na_values="NA")
+    wrong: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_rep="NA")
+"#;
+    let expected = r#"error: expected `str`, found `i64`
+  --> main.byn:13:75
+   |
+13 |     number: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=-999)
+   |                                                                           ^^^^ `na_values` is a `list[str]` or a `str`
+
+error: expected `str`, found `list[i64]`
+  --> main.byn:14:76
+   |
+14 |     numbers: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values=[-999, 0])
+   |                                                                            ^^^^^^^^^ `na_values` is a `list[str]` or a `str`
+
+error: expected `str`, found `dict[str, str]`
+  --> main.byn:15:73
+   |
+15 |     each: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_values={"price": "NA"})
+   |                                                                         ^^^^^^^^^^^^^^^ `na_values` is a `list[str]` or a `str`
+
+error: expected `str`, found `i64`
+  --> main.byn:16:37
+   |
+16 |     trades.to_csv("out.csv", na_rep=0)
+   |                                     ^ `na_rep` is `str`
+
+error: `to_csv` does not take `na_values` yet
+  --> main.byn:17:30
+   |
+17 |     trades.to_csv("out.csv", na_values="NA")
+   |                              ^^^^^^^^^ not built yet
+   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column
+
+error: `DataFrame.read_csv` does not take `na_rep` yet
+  --> main.byn:18:64
+   |
+18 |     wrong: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_rep="NA")
+   |                                                                ^^^^^^ not built yet
+   = note: this version takes the path, `sep=` and `na_values=`, for a file with a header row"#;
     assert_eq!(check_one(program), expected);
 }
