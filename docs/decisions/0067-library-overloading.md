@@ -73,6 +73,6 @@ The reference lists each overload of a name on its own line.
 - 3.18.6 gives `jv`, `yv`, `iv` and `kv` their complex forms under SciPy's names.
 - Array forms of `special` functions (row 3.18.13, idea I.61) and linear algebra by rank or
   element type can use the same dispatch.
-- The resolver keeps one entry per name holding its overloads. The checker resolves each call to
-  one overload, and later stages see only that function, so lowering and the backends do not
-  change.
+- The checker resolves each call, and each overloaded name used as a value, to one overload.
+  Later stages see only that function, so lowering and the backends do not change, apart from
+  giving each overload a symbol of its own.
