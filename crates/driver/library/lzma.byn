@@ -1,6 +1,6 @@
 """The `lzma` module: xz files and `.lzma` files on byte arrays, with Python's names, written
-in Baryon (decision 0049): `decompress`, `open` to read a file, and `compress`, whose encoder is
-in `lzma_encoder.byn`.
+in Baryon (decision 0049): `decompress`, `open` to read a file, and `compress`, re-exported from
+`lzma_writer.byn` (decision 0062), whose LZMA2 encoder is in `lzma_encoder.byn`.
 
 An xz file (the `.xz` format of XZ Utils) is a stream of blocks, each LZMA2 data and an
 integrity check (CRC-32, CRC-64 or SHA-256), then an index of the blocks and a footer. LZMA2
@@ -11,10 +11,10 @@ LZMA stream. Data that is neither raises `OSError` with the kind `INVALID_DATA` 
 Python's `LZMAError` carries.
 """
 
-from lzma_encoder import dictionary_bits, lzma2_compressed
+from lzma_common import Output, crc32, crc64, reserve
+from lzma_writer import compress as compress
 from os import ErrorKind
 from text_lines import Lines, empty_lines
-import zlib
 
 
 class _Range(Struct):
@@ -27,25 +27,6 @@ class _Range(Struct):
     code: int
     ended: bool
     over: bool
-
-
-class _Output(Struct):
-    """The bytes decoded so far: the first `length` bytes of `data`, whose length doubles when
-    it fills."""
-
-    data: Array[u8, 1]
-    length: int
-
-
-def _reserve(output: InOut[_Output], extra: int):
-    """Makes room for `extra` more bytes, doubling the buffer as needed."""
-    needed = output.length + extra
-    if needed <= len(output.data):
-        return
-    grown = Array.zeros(max(2 * len(output.data), needed), u8)
-    for i in range(output.length):
-        grown[i] = output.data[i]
-    output.data = grown
 
 
 def _byte(rc: InOut[_Range], data: Array[u8, 1]) -> int:
@@ -161,7 +142,7 @@ def _lzma(
     coder: InOut[_Lzma],
     rc: InOut[_Range],
     data: Array[u8, 1],
-    output: InOut[_Output],
+    output: InOut[Output],
     size: int,
     marker: bool,
 ) -> int:
@@ -194,7 +175,7 @@ def _lzma(
                 symbol = (symbol << 1) | _bit(rc, data, coder.probs, base + symbol)
             if rc.ended or rc.over:
                 return 2 if rc.over else 1
-            _reserve(output, 1)
+            reserve(output, 1)
             output.data[output.length] = u8(symbol - 256)
             output.length += 1
             coder.state = 0 if state < 4 else (state - 3 if state < 10 else state - 6)
@@ -233,7 +214,7 @@ def _lzma(
                     if position == 0:
                         return 2
                     coder.state = 9 if state < 7 else 11
-                    _reserve(output, 1)
+                    reserve(output, 1)
                     output.data[output.length] = output.data[output.length - coder.reps[0] - 1]
                     output.length += 1
                     continue
@@ -260,7 +241,7 @@ def _lzma(
         count = length + 2
         if size >= 0 and output.length + count > stop:
             return 2
-        _reserve(output, count)
+        reserve(output, count)
         for _ in range(count):
             output.data[output.length] = output.data[output.length - distance - 1]
             output.length += 1
@@ -291,7 +272,7 @@ def _finish(rc: InOut[_Range], data: Array[u8, 1]) -> bool:
 
 
 def _lzma2(
-    data: Array[u8, 1], position: int, output: InOut[_Output], window: int
+    data: Array[u8, 1], position: int, output: InOut[Output], window: int
 ) -> tuple[int, int]:
     """Decodes the LZMA2 chunks at `position` onto `output`. Gives a status, 0, 1 when the
     data ends first, or 2 for corrupt data, and the position after the end chunk."""
@@ -317,7 +298,7 @@ def _lzma2(
             count = ((int(data[position]) << 8) | int(data[position + 1])) + 1
             position += 2
             need_state = True
-            _reserve(output, count)
+            reserve(output, count)
             for i in range(count):
                 if position + i >= len(data):
                     return (1, position + i)
@@ -376,36 +357,12 @@ def _lzma2(
         position += packed
 
 
-def _crc64(data: Array[u8, 1], start: int, stop: int) -> int:
-    """The CRC-64 of `data[start:stop]` (ECMA-182, as xz uses it), as a 64-bit pattern in an
-    `int`: bit 63 is the sign bit."""
-    poly = -0x3693A86A2878F0BE
-    table = Array.zeros(256, int)
-    for i in range(256):
-        c = i
-        for _ in range(8):
-            if c & 1 != 0:
-                c = ((c >> 1) & 0x7FFFFFFFFFFFFFFF) ^ poly
-            else:
-                c = (c >> 1) & 0x7FFFFFFFFFFFFFFF
-        table[i] = c
-    crc = -1
-    for i in range(start, stop):
-        crc = table[(crc ^ int(data[i])) & 255] ^ ((crc >> 8) & 0x00FFFFFFFFFFFFFF)
-    return ~crc
-
-
 def _word(data: Array[u8, 1], position: int) -> int:
     """The little-endian 32-bit number at `data[position:position + 4]`."""
     word = 0
     for i in range(4):
         word |= int(data[position + i]) << (8 * i)
     return word
-
-
-def _crc32(data: Array[u8, 1], start: int, stop: int) -> int:
-    """The CRC-32 of `data[start:stop]`, as `zlib.crc32` gives it."""
-    return zlib.crc32(data[start:stop].copy())
 
 
 def _sha256(data: Array[u8, 1], start: int, stop: int) -> Array[u8, 1]:
@@ -522,13 +479,13 @@ def _check_size(check: int) -> int:
     return 64
 
 
-def _checked(data: Array[u8, 1], check: int, output: _Output, start: int, position: int) -> bool:
+def _checked(data: Array[u8, 1], check: int, output: Output, start: int, position: int) -> bool:
     """Whether the check at `data[position:]` of the kind `check` matches the bytes
     `output.data[start:output.length]`; a kind Baryon does not compute passes."""
     if check == 1:
-        return _word(data, position) == _crc32(output.data, start, output.length)
+        return _word(data, position) == crc32(output.data, start, output.length)
     if check == 4:
-        crc = _crc64(output.data, start, output.length)
+        crc = crc64(output.data, start, output.length)
         return (
             _word(data, position) == crc & 0xFFFFFFFF
             and _word(data, position + 4) == (crc >> 32) & 0xFFFFFFFF
@@ -541,7 +498,7 @@ def _checked(data: Array[u8, 1], check: int, output: _Output, start: int, positi
     return True
 
 
-def _xz(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int, int]:
+def _xz(data: Array[u8, 1], position: int, output: InOut[Output]) -> tuple[int, int]:
     """Decodes the xz stream at `position` onto `output`. Gives a status, 0, 1 when the data
     ends first, 2 for corrupt data, 3 when it is not an xz stream and 4 for options Baryon
     does not decode, and the position after the stream."""
@@ -553,7 +510,7 @@ def _xz(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int,
             return (3, position)
     if position + 12 > len(data):
         return (1, position)
-    if _crc32(data, position + 6, position + 8) != _word(data, position + 8):
+    if crc32(data, position + 6, position + 8) != _word(data, position + 8):
         return (2, position)
     if data[position + 6] != 0 or int(data[position + 7]) > 15:
         return (4, position)
@@ -576,7 +533,7 @@ def _xz(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int,
 
 
 def _block(
-    data: Array[u8, 1], position: int, check: int, output: InOut[_Output]
+    data: Array[u8, 1], position: int, check: int, output: InOut[Output]
 ) -> tuple[int, int, int]:
     """Decodes the xz block at `position`, whose header's first byte is not 0, onto `output`,
     and checks it with the check `check`. Gives a status, as `_xz` does, the position after
@@ -585,7 +542,7 @@ def _block(
     if position + header > len(data):
         return (1, position, 0)
     stop = position + header - 4
-    if _crc32(data, position, stop) != _word(data, stop):
+    if crc32(data, position, stop) != _word(data, stop):
         return (2, position, 0)
     flags = int(data[position + 1])
     if flags & 0x3F != 0:
@@ -664,12 +621,12 @@ def _index(data: Array[u8, 1], position: int, sizes: list[int], flags: int) -> t
         cursor += 1
     if cursor + 4 > len(data):
         return (1, cursor)
-    if _crc32(data, position, cursor) != _word(data, cursor):
+    if crc32(data, position, cursor) != _word(data, cursor):
         return (2, cursor)
     footer = cursor + 4
     if footer + 12 > len(data):
         return (1, footer)
-    if _crc32(data, footer + 4, footer + 10) != _word(data, footer):
+    if crc32(data, footer + 4, footer + 10) != _word(data, footer):
         return (2, footer)
     if _word(data, footer + 4) != (footer - position) // 4 - 1:
         return (2, footer)
@@ -680,7 +637,7 @@ def _index(data: Array[u8, 1], position: int, sizes: list[int], flags: int) -> t
     return (0, footer + 12)
 
 
-def _alone(data: Array[u8, 1], position: int, output: InOut[_Output]) -> tuple[int, int]:
+def _alone(data: Array[u8, 1], position: int, output: InOut[Output]) -> tuple[int, int]:
     """Decodes the `.lzma` file at `position`, LZMA_Alone's format, onto `output`, with the
     statuses of `_xz`. Its header is checked as liblzma checks it when it guesses the format,
     so other bytes give status 3."""
@@ -741,7 +698,7 @@ def _ended() -> str:
 def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
     """The bytes the xz or `.lzma` streams in `data` hold, joined, as `coder.decompress(data)`
     gives them."""
-    output = _Output(Array.zeros(4 * len(data) + 64, u8), 0)
+    output = Output(Array.zeros(4 * len(data) + 64, u8), 0)
     position = 0
     streams = 0
     while True:
@@ -769,78 +726,6 @@ def decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
         if position >= len(data):
             break
     return output.data[: output.length].copy()
-
-
-def compress(data: Array[u8, 1], preset: int = 6) -> Raises[Array[u8, 1], OSError]:
-    """`data` compressed as one xz stream with a CRC-64 check, as `lzma.compress(data,
-    preset=preset)` gives it in Python. `preset` runs from 0, fastest, to 9, smallest, and sets
-    the dictionary, from 256 KiB to 64 MiB, and how long the encoder searches for matches. A
-    preset outside 0 to 9 raises `OSError` with the kind `INVALID_DATA` and Python's message,
-    `Invalid or unsupported options`. The stream is standard xz, which Python's `lzma` and `xz`
-    read; its bytes are Baryon's own, not liblzma's (decision 0049).
-
-    Cost: the data and its compressed copy in memory, plus a hash table of 4 MiB and a chain of
-    4 bytes for each byte of the dictionary, up to the data's length."""
-    if preset < 0 or preset > 9:
-        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Invalid or unsupported options", "")
-    out = _Output(Array.zeros(64, u8), 0)
-    _append(out, [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00, 0x00, 0x04])
-    _append_word(out, _crc32(out.data, 6, 8))
-    records: list[int] = []
-    if len(data) > 0:
-        start = out.length
-        _append(out, [0x02, 0x00, 0x21, 0x01, dictionary_bits(preset) * 2 - 24, 0, 0, 0])
-        _append_word(out, _crc32(out.data, start, start + 8))
-        packed = lzma2_compressed(data, preset)
-        _reserve(out, len(packed))
-        for i in range(len(packed)):
-            out.data[out.length + i] = packed[i]
-        out.length += len(packed)
-        records = [12 + len(packed) + 8, len(data)]
-        while (out.length - start) % 4 != 0:
-            _append(out, [0])
-        check = _crc64(data, 0, len(data))
-        for i in range(8):
-            _append(out, [(check >> (8 * i)) & 0xFF])
-    index = out.length
-    _append(out, [0])
-    _append_number(out, len(records) // 2)
-    for value in records:
-        _append_number(out, value)
-    while (out.length - index) % 4 != 0:
-        _append(out, [0])
-    _append_word(out, _crc32(out.data, index, out.length))
-    footer = out.length
-    _append_word(out, 0)
-    _append_word(out, (out.length - 4 - index) // 4 - 1)
-    _append(out, [0x00, 0x04])
-    footer_crc = _crc32(out.data, footer + 4, footer + 10)
-    for i in range(4):
-        out.data[footer + i] = u8((footer_crc >> (8 * i)) & 0xFF)
-    _append(out, [0x59, 0x5A])
-    return out.data[: out.length].copy()
-
-
-def _append(out: InOut[_Output], values: list[int]):
-    """Adds the bytes `values`."""
-    _reserve(out, len(values))
-    for value in values:
-        out.data[out.length] = u8(value & 0xFF)
-        out.length += 1
-
-
-def _append_word(out: InOut[_Output], value: int):
-    """Adds `value` as four bytes, lowest first."""
-    _append(out, [value, value >> 8, value >> 16, value >> 24])
-
-
-def _append_number(out: InOut[_Output], value: int):
-    """Adds `value` as xz's variable-length integer: 7 bits a byte, lowest first."""
-    rest = value
-    while rest >= 0x80:
-        _append(out, [(rest & 0x7F) | 0x80])
-        rest = rest >> 7
-    _append(out, [rest])
 
 
 def open(filename: str, mode: str = "rb") -> Raises[LZMAFile, OSError | ValueError]:

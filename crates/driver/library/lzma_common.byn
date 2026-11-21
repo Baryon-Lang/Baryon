@@ -1,0 +1,49 @@
+"""Internal file of `lzma` (decision 0049): what its decoder in `lzma.byn` and its xz writer in
+`lzma_writer.byn` share, a growing byte buffer and the CRC-32 and CRC-64 checks xz uses. A
+program cannot import this file.
+"""
+
+import zlib
+
+
+class Output(Struct):
+    """Bytes decoded or written so far: the first `length` bytes of `data`, whose length
+    doubles when it fills."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+def reserve(output: InOut[Output], extra: int):
+    """Makes room for `extra` more bytes, doubling the buffer as needed."""
+    needed = output.length + extra
+    if needed <= len(output.data):
+        return
+    grown = Array.zeros(max(2 * len(output.data), needed), u8)
+    for i in range(output.length):
+        grown[i] = output.data[i]
+    output.data = grown
+
+
+def crc32(data: Array[u8, 1], start: int, stop: int) -> int:
+    """The CRC-32 of `data[start:stop]`, as `zlib.crc32` gives it."""
+    return zlib.crc32(data[start:stop].copy())
+
+
+def crc64(data: Array[u8, 1], start: int, stop: int) -> int:
+    """The CRC-64 of `data[start:stop]` (ECMA-182, as xz uses it), as a 64-bit pattern in an
+    `int`: bit 63 is the sign bit."""
+    poly = -0x3693A86A2878F0BE
+    table = Array.zeros(256, int)
+    for i in range(256):
+        c = i
+        for _ in range(8):
+            if c & 1 != 0:
+                c = ((c >> 1) & 0x7FFFFFFFFFFFFFFF) ^ poly
+            else:
+                c = (c >> 1) & 0x7FFFFFFFFFFFFFFF
+        table[i] = c
+    crc = -1
+    for i in range(start, stop):
+        crc = table[(crc ^ int(data[i])) & 255] ^ ((crc >> 8) & 0x00FFFFFFFFFFFFFF)
+    return ~crc

@@ -336,7 +336,9 @@ def _farther(small: int, big: int) -> bool:
     return (big >> 7) > small
 
 
-def _choose(finder: InOut[_Finder], coder: _Coder, data: Array[u8, 1], at: int) -> tuple[int, int, int]:
+def _choose(
+    finder: InOut[_Finder], coder: _Coder, data: Array[u8, 1], at: int
+) -> tuple[int, int, int]:
     """What to code at `at`, as XZ Utils' fast mode chooses it: a length, a kind (0 a literal,
     1 a match, 2 a match at a last distance) and the distance less 1 or which last distance."""
     avail = len(data) - at
