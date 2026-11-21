@@ -33,7 +33,7 @@ there run `sudo apt install clang-15` as well; `baryon` finds `clang-15` by itse
 
 ### Download a prebuilt `baryon`
 
-Prebuilt archives start with release 0.2.0, for two platforms:
+Each release has prebuilt archives for two platforms:
 
 | Platform | Archive |
 | --- | --- |
@@ -53,7 +53,7 @@ file a browser downloads as quarantined, and then refuses to run `baryon` until 
 mark. On Linux:
 
 ```sh
-version=0.2.0
+version=0.3.0
 target=x86_64-unknown-linux-gnu
 name=baryon-$version-$target
 curl -LO https://github.com/Baryon-Lang/Baryon/releases/download/v$version/$name.tar.gz
@@ -66,8 +66,8 @@ On a Mac, set `target=aarch64-apple-darwin` instead, and check the download with
 `shasum -a 256 -c $name.tar.gz.sha256`. The check prints `OK` when the file is intact; if it
 says `FAILED`, download it again.
 
-The archive unpacks to one directory, such as `baryon-0.2.0-x86_64-unknown-linux-gnu`, holding
-`baryon`, the runtime library `libruntime.a` that every program is linked with, and the license.
+The archive unpacks to one directory, such as `baryon-0.3.0-x86_64-unknown-linux-gnu`, holding
+`baryon`, the runtime library `libruntime.a` that every program is linked with, and the licenses.
 `baryon` looks for `libruntime.a` next to itself, so keep the two together: move the whole
 directory where you want it and put it on your `PATH`, for example in `~/.local`:
 
@@ -78,7 +78,7 @@ export PATH="$HOME/.local/baryon:$PATH"
 baryon --version
 ```
 
-The last line prints `baryon 0.2.0`. Add the `export` line to `~/.bashrc` on Linux or `~/.zshrc`
+The last line prints `baryon 0.3.0`. Add the `export` line to `~/.bashrc` on Linux or `~/.zshrc`
 on macOS so new terminals find `baryon` too.
 
 ### Build from source

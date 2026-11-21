@@ -14,13 +14,13 @@ options are `--release`, `--blas`, `--timings`, `-k` for `test` and `--run` for 
 | [`baryon watch [--release] [--blas] [--run] <directory> <output>`](#baryon-watch) | Builds the package, then rebuilds it each time a file is saved |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
-| `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
+| `baryon --version` | Prints the release, such as `baryon 0.3.0`; put it in a bug report |
 | `baryon --help` | Prints the usage line |
 
 ## Installing
 
-From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
-silicon, holding `baryon` and `libruntime.a` together; the
+Each release has prebuilt archives for Linux on x86_64 and macOS on Apple silicon, holding
+`baryon` and `libruntime.a` together; the
 [beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
 install one. On any other system, or to follow `main`, `baryon` is built from this repository
 with the pinned Rust toolchain
