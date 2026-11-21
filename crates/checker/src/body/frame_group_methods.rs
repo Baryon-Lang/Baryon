@@ -29,6 +29,30 @@ enum Chosen {
     Named(NodeId),
 }
 
+/// What a reduction of a grouping does with a column of `str`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Text {
+    /// It is reduced, or reported when the reduction is one text does not have.
+    Reduced,
+    /// `numeric_only=True` was written: it is left out.
+    Numeric,
+    /// The method's arguments were wrong, and reported: it is left out with no word, so
+    /// that one mistake is one error.
+    Quiet,
+}
+
+/// Which columns of `str` a reduction of a grouping leaves out, and how it reports the rest.
+#[derive(Clone, Copy)]
+pub(super) struct Mode {
+    /// Whether every column that is not a key is reduced, none being chosen.
+    pub(super) every: bool,
+    /// Whether the columns are several, every one or a list: `numeric_only=True` then
+    /// leaves text out, where for one chosen column it is a mistake.
+    pub(super) listed: bool,
+    /// What becomes of a column of `str`.
+    pub(super) text: Text,
+}
+
 impl<'db> Body<'db> {
     /// The type of the call `node` of `function` with `arguments` when it reduces a
     /// grouping, by `agg` or by a reduction written as a method. `None` for any other call.
@@ -128,6 +152,17 @@ impl<'db> Body<'db> {
                 .map(|column| vec![column]),
         };
         complete &= read.is_some();
+        let every = matches!(chosen, Chosen::Every);
+        let list = |index| self.tree.kind(index) == SyntaxKind::List;
+        let mode = Mode {
+            every,
+            listed: every || matches!(chosen, Chosen::Index(index) if list(index)),
+            text: match (wrong, numeric) {
+                (true, _) => Text::Quiet,
+                (false, true) => Text::Numeric,
+                (false, false) => Text::Reduced,
+            },
+        };
         if how == "size" {
             let whole = Type::new(
                 self.db,
@@ -135,42 +170,8 @@ impl<'db> Body<'db> {
             );
             complete &= self.added(&mut result, "size", whole, method);
         } else {
-            let every = matches!(chosen, Chosen::Every);
-            for (name, at) in read.unwrap_or_default() {
-                let stored = columns.iter().find(|column| column.name == name);
-                let Some(stored) = stored else {
-                    continue;
-                };
-                if !every && keys.contains(&name) {
-                    // pandas reduces a key as any column; a frame holds one column of each
-                    // name, so this waits for a name to give the second one.
-                    let message =
-                        format!("a grouping cannot reduce `{name}`, one of its keys, yet");
-                    let hint = "the result already holds each group's value of it";
-                    self.lowerer
-                        .error(at, &message, "a key, not a value", Some(hint));
-                    complete = false;
-                    continue;
-                }
-                let text = match stored.element.kind(self.db) {
-                    TypeKind::Optional(element) => matches!(element.kind(self.db), TypeKind::Str),
-                    kind => matches!(kind, TypeKind::Str),
-                };
-                let listed = !matches!(chosen, Chosen::Index(index) if index == at);
-                let listed = listed && !matches!(chosen, Chosen::Named(_));
-                if text && (wrong || (numeric && listed)) {
-                    continue;
-                }
-                if text && (numeric || !TEXT_REDUCTIONS.contains(&how.as_str())) {
-                    self.text_reduced(at, &how, &name, (every, numeric));
-                    complete = false;
-                    continue;
-                }
-                match self.reduced_element(at, stored, &how) {
-                    Some(element) => complete &= self.added(&mut result, &name, element, at),
-                    None => complete = false,
-                }
-            }
+            let read = read.unwrap_or_default();
+            complete &= self.reduce_columns(base, &keys, &mut result, &how, read, mode);
         }
         if !complete {
             return Some(self.lowerer.unknown());
@@ -182,6 +183,60 @@ impl<'db> Body<'db> {
         };
         self.typed.calls.insert(Key(node), call);
         Some(self.frame_of_columns(result))
+    }
+
+    /// Adds to `result`, the columns of the frame a grouping of the frame of type `base`
+    /// by `keys` gives, each column of `read` reduced by `how`, under its own name; `read`
+    /// pairs a column's name with the node an error about it points at. False after
+    /// reporting a column that cannot be reduced so: a key, or text under a reduction text
+    /// does not have. `mode` says which columns of `str` are left out without an error.
+    pub(super) fn reduce_columns(
+        &mut self,
+        base: Type<'db>,
+        keys: &[String],
+        result: &mut Vec<Column<'db>>,
+        how: &str,
+        read: Vec<(String, NodeId)>,
+        mode: Mode,
+    ) -> bool {
+        let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
+            return false;
+        };
+        let mut complete = true;
+        for (name, at) in read {
+            let stored = columns.iter().find(|column| column.name == name);
+            let Some(stored) = stored else {
+                continue;
+            };
+            if !mode.every && keys.contains(&name) {
+                // pandas reduces a key as any column; a frame holds one column of each
+                // name, so this waits for a name to give the second one.
+                let message = format!("a grouping cannot reduce `{name}`, one of its keys, yet");
+                let hint = "the result already holds each group's value of it";
+                self.lowerer
+                    .error(at, &message, "a key, not a value", Some(hint));
+                complete = false;
+                continue;
+            }
+            let text = match stored.element.kind(self.db) {
+                TypeKind::Optional(element) => matches!(element.kind(self.db), TypeKind::Str),
+                kind => matches!(kind, TypeKind::Str),
+            };
+            let numeric = mode.text == Text::Numeric;
+            if text && (mode.text == Text::Quiet || (numeric && mode.listed)) {
+                continue;
+            }
+            if text && (numeric || !TEXT_REDUCTIONS.contains(&how)) {
+                self.text_reduced(at, how, &name, (mode.every, numeric));
+                complete = false;
+                continue;
+            }
+            match self.reduced_element(at, stored, how) {
+                Some(element) => complete &= self.added(result, &name, element, at),
+                None => complete = false,
+            }
+        }
+        complete
     }
 
     /// Whether the reduction `how` of the call `node` was written with `numeric_only=True`,
@@ -245,7 +300,7 @@ impl<'db> Body<'db> {
     /// Adds the column `name` of `element` to `result`, the columns of the frame a grouping
     /// gives. False after reporting at `node` that the result already has a column of that
     /// name, which a key column named `size` gives `size()`.
-    fn added(
+    pub(super) fn added(
         &mut self,
         result: &mut Vec<Column<'db>>,
         name: &str,

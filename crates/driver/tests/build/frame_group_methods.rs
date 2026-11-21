@@ -1,7 +1,8 @@
 //! The reductions of a grouping written as methods (roadmap 3.13.22, decision 0045's
 //! amendment of 2026-11-19), built and run: `df.groupby(k).sum()`, a choice of columns by
 //! `[...]` or by `.name`, `size()` and `numeric_only=True`; and the arguments `as_index=False`
-//! and `sort=False` of `groupby` (roadmap 3.13.23).
+//! and `sort=False` of `groupby` (roadmap 3.13.23); and `agg` with a dict or one name
+//! (roadmap 3.13.24).
 
 use super::{baryon_build, package, stderr};
 use std::process::Command;
@@ -234,4 +235,70 @@ fn groups_come_in_the_order_they_appear() {
     let ran = Command::new(&executable).output().unwrap();
     assert_eq!(stderr(&ran), "");
     assert_eq!(String::from_utf8_lossy(&ran.stdout), UNSORTED_OUTPUT);
+}
+
+/// The program of `agg_takes_a_dict_or_one_name`.
+const FORMS: &str = r#"
+def main() -> None:
+    maybe: list[f64 | None] = [1.5, None, 3.0, None, 5.0, 6.0]
+    df = DataFrame(
+        {
+            "k": Array([2, 1, 2, 1, 3, 0]),
+            "s": Array(["b", "c", "b", "a", "a", "c"]),
+            "v": Array([1.5, 2.5, 3.0, 4.0, 5.0, 6.0]),
+            "n": Array([1, 2, 3, 4, 5, 6]),
+            "m": Array(maybe),
+        }
+    )
+    print(df.groupby("k").agg({"v": "sum", "n": "max"}))
+    print(df.groupby("s", sort=False).agg({"m": "mean", "k": "size", "v": "std"}))
+    print(df.groupby(["k", "s"]).agg({"n": "nunique"}))
+    print(df.groupby("k").agg("max"))
+    print(df.groupby("s").agg("size"))
+    print(df.head(0).groupby("k").agg({"s": "first", "m": "last"}))
+"#;
+
+/// What [`FORMS`] prints.
+const FORMS_OUTPUT: &str = r"   k    v  n
+0  0  6.0  6
+1  1  6.5  4
+2  2  4.5  3
+3  3  5.0  5
+   s     m  k         v
+0  b  2.25  2  1.060660
+1  c  6.00  2  2.474874
+2  a  5.00  2  0.707107
+   k  s  n
+0  0  c  1
+1  1  a  1
+2  1  c  1
+3  2  b  2
+4  3  a  1
+   k  s    v  n     m
+0  0  c  6.0  6   6.0
+1  1  c  4.0  4  <NA>
+2  2  b  3.0  3   3.0
+3  3  a  5.0  5   5.0
+   s  size
+0  a     2
+1  b     2
+2  c     2
+Empty DataFrame
+Columns: [k, s, m]
+Index: []
+";
+
+/// `agg` with a dict reduces each column named its own way under its own name, and `agg`
+/// with one name is that method (roadmap 3.13.24): with one key and two, `sort=False`,
+/// `size` and `nunique`, text, a column that may hold `None`, and a frame of no rows. Each
+/// frame is what pandas 3.0.5 prints for the same line with `as_index=False`, except that
+/// a missing float prints as `<NA>`.
+#[test]
+fn agg_takes_a_dict_or_one_name() {
+    let directory = package("frame_group_agg_forms", &[("main.byn", FORMS)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&executable).output().unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), FORMS_OUTPUT);
 }
