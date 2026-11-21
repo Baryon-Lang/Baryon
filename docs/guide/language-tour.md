@@ -258,7 +258,8 @@ $ baryon run generic
   from the arguments.
 - **`Callable[[f64], f64]`** takes a module-level function. The compiler builds a copy of
   `integrate` for each function passed, so the call to `f` is inlined and as fast as writing
-  `x * x` in the loop. Lambdas and closures are not in the language yet.
+  `x * x` in the loop. Lambdas, closures, methods and generic functions cannot be passed yet;
+  wrap one in a module-level function.
 
 [Generics](../reference/types.md#generics) and
 [functions as arguments](../reference/types.md#functions-as-arguments) have the rules.
@@ -396,8 +397,8 @@ not a number: could not convert string to float: 'heavy'
 
 - An error type is a class with the base `Exception` and typed fields, like a struct.
 - `float(text)` raises `ValueError` with Python's message.
-- Give each `except ... as` its own name: a name keeps one type for its whole scope, so the two
-  clauses cannot share `error` as they can in Python.
+- The name after `as` belongs to its `except` block, so two clauses can each call their error
+  `error`, as in Python.
 - `main` may raise too, as `def main() -> Raises[None, OSError]:`. An error that reaches the
   end of `main` prints its message and exits with status 1.
 

@@ -44,7 +44,7 @@ def main():
     trades: DataFrame[Trade] = DataFrame({"price": Array([1.0]), "volume": Array([2])})
     waves: DataFrame[Wave] = DataFrame({"phase": Array([1j]), "size": Array([1.0])})
     name = "price"
-    a = trades.drop_duplicates(keep="last")
+    a = trades.drop_duplicates(axis="rows")
     b = trades.drop_duplicates(subset="cost")
     c = trades.drop_duplicates(subset=name)
     d = trades.drop_duplicates(subset=[])
@@ -56,12 +56,12 @@ def main():
 "#;
     assert_eq!(
         check_one(program),
-        r#"error: `drop_duplicates` takes `subset=`, the columns to compare, or nothing
+        r#"error: `drop_duplicates` takes `subset=`, the columns to compare, and `keep=`
   --> main.byn:15:9
    |
-15 |     a = trades.drop_duplicates(keep="last")
+15 |     a = trades.drop_duplicates(axis="rows")
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `df.drop_duplicates()` or `df.drop_duplicates(subset=["symbol", "day"])`; the first of the rows that repeat is the one kept
+   = note: for example `df.drop_duplicates()` or `df.drop_duplicates(subset=["symbol", "day"], keep="last")`; the first of the rows that repeat is kept unless `keep=` says otherwise
 
 error: `DataFrame[Trade]` has no column `cost`
   --> main.byn:16:39
@@ -142,7 +142,7 @@ def main():
     kept: DataFrame[Counted] = trades.value_counts("symbol")
     sizes = waves.value_counts("size")
     total: i64 = sizes.count.sum() + sizes.size.nunique()
-    a = trades.value_counts("symbol", sort=False)
+    a = trades.value_counts("symbol", bins=False)
     b = trades.value_counts("cost")
     c = trades.value_counts(subset=[])
     d = trades.value_counts("count")
@@ -153,12 +153,12 @@ def main():
     );
     assert_eq!(
         diagnostics,
-        r#"error: `value_counts` takes `subset=`, the columns to compare, or nothing
+        r#"error: `value_counts` takes `subset=`, the columns to count by, then `normalize=`, `sort=`, `ascending=` and `dropna=`
   --> main.byn:22:9
    |
-22 |     a = trades.value_counts("symbol", sort=False)
+22 |     a = trades.value_counts("symbol", bins=False)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ wrong arguments
-   = note: for example `df.value_counts("symbol")` or `df.value_counts(["symbol", "day"])`
+   = note: for example `df.value_counts("symbol")` or `df.value_counts(["symbol", "day"], normalize=True)`
 
 error: `DataFrame[Trade]` has no column `cost`
   --> main.byn:23:29
@@ -229,7 +229,7 @@ def main():
     );
     assert_eq!(
         diagnostics,
-        r#"error: `describe` takes no arguments
+        r#"error: `describe` takes `percentiles=`, or nothing
   --> main.byn:10:9
    |
 10 |     a = trades.describe(include="all")

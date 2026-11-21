@@ -240,3 +240,251 @@ error: `self` has type `Bag[i64]`, found `Bag[f64]`
    |                                          ^ type `Bag[f64]`"
     );
 }
+
+/// Calls the checker cannot type are reported where they are written (roadmap 1.9.48 and
+/// 1.9.49): a type parameter called as a conversion under a bound that allows none, a method
+/// on a type parameter with no trait that has it, and a generic function whose arguments do
+/// not fix its type parameter. Before, each got an unknown type with no error, and the build
+/// stopped on "lowering does not handle this call yet" or "the LLVM backend does not compile
+/// values of type `unknown` yet".
+#[test]
+fn calls_the_checker_cannot_type_are_reported() {
+    let program = r"
+class Box[T](Struct):
+    items: list[T]
+
+
+def twice[T: VectorSpace](xs: list[T]) -> T:
+    s = xs[0] + xs[0]
+    return s * T(len(xs))
+
+
+def last[T](xs: list[T]) -> T:
+    return xs[len(xs) - 1].copy()
+
+
+def make[T]() -> list[T]:
+    out: list[T] = []
+    return out
+
+
+def use_them() -> int:
+    b = Box[f64]([1.0])
+    xs = make()
+    return len(b.items) + len(xs)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `T` is a type parameter, which cannot be called
+ --> main.byn:7:16
+  |
+7 |     return s * T(len(xs))
+  |                ^^^^^^^^^^ not a function
+  = note: a type parameter converts a number only under `Number` or `Float`, as `T(n)`; a \
+conversion otherwise names a number type, such as `f64(n)`
+
+error: `T` has no method `copy`
+  --> main.byn:11:12
+   |
+11 |     return xs[len(xs) - 1].copy()
+   |            ^^^^^^^^^^^^^^^^^^^^ not known for a type parameter
+   = note: a type parameter has only what its bound allows, and a trait has methods only: bound \
+it by a trait that lists the method
+
+error: `make` does not say what `T` is from its arguments
+  --> main.byn:21:10
+   |
+21 |     xs = make()
+   |          ^^^^^^ type argument not found
+   = note: a type argument is never written at a call; give the function a parameter whose \
+argument fixes `T`"
+    );
+}
+
+/// `T(x)` under `Number` or `Float` converts one real number (decision 0066, roadmap 1.9.59):
+/// a complex value, a `bool` or two values are errors at the call, as each is for `f64(...)`.
+#[test]
+fn a_conversion_to_a_type_parameter_takes_one_real_number() {
+    let program = r"
+def wrong[T: Number](x: T, z: complex128, flag: bool) -> T:
+    a = T(z)
+    b = T(flag)
+    return x + T(1, 2)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `T(...)` converts a real number, found `complex128`
+ --> main.byn:2:11
+  |
+2 |     a = T(z)
+  |           ^ not a real number
+  = note: an integer or a float of any width converts to a type parameter
+
+error: `T(...)` converts a real number, found `bool`
+ --> main.byn:3:11
+  |
+3 |     b = T(flag)
+  |           ^^^^ not a real number
+  = note: an integer or a float of any width converts to a type parameter
+
+error: `T(...)` converts one value, found 2
+ --> main.byn:4:16
+  |
+4 |     return x + T(1, 2)
+  |                ^^^^^^^ wrong number of arguments"
+    );
+}
+
+/// A number conversion of a type parameter's value, `f64(x)` with `x: T`, is reported as not
+/// built yet (roadmap 1.9.69, idea I.72), under `Number` and `Float` alike.
+#[test]
+fn a_number_conversion_of_a_type_parameter_is_reported() {
+    let program = r"
+def scaled[T: Number](x: T, k: f64) -> T:
+    return T(f64(x) * k)
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: `f64(...)` cannot convert a value of type `T` yet
+ --> main.byn:2:18
+  |
+2 |     return T(f64(x) * k)
+  |                  ^ a type parameter's value
+  = note: convert the other value to the type parameter instead, as in `x * T(k)`"
+    );
+}
+
+/// A generic struct built with its type arguments written checks its arguments against the
+/// fields at those arguments (decision 0066, roadmap 1.9.61): a written argument that breaks
+/// its parameter's bound is an error, as an inferred one is, and so is a field of another
+/// type. Without the written arguments, an empty list still has no element type.
+#[test]
+fn a_struct_built_with_written_type_arguments_checks_its_fields() {
+    let program = r#"
+class Pair[T: Number](Struct):
+    a: T
+    b: T
+
+
+class Box[T](Struct):
+    items: list[T]
+
+
+def main():
+    p = Pair[str]("a", "b")
+    q = Pair[f64](f32(1.5), 2.0)
+    c: Box[f64] = Box([])
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:11:9
+   |
+11 |     p = Pair[str](\"a\", \"b\")
+   |         ^^^^^^^^^ bound not satisfied
+
+error: `a` has type `f64`, found `f32`
+  --> main.byn:12:19
+   |
+12 |     q = Pair[f64](f32(1.5), 2.0)
+   |                   ^^^^^^^^ type `f32`
+
+error: an empty list needs its type written
+  --> main.byn:13:23
+   |
+13 |     c: Box[f64] = Box([])
+   |                       ^^ the item type is unknown
+   = note: for example `values: list[f64] = []`"
+    );
+}
+
+/// A type argument written on a class is checked against its parameter's bound wherever it is
+/// written (decision 0066, roadmap 1.9.63): in a field, an alias, a parameter, a local
+/// annotation and on a class function, as on a constructor. A struct that names a user trait
+/// satisfies it in its own field, `children: Holder[Node]`, and one that does not is reported.
+#[test]
+fn written_type_arguments_are_checked_against_their_bounds() {
+    let program = r#"
+class Shape(Protocol):
+    def area(self) -> f64: ...
+
+
+class Holder[T: Shape](Struct):
+    items: list[T]
+
+
+class Node(Struct, Shape):
+    children: Holder[Node]
+
+    def area(self) -> f64:
+        return 1.0
+
+
+class Plain(Struct):
+    held: Holder[Plain]
+
+
+class Pair[T: Number](Struct):
+    a: T
+    b: T
+
+    def both(x: T) -> Pair[T]:
+        return Pair(x, x)
+
+
+Text = Pair[str]
+
+
+def take(p: Pair[bool]) -> i64:
+    return 0
+
+
+def main():
+    p: Pair[str] = Pair[str]("a", "b")
+    q = Pair[bool].both(True)
+    r: Pair[f32] = Pair[f32].both(f32(1.0))
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:36:8
+   |
+36 |     p: Pair[str] = Pair[str](\"a\", \"b\")
+   |        ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:36:20
+   |
+36 |     p: Pair[str] = Pair[str](\"a\", \"b\")
+   |                    ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `bool`
+  --> main.byn:37:9
+   |
+37 |     q = Pair[bool].both(True)
+   |         ^^^^^^^^^^ bound not satisfied
+
+error: `Holder` needs `T` to be a `Shape`, found `Plain`
+  --> main.byn:17:11
+   |
+17 |     held: Holder[Plain]
+   |           ^^^^^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `str`
+  --> main.byn:28:8
+   |
+28 | Text = Pair[str]
+   |        ^^^^^^^^^ bound not satisfied
+
+error: `Pair` needs `T` to be a `Number`, found `bool`
+  --> main.byn:31:13
+   |
+31 | def take(p: Pair[bool]) -> i64:
+   |             ^^^^^^^^^^ bound not satisfied"
+    );
+}

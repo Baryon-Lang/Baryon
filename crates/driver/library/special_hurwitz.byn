@@ -1,0 +1,72 @@
+"""The Hurwitz zeta function for `special`, ζ(s, q), which `polygamma` and `zeta` both sum
+(roadmap 3.18.17 moved it here from `special_gamma` when its weights became a function).
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import inf, pow
+from special_common import is_integer
+
+
+def _bernoulli_weight(j: int) -> f64:
+    """B₂ⱼ₊₂ / (2j + 2)!, the weight of the Euler–Maclaurin correction term j, for j from 0 to
+    11. A chain of tests rather than an `Array`, which `hurwitz_zeta` would build on every call."""
+    if j == 0:
+        return 0.08333333333333333
+    elif j == 1:
+        return -0.001388888888888889
+    elif j == 2:
+        return 3.306878306878307e-05
+    elif j == 3:
+        return -8.267195767195768e-07
+    elif j == 4:
+        return 2.08767569878681e-08
+    elif j == 5:
+        return -5.284190138687493e-10
+    elif j == 6:
+        return 1.3382536530684679e-11
+    elif j == 7:
+        return -3.3896802963225827e-13
+    elif j == 8:
+        return 8.586062056277845e-15
+    elif j == 9:
+        return -2.174868698558062e-16
+    elif j == 10:
+        return 5.5090028283602295e-18
+    return -1.3954464685812522e-19
+
+
+def hurwitz_zeta(s: f64, q: f64) -> f64:
+    """The Hurwitz zeta function ζ(s, q), the sum of (q + k)^(−s) over k from 0, for `s` from 0
+    up other than 1, by the Euler–Maclaurin formula, which holds on both sides of the pole.
+
+    Sums the first terms directly until q + k is at least 10 more than `s`, then adds the
+    integral, half the next term and Bernoulli terms until they stop changing the sum. The
+    direct sum stops early, once every term left is positive and their bound a·a⁻ˢ/(s − 1)
+    falls below 1e-17 of the sum, which for large `s` saves most of the powers (roadmap
+    3.18.17). A `q` at
+    0 or a negative whole number is a pole: infinity.
+    """
+    if q <= 0.0 and is_integer(q):
+        return inf
+    a = q
+    total = 0.0
+    while a < 10.0 + s:
+        term = pow(a, -s)
+        total += term
+        a += 1.0
+        if a > 1.0 and a * term <= 1.0e-17 * (s - 1.0) * total:
+            # The rest of the sum is below a·a⁻ˢ/(s − 1), too small to change it.
+            return total
+    term = pow(a, -s)
+    total += a * term / (s - 1.0) + 0.5 * term
+    factor = s
+    power = term / a
+    for j in range(12):
+        change = _bernoulli_weight(j) * factor * power
+        total += change
+        if abs(change) <= 1.0e-17 * abs(total):
+            break
+        factor *= (s + 2.0 * j + 1.0) * (s + 2.0 * j + 2.0)
+        power /= a * a
+    return total

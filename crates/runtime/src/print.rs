@@ -103,11 +103,12 @@ pub(crate) fn bool(value: bool) -> &'static str {
     if value { "True" } else { "False" }
 }
 
-/// `value` as Python's `repr` writes a float. `shortest` is Rust's `{:e}` form of it, which has
-/// the fewest digits that read back as the same value at its own precision: the caller formats
-/// an `f32` and an `f64` alike.
+/// `value` as Python's `repr` writes a float. `shortest` is its `{:e}` form from
+/// [`shortest`](crate::shortest::shortest), which has the fewest digits that read back as the
+/// same value at its own precision, a tie going to the even digit: the caller formats an `f32`
+/// and an `f64` alike.
 ///
-/// Rust and Python pick the same digits; they differ only in where they put the point. Python
+/// Those are the digits Python picks; the two differ only in where they put the point. Python
 /// writes `d.ddde±XX` when the decimal exponent `X` is below -4 or at least 16, with at least
 /// two exponent digits, and plain digits otherwise, with `.0` after a whole number.
 pub(crate) fn float(shortest: &str) -> String {

@@ -204,3 +204,79 @@ def main():
         "aq xy ['az', 'baq']\n"
     );
 }
+
+/// A value with no format specification in an f-string is written as `print` writes it, for
+/// every type `print` writes (roadmap 1.9.57): a list, a tuple, a struct, an enum member, an
+/// array, a dict, `None` and a `T | None` either way, inside `print(..., file=f)` too. Before,
+/// each but the numbers and `str` stopped the backend with "values of type ... in an f-string".
+#[test]
+fn f_strings_write_any_value_as_print_writes_it() {
+    let program = "\
+class Point(Struct):
+    x: f64
+    name: str
+
+
+class Phase(Enum):
+    SOLID = 1
+    GAS = 2
+
+
+def label(v: f64 | None) -> str:
+    return f\"v={v}\"
+
+
+def main() -> Raises[None, OSError]:
+    xs = [1, 2, 3]
+    t = (1, \"a\", 2.5)
+    p = Point(1.5, \"p\")
+    a = Array([1.0, 2.5])
+    d = {\"k\": 1}
+    print(f\"{xs} {t} {p} {Phase.GAS} {a} {d} {None} {label(None)} {label(2.0)}\")
+    s = f\"[{xs}|{t}]\"
+    print(s, len(s))
+    with open(\"out.txt\", \"w\") as f:
+        print(f\"inside {p}\", file=f)
+    with open(\"out.txt\") as f:
+        print(f.read(), end=\"\")
+";
+    let directory = package("f_string_values", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program)
+        .current_dir(&directory)
+        .output()
+        .unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[1, 2, 3] (1, 'a', 2.5) Point(x=1.5, name='p') Phase.GAS [1.  2.5] {'k': 1} None v=None \
+         v=2.0\n[[1, 2, 3]|(1, 'a', 2.5)] 25\ninside Point(x=1.5, name='p')\n"
+    );
+}
+
+/// A float halfway between two strings of its fewest digits takes the even one wherever it is
+/// written as text, as Python's `repr` and `NumPy` write it (roadmap 1.9.62): `print`,
+/// f-strings and printed arrays all started from Rust's digits, which take the upper one.
+#[test]
+fn a_float_halfway_between_its_shortest_digits_takes_the_even_one() {
+    let program = "\
+def main():
+    x = 1125899906842624.25
+    y = f32(45635.3125)
+    print(x, f\"{x}\", y, f\"{y}\", f32(2425435.25), 0.1 + 0.2)
+    c: Array[f32, 1] = Array.zeros((1,))
+    c[0] = y
+    print(c)
+";
+    let directory = package("float_ties", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "1125899906842624.2 1125899906842624.2 45635.312 45635.312 2425435.2 \
+         0.30000000000000004\n[45635.312]\n"
+    );
+}

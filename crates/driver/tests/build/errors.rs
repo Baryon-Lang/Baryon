@@ -60,6 +60,50 @@ def main():
     );
 }
 
+/// Two `except` clauses of one `try`, and a nested `try` inside the first, each bind `error` to
+/// their own error type, as Python allows: the name belongs to its clause (roadmap 1.9.32).
+/// Before, the checker gave `error` one type for the whole function and rejected the second.
+#[test]
+fn except_clauses_reuse_one_name() {
+    let program = "\
+class Negative(Exception):
+    value: f64
+
+
+def parse(text: str) -> Raises[f64, ValueError | Negative]:
+    value = float(text)
+    if value < 0.0:
+        raise Negative(value)
+    return value
+
+
+def main():
+    for text in [\"1.5\", \"-2.0\", \"heavy\"]:
+        try:
+            print(parse(text))
+        except Negative as error:
+            try:
+                float(\"x\")
+            except ValueError as error:
+                print(\"inner:\", error.message)
+            print(\"negative:\", error.value)
+        except ValueError as error:
+            print(\"not a number:\", error.message)
+";
+    let directory = package("except_names", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "1.5\n\
+         inner: could not convert string to float: 'x'\n\
+         negative: -2.0\n\
+         not a number: could not convert string to float: 'heavy'\n"
+    );
+}
+
 /// An error that reaches the end of `main` is printed to standard error with its type and fields,
 /// and the program exits with status 1 (the reference, "Errors"). The second error of the list
 /// is raised, so the report picks it by its position.

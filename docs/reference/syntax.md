@@ -229,7 +229,7 @@ The whole program is the example [`energy_audit.byn`](../examples/energy_audit.b
 | `is None`, `is not None` | yes | `is` and `is not` compare only with `None` |
 | `in`, `not in` | yes | On lists, strings, tuples and dicts |
 | Conditional `a if c else b` | yes | |
-| Calls with positional and keyword arguments | yes | No `*args` or `**kwargs`, in calls or in definitions |
+| Calls with positional and keyword arguments | yes | `f(x, *args)` only on a tuple, last, to call a `Callable` (see [Extra arguments for a callback](types.md#extra-arguments-for-a-callback)); no `*args` in definitions and no `**kwargs` |
 | Attributes `a.b`, subscripts `a[i, j]`, slices `a[1:n, ::2]` | yes | See [Arrays](arrays.md) |
 | Tuples and lists `(a, b)`, `[a, b]` | yes | |
 | List comprehensions `[f(x) for x in xs if p(x)]` | yes | Produce a `list` |
@@ -276,7 +276,9 @@ Python's own built-in names that the language keeps, with their Python meaning w
 followed by a line end. A float prints as Python's `repr` writes it, with the fewest digits that
 read back as the same value: `0.1`, `2.0`, `0.30000000000000004`, and an exponent below `1e-4` or
 from `1e16` up, as in `1.5e-05` and `1e+16`. An `f32` prints the fewest digits that read back as
-the same `f32`, so `f32(0.1)` prints `0.1`. A `bool` prints `True` or `False`.
+the same `f32`, so `f32(0.1)` prints `0.1`. When two strings of that length both read back, the
+one nearer the value wins, and a value halfway between them takes the even last digit, as in
+Python and NumPy: `f32(45635.3125)` prints `45635.312`. A `bool` prints `True` or `False`.
 
 ```python
 def main():

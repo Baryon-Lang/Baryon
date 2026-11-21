@@ -58,7 +58,7 @@ What becomes easier, what becomes harder, and what we give up.
 | [0023. The language is named Baryon, its files end in `.byn`, and its tool is `baryon`](0023-language-name-baryon.md) | Accepted |
 | [0024. Accumulated arrays compile to an `Accumulate` statement over lazily made private blocks](0024-compiling-accumulated-arrays.md) | Accepted |
 | [0025. The VS Code extension lives in `editors/vscode/` and highlights with Python's grammar](0025-vscode-extension.md) | Accepted |
-| [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted |
+| [0026. A function passed as an argument is a compile-time argument, compiled once per function](0026-functions-as-arguments.md) | Accepted, amended 2026-11-19 |
 | [0027. When a default parameter value is evaluated](0027-default-parameter-evaluation.md) | Accepted |
 | [0028. `random.Philox` gives the same numbers as NumPy's Philox, and the compiler builds it in](0028-philox-random-numbers.md) | Accepted |
 | [0029. The runtime keeps the standard library; programs drop unused code, not `std`](0029-runtime-size.md) | Accepted |
@@ -73,11 +73,11 @@ What becomes easier, what becomes harder, and what we give up.
 | [0038. Standard-library classes are Baryon source shipped inside the compiler](0038-standard-library-in-baryon.md) | Accepted |
 | [0039. AstroBaryon keeps AstroPy's names](0039-astrobaryon-keeps-astropy-names.md) | Accepted |
 | [0040. `linalg` and `fft` follow NumPy and are written in Baryon](0040-linear-algebra-and-fft.md) | Accepted |
-| [0041. A sum of a whole-array expression is computed one pairwise leaf at a time](0041-one-pass-reductions.md) | Accepted |
+| [0041. A sum of a whole-array expression is computed one pairwise leaf at a time](0041-one-pass-reductions.md) | Accepted, amended 2026-11-19 |
 | [0042. Statistics keep NumPy's names and bits, and its functions live in `stats`](0042-statistics.md) | Accepted |
 | [0043. Text tables and `.npy` files are read and written with NumPy's names, as `Array` functions](0043-array-data-files.md) | Accepted |
 | [0044. FITS images and headers are read and written with AstroPy's names, in a `fits` module](0044-fits-images-and-headers.md) | Accepted |
-| [0045. A `DataFrame` has a schema the compiler checks, columns that are arrays, and pandas's names](0045-dataframe.md) | Accepted |
+| [0045. A `DataFrame` has a schema the compiler checks, columns that are arrays, and pandas's names](0045-dataframe.md) | Accepted, amended 2026-11-19 |
 | [0046. Plots are drawn with matplotlib's object-oriented names, in a `byplot` module, to SVG first](0046-plotting.md) | Accepted, amended twice on 2026-11-13 |
 | [0047. NetCDF classic files are read and written with netCDF4's names](0047-netcdf-classic-files.md) | Accepted |
 | [0048. Debug builds compile fast and run unoptimized; Cranelift must earn its place](0048-debug-builds-compile-fast.md) | Accepted |
@@ -95,5 +95,10 @@ What becomes easier, what becomes harder, and what we give up.
 | [0060. Networking takes its TLS from the operating system](0060-tls-from-the-operating-system.md) | Accepted |
 | [0061. AstroBaryon ships in the standard distribution until a package registry exists](0061-astrobaryon-ships-with-baryon.md) | Accepted |
 | [0062. A standard-library module re-exports a name with `from x import name as name`](0062-standard-library-reexports.md) | Accepted |
-| [0063. A class's `__del__` runs when its value is dropped](0063-drop-hooks.md) | Proposed |
+| [0063. A class's `__del__` runs when its value is dropped](0063-drop-hooks.md) | Accepted |
 | [0064. Bytes become text by UTF-8: `str.encode`, `Array.decode` and compressed text files](0064-utf-8-text-from-bytes.md) | Accepted |
+| [0065. `integrate` keeps SciPy's calls, with a generic state and `method=` chosen when compiling](0065-integrate-api.md) | Accepted |
+| [0066. Converting to a type parameter, and type arguments on a constructor](0066-converting-to-and-naming-type-parameters.md) | Accepted |
+| [0067. Library functions may share a name, chosen by argument type](0067-library-overloading.md) | Accepted |
+| [0069. `interpolate` keeps SciPy's names, with scalar calls, 2-D grids and panics for bad input](0069-interpolate-api.md) | Accepted |
+| [0070. Baryon's logo is the Kanizsa B in brass on forest green](0070-baryon-logo.md) | Accepted |

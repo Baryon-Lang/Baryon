@@ -129,12 +129,13 @@ impl<'db> Function<'_, '_, 'db> {
                             .map(|condition| format!("icmp {condition} {llvm} {a}, {b}"))
                     }),
             },
+            // `False` orders before `True`, as 0 before 1 unsigned, which `min` and `max` of a
+            // `bool` array need (roadmap 1.9.40).
             (Number::Bool, _) => bitwise(operator)
                 .map(|instruction| format!("{instruction} i1 {a}, {b}"))
-                .or_else(|| match operator {
-                    BinaryOperator::Equal => Some(format!("icmp eq i1 {a}, {b}")),
-                    BinaryOperator::NotEqual => Some(format!("icmp ne i1 {a}, {b}")),
-                    _ => None,
+                .or_else(|| {
+                    integer_comparison(operator, false)
+                        .map(|condition| format!("icmp {condition} i1 {a}, {b}"))
                 }),
         };
         let instruction = instruction.ok_or_else(|| {
@@ -240,7 +241,8 @@ impl<'db> Function<'_, '_, 'db> {
 
     /// `a // b` on floats as Python computes it: `(a - fmod(a, b)) / b`, less one when the
     /// remainder's sign differs from `b`'s, rounded to the nearest whole number; a zero result
-    /// carries the sign of `a / b`.
+    /// carries the sign of `a / b`. A zero `b` gives `a / b`, as `NumPy` does, where Python
+    /// raises `ZeroDivisionError`.
     fn float_floor_divide(&mut self, llvm: &str, a: &str, b: &str) -> String {
         let (remainder, _, adjust) = self.float_division(llvm, a, b);
         let exact = self.emit(&format!("fsub {llvm} {a}, {remainder}"));
@@ -266,8 +268,14 @@ impl<'db> Function<'_, '_, 'db> {
         let nonzero = self.emit(&format!("fcmp une {llvm} {quotient}, 0.0"));
         let true_quotient = self.emit(&format!("fdiv {llvm} {a}, {b}"));
         let zero = self.copysign(llvm, "0.0", &true_quotient);
-        self.emit(&format!(
+        let floored = self.emit(&format!(
             "select i1 {nonzero}, {llvm} {rounded}, {llvm} {zero}"
+        ));
+        // By zero, `NumPy` gives `a / b`: an infinity with the sign of the quotient, or NaN for
+        // `0.0 // 0.0` (roadmap 1.9.39).
+        let by_zero = self.emit(&format!("fcmp oeq {llvm} {b}, 0.0"));
+        self.emit(&format!(
+            "select i1 {by_zero}, {llvm} {true_quotient}, {llvm} {floored}"
         ))
     }
 
@@ -371,6 +379,10 @@ impl<'db> Function<'_, '_, 'db> {
     /// Whether the `T | None` at `place` holds a value: its flag.
     fn is_present(&mut self, place: &Place) -> Result<String, Unsupported> {
         let (address, ty) = self.place(place)?;
+        // A `T | None` whose `T` is the type `None` is `None` itself (roadmap 1.9.51).
+        if matches!(ty.kind(self.types.db), TypeKind::None) {
+            return Ok("false".to_owned());
+        }
         let llvm = self.types.value(ty)?;
         let flag = self.emit(&format!(
             "getelementptr inbounds {llvm}, ptr {address}, i32 0, i32 1"

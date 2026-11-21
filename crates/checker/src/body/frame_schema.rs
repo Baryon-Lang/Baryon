@@ -1,6 +1,7 @@
 //! Choosing and changing the columns of a frame (decision 0045, roadmap 3.13.4):
 //! `df[["a", "b"]]`, `df.assign(name=values)`, `df.drop(columns=[...])` and
-//! `df.rename(columns={...})`.
+//! `df.rename(columns={...})`. `drop` and `rename` also take pandas's other form, the
+//! names first with `axis=1` (roadmap 3.13.18).
 //!
 //! Each gives a frame with other columns than the one it starts from, so the compiler works
 //! out the result's type here: its columns are listed, and no struct names its rows. Every
@@ -83,7 +84,8 @@ impl<'db> Body<'db> {
     /// The columns `df.assign(name=values, ...)` gives: those of the frame, `columns`, with a
     /// column of an existing name replaced where it stands and each new one added at the
     /// end, in the order written, as in pandas. Each value is an array of rank 1, which
-    /// moves in. `None` after an error.
+    /// moves in, or one number, `bool` or `str`, which every row of the column then holds
+    /// (roadmap 3.13.18). `None` after an error.
     fn frame_assign(
         &mut self,
         node: NodeId,
@@ -121,6 +123,8 @@ impl<'db> Body<'db> {
                     continue;
                 }
                 TypeKind::TextArray => Type::new(self.db, TypeKind::Str),
+                // One value for every row, as in pandas: the column holds its type.
+                TypeKind::Primitive(_) | TypeKind::Str => found,
                 TypeKind::Array { element, rank: 1 } => {
                     let message = format!(
                         "a column of a `DataFrame` cannot hold `{}` yet",
@@ -133,17 +137,14 @@ impl<'db> Body<'db> {
                 }
                 _ => {
                     let message = format!(
-                        "a column is an array of rank 1, found `{}`",
+                        "a column is an array of rank 1 or one value for every row, found `{}`",
                         self.show(found)
                     );
                     self.lowerer.error(
                         value,
                         &message,
                         "not a column",
-                        Some(
-                            "to give every row one value, build the array: \
-                             `Array.fill(len(df), value)`",
-                        ),
+                        Some("one value is a number, a `bool` or a `str`: `df.assign(fee=0.5)`"),
                     );
                     complete = false;
                     continue;
@@ -168,15 +169,12 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        let Some(given) = self.columns_argument(arguments) else {
-            self.lowerer.error(
-                node,
-                "`drop` takes the columns to leave out as `columns=`",
-                "wrong arguments",
-                Some("for example `df.drop(columns=[\"volume\"])`"),
-            );
-            return None;
-        };
+        let usage = (
+            "labels",
+            "`drop` takes the columns to leave out as `columns=`, or first with `axis=1`",
+            "for example `df.drop(columns=[\"volume\"])` or `df.drop(\"volume\", axis=1)`",
+        );
+        let given = self.columns_argument(node, arguments, usage)?;
         let names = if self.tree.kind(given) == SyntaxKind::List {
             self.column_names(given, base)?
         } else {
@@ -211,18 +209,20 @@ impl<'db> Body<'db> {
         let TypeKind::DataFrame { columns, .. } = base.kind(self.db) else {
             return None;
         };
-        let table = self
-            .columns_argument(arguments)
-            .filter(|&given| self.tree.kind(given) == SyntaxKind::Dictionary);
-        let Some(table) = table else {
-            self.lowerer.error(
-                node,
-                "`rename` takes the new names as `columns=`, a dict from old name to new",
-                "wrong arguments",
-                Some("for example `df.rename(columns={\"price\": \"cost\"})`"),
-            );
+        let usage = (
+            "mapper",
+            "`rename` takes the new names as `columns=`, a dict from old name to new, or \
+             first with `axis=1`",
+            "for example `df.rename(columns={\"price\": \"cost\"})` or \
+             `df.rename({\"price\": \"cost\"}, axis=1)`",
+        );
+        let table = self.columns_argument(node, arguments, usage)?;
+        if self.tree.kind(table) != SyntaxKind::Dictionary {
+            self.expression(table, None);
+            self.lowerer
+                .error(node, usage.1, "wrong arguments", Some(usage.2));
             return None;
-        };
+        }
         let mut result = columns.clone();
         let mut complete = true;
         let entries: Vec<NodeId> = self.tree.children_with(table, Role::Item).collect();
@@ -263,19 +263,59 @@ impl<'db> Body<'db> {
         complete.then_some(result)
     }
 
-    /// The value of the one argument of `df.drop` or `df.rename`, which is given as
-    /// `columns=`; `None`, after typing whatever was passed, for any other arguments.
-    fn columns_argument(&mut self, arguments: &Arguments) -> Option<NodeId> {
-        match (
-            arguments.positional.as_slice(),
-            arguments.keywords.as_slice(),
-        ) {
-            ([], &[(name, value)]) if self.tree.text(name, self.text) == "columns" => Some(value),
+    /// The value that names columns in the call `node` of `df.drop` or `df.rename`, in one
+    /// of pandas's two forms: `columns=value`, or the value first, or under the keyword
+    /// `usage.0`, with `axis=1` or `axis="columns"` (roadmap 3.13.18). `None`, after typing
+    /// whatever was passed and reporting it with the message `usage.1` and the hint
+    /// `usage.2`, for any other arguments. An `axis` that names the rows has its own
+    /// report, since a frame has no row index for it to name.
+    fn columns_argument(
+        &mut self,
+        node: NodeId,
+        arguments: &Arguments,
+        usage: (&str, &str, &str),
+    ) -> Option<NodeId> {
+        let named = |body: &Self, wanted: &str| {
+            let found = arguments
+                .keywords
+                .iter()
+                .filter(|&&(name, _)| body.tree.text(name, body.text) == wanted);
+            found.map(|&(_, value)| value).next()
+        };
+        let given = arguments.positional.len() + arguments.keywords.len();
+        let axis = named(self, "axis");
+        let first = match arguments.positional.as_slice() {
+            [] => named(self, usage.0),
+            &[first] => Some(first),
+            _ => None,
+        };
+        match (named(self, "columns"), first, axis) {
+            (Some(columns), None, None) if given == 1 => return Some(columns),
+            (None, Some(first), Some(axis)) if given == 2 => {
+                let across = self.tree.kind(axis) == SyntaxKind::Integer
+                    && self.tree.text(axis, self.text) == "1"
+                    || self.literal_text(axis) == Some("columns");
+                if across {
+                    return Some(first);
+                }
+                self.untyped(arguments);
+                self.lowerer.error(
+                    axis,
+                    "`axis` is `1` or `\"columns\"`, written out",
+                    "not the columns",
+                    Some(
+                        "a `DataFrame` has no row index, so there are no row labels to name; \
+                         choose rows with a mask, `df[df.price > 0.0]`",
+                    ),
+                );
+            }
             _ => {
                 self.untyped(arguments);
-                None
+                self.lowerer
+                    .error(node, usage.1, "wrong arguments", Some(usage.2));
             }
         }
+        None
     }
 
     /// The column names the list `list` writes, each a string literal that names a column of

@@ -1,0 +1,225 @@
+"""The logarithm of the gamma function for `special`: `loggamma` of a real argument (roadmap
+3.18.1) and of a complex one (roadmap 3.18.6), two overloads of one name (decision 0067).
+
+The complex `loggamma` is the principal branch, as SciPy's is: the analytic continuation of the
+real log Γ from the positive axis, with its branch cut along the negative axis, so its
+imaginary part is not the angle of Γ(z) but grows without bound, and loggamma(z + 1) =
+loggamma(z) + log(z) holds everywhere off the cut. It follows SciPy's method (Hare, 1997):
+
+- far from 0, with Re z above 7 or |Im z| above 7, Stirling's series, which needs 8 terms;
+- on the real axis, `gammaln`, with the imaginary part the cut gives below 0;
+- within 0.2 of 1, the Taylor series of log Γ(1 + w), −γw + Σ (−1)ᵏ ζ(k)/k wᵏ, and within 0.2
+  of 2 the same after one step down, so that the zeros of log Γ at 1 and 2 keep their relative
+  precision; within 0.5 of 1.5, which SciPy does not have, the Taylor series about 1.5;
+- left of Re z = 0.1, the reflection formula log π − log sin(πz) − log Γ(1 − z), plus the
+  multiple of 2πi that restores the principal branch, sign(Im z) · 2πi · ⌊Re z/2 + 1/4⌋;
+- from Re z = 0.1 to 1 with |Im z| below 0.5, one step up, log Γ(z + 1) − log z;
+- elsewhere the recurrence log Γ(z) = log Γ(z + n) − Σ log(z + k), with z + n past Re 7.
+
+The disc around 1.5 and the step up are Baryon's: they take the worst error from 42 ULP to 21,
+where SciPy's is 58.
+
+The Taylor and Stirling coefficients are ζ(k)/k, ψ⁽ᵏ⁻¹⁾(1.5)/k! and B₂ₖ/(2k(2k − 1)),
+computed with mpmath and rounded to `f64`. The compiler reads this file for `<std>/special.byn`;
+a program cannot import it.
+"""
+
+from math import atan2, cosh, floor, hypot, inf, isinf, isnan, log, log1p, nan, pi, sinh
+from special_common import HALF_LOG_TWO_PI, cospi, is_integer, sinpi
+from special_gamma import gammaln
+
+
+_LOG_PI: Final = 1.1447298858494002  # log π, rounded to f64
+_FAR: Final = 7.0  # past this real or imaginary part, Stirling's series converges to f64
+_NEAR: Final = 0.2  # the radius of the Taylor series around 1 and 2
+_MIDDLE: Final = 0.5  # the radius of the Taylor series around 1.5
+
+
+def loggamma(x: f64) -> f64:
+    """The logarithm of the gamma function, as `scipy.special.loggamma` of a real argument:
+    `gammaln(x)` from 0 up, and NaN below 0, where Γ can be negative and its logarithm is not
+    real. Infinity at +0.0 and at −0.0, as SciPy gives. A complex argument takes the overload
+    below.
+
+    ```python
+    from special import loggamma
+
+    print(loggamma(3.0))    # 0.6931471805599453, log 2
+    print(loggamma(-0.5))   # nan
+    ```
+    """
+    if x < 0.0:
+        return nan
+    return gammaln(x)
+
+
+def loggamma(z: complex128) -> complex128:
+    """The principal branch of the logarithm of the gamma function, as `scipy.special.loggamma`
+    of a complex argument. NaN at the poles 0, −1, −2, … and wherever a part is infinite or NaN,
+    as SciPy gives.
+
+    ```python
+    from special import loggamma
+
+    print(loggamma(complex(1.0, 2.0)))    # (-1.876078786430929+0.12964631630978873j)
+    print(loggamma(complex(-2.5, 0.0)))   # (-0.05624371649767412-9.42477796076938j)
+    ```
+    """
+    x = z.real
+    y = z.imag
+    if isnan(x) or isnan(y) or isinf(x) or isinf(y) or (y == 0.0 and x <= 0.0 and is_integer(x)):
+        return complex(nan, nan)
+    if y == 0.0:
+        return _real_axis(x, y)
+    if x > _FAR or abs(y) > _FAR:
+        return _stirling(z)
+    if hypot(x - 1.0, y) <= _NEAR:
+        return _taylor(complex(x - 1.0, y))
+    if hypot(x - 2.0, y) <= _NEAR:
+        return _log_near_one(complex(x - 1.0, y)) + _taylor(complex(x - 2.0, y))
+    if hypot(x - 1.5, y) <= _MIDDLE:
+        return _taylor_middle(complex(x - 1.5, y))
+    if x < 0.1:
+        return _reflection(z)
+    if x < 1.0 and abs(y) < _MIDDLE:
+        return loggamma(complex(x + 1.0, y)) - _log(z)
+    return _recurrence(z)
+
+
+def _real_axis(x: f64, y: f64) -> complex128:
+    """log Γ(x) on the real axis, y being +0.0 or −0.0: log |Γ(x)| from `gammaln`, which is
+    exact to a few ULP, and for x below 0, on the cut, the imaginary part −π⌈−x⌉ that the
+    principal branch takes from above, or its negative from below, by the sign of the zero."""
+    if x > 0.0:
+        return complex(gammaln(x), y)
+    turns = -float(floor(x))
+    if 1.0 / y < 0.0:
+        return complex(gammaln(x), pi * turns)
+    return complex(gammaln(x), -pi * turns)
+
+
+def _log(z: complex128) -> complex128:
+    """The principal logarithm of `z`, with its imaginary part in (−π, π]."""
+    return complex(log(hypot(z.real, z.imag)), atan2(z.imag, z.real))
+
+
+def _log_near_one(z: complex128) -> complex128:
+    """The principal logarithm of `z` near 1, its real part as ½ log1p(|z|² − 1), with
+    |z|² − 1 = 2u + u² + y² for u = Re z − 1, so that it keeps its relative precision."""
+    u = z.real - 1.0
+    return complex(0.5 * log1p(u * (2.0 + u) + z.imag * z.imag), atan2(z.imag, z.real))
+
+
+def _stirling(z: complex128) -> complex128:
+    """log Γ(z) by Stirling's series, (z − ½) log z − z + ½ log 2π + Σ B₂ₖ/(2k(2k − 1) z²ᵏ⁻¹),
+    for |z| above about 7, where 8 terms reach `f64`."""
+    reciprocal = 1.0 / z
+    square = reciprocal * reciprocal
+    series = complex(-0.029550653594771242, 0.0)
+    series = series * square + 0.00641025641025641
+    series = series * square - 0.0019175269175269176
+    series = series * square + 0.0008417508417508417
+    series = series * square - 0.0005952380952380953
+    series = series * square + 0.0007936507936507937
+    series = series * square - 0.002777777777777778
+    series = series * square + 0.08333333333333333
+    return (z - 0.5) * _log(z) - z + HALF_LOG_TWO_PI + reciprocal * series
+
+
+def _taylor(w: complex128) -> complex128:
+    """log Γ(1 + w) for |w| at most 0.2, by its Taylor series −γw + Σ (−1)ᵏ ζ(k)/k wᵏ to k =
+    23, whose last term is below 10⁻¹⁷ of the first."""
+    series = complex(-0.04347826605304026, 0.0)
+    series = series * w + 0.04545455629320467
+    series = series * w - 0.047619070330142226
+    series = series * w + 0.05000004769810169
+    series = series * w - 0.05263167937961666
+    series = series * w + 0.055555767627403614
+    series = series * w - 0.058823978658684585
+    series = series * w + 0.06250095514121304
+    series = series * w - 0.06666870588242046
+    series = series * w + 0.07143294629536133
+    series = series * w - 0.0769325164113522
+    series = series * w + 0.083353840546109
+    series = series * w - 0.09095401714582904
+    series = series * w + 0.1000994575127818
+    series = series * w - 0.11133426586956469
+    series = series * w + 0.12550966952474304
+    series = series * w - 0.1440498967688461
+    series = series * w + 0.1695571769974082
+    series = series * w - 0.20738555102867398
+    series = series * w + 0.27058080842778454
+    series = series * w - 0.40068563438653143
+    series = series * w + 0.8224670334241132
+    series = series * w - 0.5772156649015329
+    return w * series
+
+
+def _taylor_middle(w: complex128) -> complex128:
+    """log Γ(1.5 + w) for |w| at most 0.5, by its Taylor series log Γ(1.5) + Σ ψ⁽ᵏ⁻¹⁾(1.5)/k! wᵏ
+    to k = 35, whose terms fall by about a third each. Between the discs around 1 and 2 the
+    recurrence from Re z = 7 would subtract logarithms near 2 to leave about 0.1, and lose 40
+    ULP doing it."""
+    series = complex(-1.962175714238092e-08, 0.0)
+    series = series * w + 3.029830181709105e-08
+    series = series * w - 4.682464915718392e-08
+    series = series * w + 7.243188147093135e-08
+    series = series * w - 1.1215259661548152e-07
+    series = series * w + 1.7383654012719107e-07
+    series = series * w - 2.6974639512898124e-07
+    series = series * w + 4.190703953838664e-07
+    series = series * w - 6.518875486314994e-07
+    series = series * w + 1.0154409130025463e-06
+    series = series * w - 1.5840896262969798e-06
+    series = series * w + 2.4751447344295936e-06
+    series = series * w - 3.87415183000977e-06
+    series = series * w + 6.07540647448469e-06
+    series = series * w - 9.547151192148187e-06
+    series = series * w + 1.5036983408359218e-05
+    series = series * w - 2.3743185469209343e-05
+    series = series * w + 3.759490926961219e-05
+    series = series * w - 5.97136233623377e-05
+    series = series * w + 9.517939662502588e-05
+    series = series * w - 0.00015231593814270082
+    series = series * w + 0.0002448711904829441
+    series = series * w - 0.00039577153964650777
+    series = series * w + 0.0006437029830381486
+    series = series * w - 0.001054915693867632
+    series = series * w + 0.00174503557579013
+    series = series * w - 0.002920970458667952
+    series = series * w + 0.004965728809475818
+    series = series * w - 0.008622603929171286
+    series = series * w + 0.0154354841700493
+    series = series * w - 0.028952081888893543
+    series = series * w + 0.05871212641676822
+    series = series * w - 0.13813277403905333
+    series = series * w + 0.46740110027233966
+    series = series * w + 0.03648997397857652
+    return w * series - 0.12078223763524522
+
+
+def _reflection(z: complex128) -> complex128:
+    """log Γ(z) for Re z below 0.1, by log π − log sin(πz) − log Γ(1 − z) and the multiple of
+    2πi that puts it on the principal branch. sin(πz) is sin(πx) cosh(πy) + i cos(πx) sinh(πy),
+    with sin(πx) and cos(πx) reduced exactly, so that it keeps its relative precision near the
+    poles. Its |Im z| is at most 7 here, so sin(πz) stays far below overflow."""
+    x = z.real
+    y = z.imag
+    sine = complex(sinpi(x) * cosh(pi * y), cospi(x) * sinh(pi * y))
+    turns = floor(0.5 * x + 0.25)
+    if y < 0.0:
+        turns = -turns
+    reflected = loggamma(complex(1.0 - x, -y))
+    return complex(_LOG_PI, 2.0 * pi * turns) - _log(sine) - reflected
+
+
+def _recurrence(z: complex128) -> complex128:
+    """log Γ(z) for Re z from 0.1 to 7, from log Γ(z + n) past Re 7 less Σ log(z + k), each a
+    principal logarithm: their sum is the principal log Γ, since log Γ(z + 1) = log Γ(z) +
+    log z holds off the cut."""
+    total = complex(0.0, 0.0)
+    shifted = z
+    while shifted.real <= _FAR:
+        total = total + _log(shifted)
+        shifted = shifted + 1.0
+    return _stirling(shifted) - total

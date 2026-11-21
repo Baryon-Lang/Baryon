@@ -27,8 +27,8 @@ and people's memories. The name had to:
 About 200 candidates were checked on 2026-11-07: elements, particles, quasiparticles,
 astronomers, stars, moons and Greek and Latin sky words. Most were taken by a language, a
 library in the same field or a trademark (for example Triton, Fermi, Kepler, Astra, Solaris,
-Metis, Hyperon). The shortlist is in the project's naming document. Collins chose Baryon over
-Casimir.
+Metis, Hyperon). The shortlist is in the project's naming document. The chief designer chose Baryon
+over Casimir.
 
 ## Decision
 

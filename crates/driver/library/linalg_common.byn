@@ -1,0 +1,25 @@
+"""Internal file of `linalg` (decision 0040): what its other files share, the error every
+function raises and the machine epsilon of a float type. `linalg` re-exports `LinAlgError`
+(decision 0062); a program cannot import this file.
+"""
+
+
+class LinAlgError(Exception):
+    """A matrix that a linear algebra function cannot solve or factor, as NumPy's
+    `numpy.linalg.LinAlgError` (decision 0040). `message` is NumPy's text, such as
+    "Singular matrix".
+    """
+
+    message: str
+
+
+def epsilon[T: Float](like: T) -> T:
+    """The machine epsilon of `like`'s type, 2⁻²³ for `f32` and 2⁻⁵² for `f64`: the gap between
+    1 and the next larger number, found by halving until adding it to 1 no longer counts. The
+    convergence tests of `eigh` and `svd` compare against it, so each type stops at its own
+    precision. `like` gives only the type.
+    """
+    gap: T = 1.0
+    while 1.0 + gap / 2.0 != 1.0:
+        gap /= 2.0
+    return gap

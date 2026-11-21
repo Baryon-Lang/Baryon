@@ -12,7 +12,7 @@
 use crate::builder::Builder;
 use crate::constants::DefaultArgument;
 use diagnostics::Diagnostic;
-use mir::{Argument, Body, Callee, Local, Operand, Place, TerminatorKind};
+use mir::{Argument, Body, Callee, Local, Operand, Place, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 use types::{Declaration, Item, Mode, Type, TypeDb, TypeKind};
 
@@ -117,6 +117,21 @@ impl<'db> Builder<'db> {
             self.unsupported(node, "leaving out an `InOut` argument");
             return None;
         }
+        if self.is_variadic_tuple(item, position) {
+            // `args: tuple[*Ts] = ()` (the decision 0026 amendment): leaving `args` out makes
+            // `Ts` empty, so the argument is the empty tuple.
+            let temporary = self.temporary(ty, node);
+            self.assign(
+                Place::from(temporary),
+                Rvalue::Aggregate(ty, Vec::new()),
+                node,
+            );
+            return Some(if mode == Mode::Owned {
+                Argument::Owned(self.take(Place::from(temporary), ty))
+            } else {
+                Argument::Borrow(Place::from(temporary))
+            });
+        }
         let value = match self.default_value(item, position, node)? {
             DefaultArgument::Constant(constant) => {
                 // The constant has its literal's type, which can be narrower than the
@@ -171,5 +186,17 @@ impl<'db> Builder<'db> {
         } else {
             Argument::Borrow(Place::from(temporary))
         })
+    }
+
+    /// Whether parameter `position` of `item` is `tuple[*Ts]`, the one generic parameter that
+    /// may have a default, `()` (the decision 0026 amendment).
+    fn is_variadic_tuple(&self, item: Item<'db>, position: usize) -> bool {
+        let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
+            return false;
+        };
+        signature
+            .parameters
+            .get(position)
+            .is_some_and(|parameter| crate::spread::is_pack_tuple(self.db, parameter.ty))
     }
 }

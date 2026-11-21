@@ -1,0 +1,263 @@
+"""Snappy raw blocks on byte arrays, for the Parquet reader and writer (decision 0049, point
+6), written in Baryon.
+
+Snappy is the compression most Parquet files use for their pages. A raw block is the
+uncompressed length as a varint, a number written seven bits to a byte with the lowest bits
+first, and then elements of two kinds: a literal, bytes to copy from the block, and a copy, a
+length and a distance back into the bytes already decoded. There is no checksum and no frame;
+Parquet's page header carries the lengths. The format is Google's `format_description.txt`.
+
+This file is no module a program can import: Snappy has no Python module to take names from,
+so only the library's own files call `snappy_decompress` and `snappy_compress`.
+"""
+
+from os import ErrorKind
+
+
+def snappy_decompress(data: Array[u8, 1]) -> Raises[Array[u8, 1], OSError]:
+    """The bytes the Snappy raw block `data` holds.
+
+    Raises `OSError` with the kind `INVALID_DATA` for a block that is not Snappy, with the
+    messages the `python-snappy` package gives: `Can not calculate uncompressed length` when
+    the length the block starts with is missing or runs past 32 bits, and `Error while
+    decompressing: invalid input` for anything else, a length longer than the elements could
+    give, a copy that reaches before the first byte, elements cut short, and elements that
+    give more or fewer bytes than the length says.
+
+    Costs one pass over `data` and over the result, which is allocated once from the length
+    the block starts with. That length is refused before anything is allocated when it is
+    more than 22 times the block's size, since no element gives more than 64 bytes for 3.
+    """
+    output = Array.zeros(0, u8)
+    status = _decode(data, output)
+    if status == 2:
+        message = "Can not calculate uncompressed length"
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), message, "")
+    if status == 1:
+        message = "Error while decompressing: invalid input"
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), message, "")
+    return output
+
+
+def snappy_compress(data: Array[u8, 1]) -> Array[u8, 1]:
+    """`data` as one Snappy raw block, which any Snappy decoder reads back.
+
+    The search is the one Google's library makes: the data is cut into pieces of 65,536
+    bytes, and in each a table of up to 16,384 places remembers where a hash of four bytes
+    was last seen. Where the same four bytes come again the encoder writes a copy, and it
+    steps faster through bytes that find no match, so data that does not compress costs
+    little. The bytes are Baryon's own (decision 0049, point 5), not promised to be the ones
+    another library writes.
+
+    Costs one pass over `data`, a table of 16,384 numbers, and a buffer of `32 + n + n // 6`
+    bytes for n bytes, the most a block can take, from which the result is copied.
+    """
+    count = len(data)
+    output = Array.zeros(32 + count + count // 6, u8)
+    length = 0
+    rest = count
+    while rest >= 128:
+        output[length] = u8((rest & 127) | 128)
+        length += 1
+        rest = rest >> 7
+    output[length] = u8(rest)
+    length += 1
+    table = Array.zeros(16384, i32)
+    start = 0
+    while start < count:
+        size = min(65536, count - start)
+        length = _fragment(data, start, size, output, length, table)
+        start += size
+    return output[:length].copy()
+
+
+def _decode(data: Array[u8, 1], output: InOut[Array[u8, 1]]) -> int:
+    """Decodes the raw block `data` into `output`, which is replaced by the result. Returns
+    0 for a valid block, 2 when the length it starts with cannot be read, and 1 for any
+    other fault."""
+    count = len(data)
+    expected = 0
+    shift = 0
+    position = 0
+    while True:
+        if position >= count or shift > 28:
+            return 2
+        byte = int(data[position])
+        position += 1
+        expected = expected | ((byte & 127) << shift)
+        if byte < 128:
+            break
+        shift += 7
+    if expected > 0xFFFFFFFF:
+        return 2
+    if expected > 22 * count:
+        return 1
+    result = Array.zeros(expected, u8)
+    length = 0
+    while position < count:
+        tag = int(data[position])
+        position += 1
+        kind = tag & 3
+        if kind == 0:
+            run = (tag >> 2) + 1
+            if run > 60:
+                extra = run - 60
+                if position + extra > count:
+                    return 1
+                run = 0
+                for k in range(extra):
+                    run = run | (int(data[position + k]) << (8 * k))
+                run += 1
+                position += extra
+            if position + run > count or length + run > expected:
+                return 1
+            for k in range(run):
+                result[length + k] = data[position + k]
+            position += run
+            length += run
+        else:
+            run = (tag >> 2) + 1
+            extra = 2 * kind - 2 if kind > 1 else 1
+            if position + extra > count:
+                return 1
+            distance = 0
+            for k in range(extra):
+                distance = distance | (int(data[position + k]) << (8 * k))
+            position += extra
+            if kind == 1:
+                run = ((tag >> 2) & 7) + 4
+                distance = distance | ((tag >> 5) << 8)
+            if distance == 0 or distance > length or length + run > expected:
+                return 1
+            # A copy may reach into the bytes it writes, so it goes byte by byte.
+            for k in range(run):
+                result[length + k] = result[length + k - distance]
+            length += run
+    output = result
+    return 0 if length == expected else 1
+
+
+def _load(data: Array[u8, 1], at: int) -> int:
+    """The four bytes of `data` from `at`, as one number with the first byte lowest."""
+    low = int(data[at]) | (int(data[at + 1]) << 8)
+    return low | (int(data[at + 2]) << 16) | (int(data[at + 3]) << 24)
+
+
+def _literal(
+    data: Array[u8, 1], start: int, run: int, output: InOut[Array[u8, 1]], length: int
+) -> int:
+    """Writes the `run` bytes of `data` from `start` as a literal at `length` in `output`, and
+    returns where the next element goes. A piece has at most 65,536 bytes, so the length
+    takes at most two bytes after the tag."""
+    if run == 0:
+        return length
+    less = run - 1
+    if less < 60:
+        output[length] = u8(less << 2)
+        length += 1
+    elif less < 256:
+        output[length] = u8(60 << 2)
+        output[length + 1] = u8(less)
+        length += 2
+    else:
+        output[length] = u8(61 << 2)
+        output[length + 1] = u8(less & 255)
+        output[length + 2] = u8(less >> 8)
+        length += 3
+    for k in range(run):
+        output[length + k] = data[start + k]
+    return length + run
+
+
+def _copy(distance: int, run: int, output: InOut[Array[u8, 1]], length: int) -> int:
+    """Writes a copy of `run` bytes from `distance` back, at `length` in `output`, and returns
+    where the next element goes. One element copies at most 64 bytes, so a long run is
+    several, cut so that none is shorter than 4. A run under 12 from under 2,048 back takes
+    two bytes, any other three; a distance is under 65,536 inside a piece."""
+    while run >= 68:
+        output[length] = u8(2 | (63 << 2))
+        output[length + 1] = u8(distance & 255)
+        output[length + 2] = u8(distance >> 8)
+        length += 3
+        run -= 64
+    if run > 64:
+        output[length] = u8(2 | (59 << 2))
+        output[length + 1] = u8(distance & 255)
+        output[length + 2] = u8(distance >> 8)
+        length += 3
+        run -= 60
+    if run < 12 and distance < 2048:
+        output[length] = u8(1 | ((run - 4) << 2) | ((distance >> 8) << 5))
+        output[length + 1] = u8(distance & 255)
+        return length + 2
+    output[length] = u8(2 | ((run - 1) << 2))
+    output[length + 1] = u8(distance & 255)
+    output[length + 2] = u8(distance >> 8)
+    return length + 3
+
+
+def _fragment(
+    data: Array[u8, 1],
+    start: int,
+    size: int,
+    output: InOut[Array[u8, 1]],
+    length: int,
+    table: InOut[Array[i32, 1]],
+) -> int:
+    """Compresses the piece of `size` bytes of `data` from `start`, writes its elements at
+    `length` in `output`, and returns where the next piece's go. `table` maps a hash of four
+    bytes to where in the piece they were last seen; the piece's first bytes are cleared
+    from it first. The last 15 bytes are never searched, so reading four bytes at a place
+    being tried never runs past the piece."""
+    end = start + size
+    emitted = start
+    if size >= 15:
+        places = 256
+        shift = 24
+        while places < 16384 and places < size:
+            places = 2 * places
+            shift -= 1
+        for k in range(places):
+            table[k] = i32(0)
+        limit = end - 15
+        at = start + 1
+        searching = True
+        while searching:
+            # Look for four bytes seen before, stepping faster the longer none is found.
+            skip = 32
+            candidate = start
+            following = at
+            found = False
+            while not found:
+                at = following
+                value = _load(data, at)
+                slot = ((value * 0x1E35A7BD) & 0xFFFFFFFF) >> shift
+                following = at + (skip >> 5)
+                skip += skip >> 5
+                if following > limit:
+                    break
+                candidate = start + int(table[slot])
+                table[slot] = i32(at - start)
+                found = value == _load(data, candidate)
+            if not found:
+                break
+            length = _literal(data, emitted, at - emitted, output, length)
+            while found:
+                run = 4
+                while at + run < end and data[candidate + run] == data[at + run]:
+                    run += 1
+                length = _copy(at - candidate, run, output, length)
+                at += run
+                emitted = at
+                if at >= limit:
+                    searching = False
+                    break
+                before = _load(data, at - 1)
+                table[((before * 0x1E35A7BD) & 0xFFFFFFFF) >> shift] = i32(at - 1 - start)
+                value = _load(data, at)
+                slot = ((value * 0x1E35A7BD) & 0xFFFFFFFF) >> shift
+                candidate = start + int(table[slot])
+                table[slot] = i32(at - start)
+                found = value == _load(data, candidate)
+            at += 1
+    return _literal(data, emitted, end - emitted, output, length)

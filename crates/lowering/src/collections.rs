@@ -33,6 +33,9 @@ pub(crate) enum Elements {
     /// At an index, in a text array, whose element is a `str` borrowed from its bytes
     /// ([`Builder::text_array_element`]).
     TextArray,
+    /// At an index, in an array with missing values, whose element is read into a temporary
+    /// as a `T | None` ([`Builder::optional_loop_element`]).
+    Optional,
 }
 
 impl<'db> Builder<'db> {
@@ -65,8 +68,10 @@ impl<'db> Builder<'db> {
         ) {
             return self.file_loop(statement, target, iterator, pass);
         }
+        let gaps = self.optional_array_element(iterator);
         let element = match ty.kind(self.db) {
             _ if self.is_text_array(iterator) => Type::new(self.db, TypeKind::Str),
+            _ if gaps.is_some() => self.ty_or(gaps),
             TypeKind::Array { element, rank: 1 } | TypeKind::List(element) => *element,
             TypeKind::Fixed { element, shape } if shape.rank() == 1 => *element,
             TypeKind::Tuple(items) if !items.is_empty() => items[0],
@@ -98,6 +103,10 @@ impl<'db> Builder<'db> {
         if self.is_text_array(node) {
             let length = self.text_array_length(collection, node);
             return (length, Elements::TextArray);
+        }
+        if let Some(element) = self.optional_array_element(node) {
+            let length = self.optional_array_length(collection, element, node);
+            return (length, Elements::Optional);
         }
         match ty.kind(self.db) {
             TypeKind::Tuple(items) => {
@@ -199,6 +208,10 @@ impl<'db> Builder<'db> {
                 let place = self.text_array_element(collection, counter, target);
                 self.bind_element(target, place, element);
             }
+            Elements::Optional => {
+                let place = self.optional_loop_element(collection, counter, element, target);
+                self.bind_element(target, place, element);
+            }
             &Elements::Tuple(count) if borrowed => {
                 // The item is copied bit for bit into a temporary that is never dropped, so the
                 // switch's arms meet at one place the variable can borrow.
@@ -274,7 +287,7 @@ impl<'db> Builder<'db> {
         match (self.tree.kind(target), ty.kind(self.db)) {
             (SyntaxKind::Name, _) => {
                 if let Some(&Definition::Local(binding)) = self.definition(target) {
-                    self.aliases.insert(binding, place);
+                    self.aliases.insert(binding, (place, ty));
                 }
             }
             (SyntaxKind::Tuple, TypeKind::Tuple(items)) => {

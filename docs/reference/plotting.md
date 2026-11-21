@@ -454,8 +454,9 @@ Text is written as SVG text in DejaVu Sans, matplotlib's font, as matplotlib wri
 `svg.fonttype = "none"`, so it stays searchable and editable; a viewer without DejaVu Sans draws
 it in Arial, Helvetica or another sans-serif font, and labels may then sit slightly off. Every
 point of every line is written, about 15 bytes a point, so a line of a million points makes a
-file of about 15 MB. An image costs about 5.5 bytes a cell, since its PNG is not compressed
-(idea I.54), so a 1000 by 1000 image makes a file of about 5.5 MB.
+file of about 15 MB. An image is embedded as a PNG compressed with `zlib`, written in base64.
+It costs about 0.5 bytes a cell for a smooth field and about 2.3 for random noise, so a 1000 by
+1000 image makes a file of 0.5 to 2.3 MB.
 
 ## PNG files
 

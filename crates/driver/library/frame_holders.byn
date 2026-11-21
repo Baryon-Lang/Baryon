@@ -1,0 +1,41 @@
+"""The text of a tuple, a list or a dict that holds an array with missing values or a frame,
+written in Baryon (decision 0045, roadmap 3.24.4 and 3.24.5).
+
+The compiler calls these functions; a program cannot import this file.
+
+`print` and an f-string write a tuple or a list in one step when the compiler's own writer
+knows every value in it. It does not know an array with missing values, whose text
+`optional_shown` of `<std>/frame_missing.byn` makes. So the compiler writes such a tuple or
+list piece by piece: the text of each array, and between them what Python writes. The
+functions here make the pieces the compiler cannot write alone: a `str` in quotes, which is
+how a `str` stands inside a tuple or a list, and the items of a list or the entries of a dict
+put together.
+"""
+
+
+def quoted(text: str) -> str:
+    """`text` as it stands inside a tuple or a list: in quotes, as Python's `repr` writes
+    it. The compiler's writer does this for the items of a list, so the text is written as
+    the one item of a list and the brackets are cut off. Cost: two copies of the text."""
+    shown = f"{[text.copy()]}"
+    return shown[1:len(shown) - 1]
+
+
+def quoted_or_none(text: str | None) -> str:
+    """A `str | None` as it stands inside a tuple or a list: `None`, or the text in quotes."""
+    if text is None:
+        return "None"
+    return quoted(text)
+
+
+def listed(texts: list[str]) -> str:
+    """A list as `print` writes it, from the text of each of its items: the texts with a
+    comma and a space between two, the whole in brackets. Cost: one copy of each text."""
+    return "[" + ", ".join(texts) + "]"
+
+
+def braced(texts: list[str]) -> str:
+    """A dict as `print` writes it, from the text of each of its entries, `key: value`: the
+    texts with a comma and a space between two, the whole in braces. Cost: one copy of each
+    text."""
+    return "{" + ", ".join(texts) + "}"

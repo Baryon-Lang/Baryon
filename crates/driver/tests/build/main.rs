@@ -30,11 +30,20 @@ mod fft;
 mod files;
 mod fits;
 mod float_generics;
+mod frame_arguments;
+mod frame_benchmark;
 mod frame_columns;
+mod frame_csv;
 mod frame_distinct;
+mod frame_group_counts;
+mod frame_group_methods;
+mod frame_group_sums;
 mod frame_groups;
+mod frame_join_keys;
 mod frame_joins;
 mod frame_missing;
+mod frame_order;
+mod frame_outer;
 mod frame_rows;
 mod frame_sort;
 mod frame_stack;
@@ -45,19 +54,41 @@ mod guide;
 mod gzip_open;
 mod h5by;
 mod hoisting;
+mod inflate;
+mod integrate;
+mod interpolation;
 mod kernels;
 mod linalg;
+mod list_choosers;
 mod list_slices;
+mod lz4;
 mod lzma;
 mod managers;
+mod mask_truth;
 mod math;
+mod missing_distinct;
+mod missing_dropped;
+mod missing_groups;
+mod missing_joins;
+mod missing_rows;
+mod missing_shown;
+mod missing_text;
 mod modules;
+mod narrowing;
 mod netcdf;
 mod netcdf_writing;
 mod npy;
 mod one_pass;
 mod optional_arguments;
+mod optional_arithmetic;
 mod optional_arrays;
+mod optional_comparisons;
+mod optional_lists;
+mod optional_loops;
+mod optional_selection;
+mod optional_sorts;
+mod optional_stores;
+mod optional_text_comparisons;
 mod overflow;
 mod ownership;
 mod parallel;
@@ -72,11 +103,23 @@ mod plotting_pdf;
 mod plotting_png;
 mod print;
 mod process;
+mod quad;
 mod reductions;
 mod shapes;
+mod shown_holders;
 mod slices;
+mod snappy;
 mod sorting;
 mod special;
+mod special_bessel;
+mod special_complex;
+mod special_elliptic;
+mod special_everyday;
+mod special_hypergeometric;
+mod special_mathieu;
+mod special_parabolic;
+mod special_polynomials;
+mod special_waves;
 mod spectral;
 mod statements;
 mod statistics;
@@ -98,6 +141,7 @@ mod traits;
 mod unions;
 mod user_iterators;
 mod utf8_text;
+mod variadic;
 mod vector;
 mod watching;
 mod zlib;
@@ -409,87 +453,4 @@ def main():
         panic_report(&ran),
         "panic: assertion failed: 1 > 2\n  --> main.byn:3:5\n"
     );
-}
-
-/// Optional values end to end: absent and present values passed on, narrowed by `is None` and
-/// `is not None`, given a default, and holding an array, which is freed only when present.
-/// Each argument is a variable already of the parameter's `T | None` type.
-#[test]
-fn optional_values_build_and_run() {
-    let program = "\
-class Particle(Struct):
-    mass: f64
-
-
-def scaled(distance: f64 | None, particle: Particle | None) -> f64:
-    if distance is None:
-        distance = 1.0
-    assert particle is not None, 'needs a particle'
-    return distance * particle.mass
-
-
-def nearest(distance: f64 | None, limit: f64) -> f64:
-    if distance is not None and distance < limit:
-        return distance
-    return limit
-
-
-def size(values: Array[f64, 1] | None) -> i64:
-    if values is not None:
-        return len(values)
-    return -1
-
-
-def main():
-    p: Particle | None = Particle(2.5)
-    absent: f64 | None = None
-    four: f64 | None = 4.0
-    print(scaled(absent, p), scaled(four, p))
-    near: f64 | None = 1.5
-    far: f64 | None = 7.0
-    print(nearest(absent, 3.0), nearest(near, 3.0), nearest(far, 3.0))
-    none: Array[f64, 1] | None = None
-    ones: Array[f64, 1] | None = Array.ones(4)
-    print(size(none), size(ones))
-    nobody: Particle | None = None
-    print(scaled(four, nobody))
-";
-    let directory = package("optionals", &[("main.byn", program)]).unwrap();
-    let (output, program) = baryon_build(&directory).unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    let ran = Command::new(&program).output().unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&ran.stdout),
-        "2.5 10.0\n3.0 1.5 3.0\n-1 4\n"
-    );
-    assert_eq!(
-        panic_report(&ran),
-        "panic: assertion failed: particle is not None, 'needs a particle'\n  \
-         --> main.byn:8:5\n"
-    );
-}
-
-/// A generic function compiles once per type it is called at (roadmap 1.9.5): `twice` and the
-/// `square` it calls each at `f64` and at `i64`, with the literal `2` an `f64` in one and an
-/// `i64` in the other.
-#[test]
-fn generic_functions_build_at_each_type() {
-    let program = "\
-def square[T: Number](x: T) -> T:
-    return x * x
-
-
-def twice[T: Number](x: T) -> T:
-    return square(x) * 2 - x
-
-
-def main():
-    print(twice(3.0), twice(4))
-";
-    let directory = package("generics", &[("main.byn", program)]).unwrap();
-    let (output, program) = baryon_build(&directory).unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    let ran = Command::new(&program).output().unwrap();
-    assert!(ran.status.success(), "{}", stderr(&ran));
-    assert_eq!(String::from_utf8_lossy(&ran.stdout), "15.0 28\n");
 }

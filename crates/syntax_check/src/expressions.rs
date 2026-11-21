@@ -129,7 +129,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Reports `*value`, with a message for where it is.
+    /// Reports `*value`, with a message for where it is. A star in a call's arguments or in a
+    /// subscript is the type checker's to judge.
     fn starred(&mut self, id: NodeId, parent_kind: SyntaxKind, context: Context) {
         let span = self.tree.span(id);
         if context.in_target {
@@ -142,13 +143,9 @@ impl Checker<'_> {
                    sequence: `first = items[0]`",
                 ],
             );
-        } else if parent_kind == SyntaxKind::Arguments {
-            self.error(
-                "`*` unpacking in a call is not supported",
-                span,
-                "",
-                &["pass each argument by position or by name"],
-            );
+        } else if parent_kind == SyntaxKind::Arguments || context.in_index {
+            // `fun(t, *args)` and `tuple[*Ts]` (the decision 0026 amendment): whether the star
+            // is allowed depends on types, so the type checker decides.
         } else {
             self.error(
                 "`*` unpacking is not supported",

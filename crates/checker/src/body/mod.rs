@@ -35,8 +35,10 @@ mod axes;
 mod binding;
 mod builtins;
 mod calls;
+mod captures;
 mod class_functions;
 mod class_patterns;
+mod collections;
 mod complex;
 mod conditionals;
 mod dicts;
@@ -51,9 +53,14 @@ mod fits;
 mod fits_header;
 mod flow;
 mod formatted;
+mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
+mod frame_distinct_options;
+mod frame_dropna;
+mod frame_group_methods;
 mod frame_groups;
+mod frame_join_keys;
 mod frame_joins;
 mod frame_missing;
 mod frame_rows;
@@ -63,6 +70,8 @@ mod frame_stack;
 mod frames;
 mod generics;
 mod h5by;
+mod indices;
+mod interpolation;
 mod library;
 mod loops;
 mod managers;
@@ -75,8 +84,11 @@ mod netcdf_writing;
 mod npy;
 mod numbers;
 mod operators;
+mod optional_arithmetic;
 mod optional_arrays;
+mod overloads;
 mod parallel;
+mod parameter_conversions;
 mod paths;
 mod patterns;
 mod process;
@@ -85,6 +97,8 @@ mod reductions;
 pub(crate) mod relations;
 mod selection;
 mod shared;
+mod shown_parameters;
+mod spread_calls;
 mod statistics;
 mod streams;
 mod subprocess;
@@ -92,7 +106,10 @@ mod text;
 mod text_arrays;
 mod text_tables;
 mod union_methods;
+mod untyped_calls;
 mod user_iterators;
+mod value_calls;
+mod written_constructors;
 
 use crate::lower::Lowerer;
 use crate::outline::Entry;
@@ -114,7 +131,8 @@ pub(crate) fn check<'db>(
     let Declaration::Function(signature) = &db.declaration(item).declaration else {
         return TypedBody::default();
     };
-    let lowerer = Lowerer::new(db, package, file, entry.class, entry.statement);
+    let mut lowerer = Lowerer::new(db, package, file, entry.class, entry.statement);
+    lowerer.bounds = crate::written_bounds::Bounds::Reported;
     let mut body = Body {
         db,
         tree: lowerer.tree,
@@ -128,6 +146,8 @@ pub(crate) fn check<'db>(
         caught: Vec::new(),
         bound: BTreeSet::new(),
         modes: BTreeMap::new(),
+        subject: None,
+        captures: BTreeMap::new(),
         loops: Vec::new(),
         loop_ends: BTreeSet::new(),
         held: Vec::new(),
@@ -139,6 +159,7 @@ pub(crate) fn check<'db>(
         conditionals: BTreeSet::new(),
         kept: BTreeSet::new(),
         typed: TypedBody::default(),
+        in_message: false,
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
@@ -148,6 +169,9 @@ pub(crate) fn check<'db>(
         body.missing_return(entry.name);
     }
     body.lent_conditionals();
+    if entry.class.is_none() {
+        body.overlapping_overloads(entry.name);
+    }
     let mut typed = body.typed;
     typed.locals = body
         .locals
@@ -188,6 +212,12 @@ struct Body<'db> {
     bound: BTreeSet<NodeId>,
     /// How each parameter, by its `Name` node, receives its argument (the `moves` module).
     modes: BTreeMap<NodeId, types::Mode>,
+    /// The subject of the `match` whose patterns are being checked, which a capture of a part
+    /// that is not a copy type borrows (the `captures` module).
+    subject: Option<NodeId>,
+    /// The captures that borrow part of their `match` subject, each `Name` binding with the
+    /// subject it borrows from (the `captures` module).
+    captures: BTreeMap<NodeId, NodeId>,
     /// The enclosing `for` loops over collections, innermost last (the `loops` module).
     loops: Vec<loops::Loop>,
     /// The loop targets that ended a borrow: a loop variable that borrows an element is
@@ -223,6 +253,9 @@ struct Body<'db> {
     kept: BTreeSet<NodeId>,
     /// What the stages after the checker read about this body, filled as it is checked.
     typed: TypedBody<'db>,
+    /// Whether an `assert` message is being checked. Lowering does not compute one yet, so
+    /// what only lowering lacks, such as `!r` in an f-string, is not reported inside it.
+    in_message: bool,
 }
 
 impl<'db> Body<'db> {
@@ -249,6 +282,9 @@ impl<'db> Body<'db> {
                 self.state.assigned.insert(name);
             }
             if let Some(default) = self.tree.child(node, Role::Default) {
+                if self.variadic_default(default, ty) {
+                    continue;
+                }
                 let found = self.expression(default, Some(ty));
                 self.expect(default, ty, found, "the parameter's type is");
             }
@@ -301,7 +337,9 @@ impl<'db> Body<'db> {
                 let condition = child(Role::Condition);
                 self.condition(condition);
                 if let Some(message) = child(Role::Message) {
+                    self.in_message = true;
                     self.expression(message, None);
+                    self.in_message = false;
                 }
                 if let Some(condition) = condition {
                     let (yes, _) = self.facts(condition);
@@ -401,9 +439,9 @@ impl<'db> Body<'db> {
     fn number_context(&self, ty: Type<'db>) -> Option<Type<'db>> {
         match ty.kind(self.db) {
             TypeKind::Primitive(primitive) if numbers::is_number(*primitive) => Some(ty),
-            TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
-                self.number_context(*element)
-            }
+            TypeKind::Array { element, .. }
+            | TypeKind::Fixed { element, .. }
+            | TypeKind::OptionalArray(element) => self.number_context(*element),
             // `3 in counts` looks up a key, so the literal takes the key type.
             TypeKind::Dict { key, .. } => self.number_context(*key),
             _ => self.generic_literal(ty),

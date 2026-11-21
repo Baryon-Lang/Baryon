@@ -1,0 +1,465 @@
+"""QUADPACK's shared parts for `quad` (roadmap 3.19.4), translated step for step from the
+public-domain Fortran of Piessens, de Doncker-Kapenga, Überhuber and Kahaner (1983), which SciPy
+1.18 runs as C: the 21-point Gauss-Kronrod rule `dqk21`, the 15-point rule `dqk15i` on a transformed
+infinite interval, Wynn's epsilon algorithm `dqelg`, the
+ordering of subintervals by error `dqpsrt`, and the end shared by `dqagse` and `dqagpe`. Every
+sum and comparison is in the Fortran's order, so results have SciPy's bits.
+
+Indices follow the Fortran: `last`, `maxerr`, `nrmax` and the entries of `Intervals.order` count
+from 1, and the array slot of interval `k` is `k - 1`. The compiler reads this file for
+`integrate_quad`; a program cannot import it.
+"""
+
+from math import pow
+
+
+EPSILON: Final = 2.220446049250313e-16  # d1mach(4), the spacing of f64 at 1
+TINY: Final = 2.2250738585072014e-308  # d1mach(1), the smallest normal f64
+HUGE: Final = 1.7976931348623157e308  # d1mach(2), the largest f64
+_Rule = Fixed[f64, (11,)]  # the 21-point rule's nodes or weights, from the middle out
+_Gauss = Fixed[f64, (5,)]  # the embedded 10-point Gauss rule's weights
+_Values = Fixed[f64, (10,)]  # f at the nodes on one side of the middle
+_Rule15 = Fixed[f64, (8,)]  # the 15-point rule's nodes or weights, from the ends in
+_Values15 = Fixed[f64, (7,)]  # f at the 15-point rule's nodes on one side of the middle
+
+
+class Extrapolation(Struct):
+    """Wynn's epsilon table of `dqelg`: the last `n` approximations of the integral and the
+    diagonals the algorithm builds from them, in `table` (52 slots, as in QUADPACK), and the
+    last three extrapolated values in `recent`, the first `count` of them filled."""
+
+    table: Array[f64, 1]
+    n: int
+    recent: Array[f64, 1]
+    count: int
+
+    def extrapolate(self: InOut[Self]) -> tuple[f64, f64]:
+        """The extrapolated limit of the approximations in the table and its error estimate,
+        as `dqelg`. The table is updated in place for the following approximation."""
+        n = self.n
+        self.count += 1
+        error = HUGE
+        result = self.table[n - 1]
+        if n < 3:
+            return (result, max(error, 5.0 * EPSILON * abs(result)))
+        self.table[n + 1] = self.table[n - 1]
+        added = (n - 1) // 2
+        self.table[n - 1] = HUGE
+        count = n
+        k1 = n
+        converged = False
+        for i in range(1, added + 1):
+            res = self.table[k1 + 1]
+            e0 = self.table[k1 - 3]
+            e1 = self.table[k1 - 2]
+            e2 = res
+            e1abs = abs(e1)
+            delta2 = e2 - e1
+            err2 = abs(delta2)
+            tol2 = max(abs(e2), e1abs) * EPSILON
+            delta3 = e1 - e0
+            err3 = abs(delta3)
+            tol3 = max(e1abs, abs(e0)) * EPSILON
+            if not (err2 > tol2 or err3 > tol3):
+                result = res
+                error = err2 + err3
+                converged = True
+                break
+            e3 = self.table[k1 - 1]
+            self.table[k1 - 1] = e1
+            delta1 = e1 - e3
+            err1 = abs(delta1)
+            tol1 = max(e1abs, abs(e3)) * EPSILON
+            if err1 <= tol1 or err2 <= tol2 or err3 <= tol3:
+                n = i + i - 1
+                break
+            ss = 1.0 / delta1 + 1.0 / delta2 - 1.0 / delta3
+            if not abs(ss * e1) > 1.0e-4:
+                n = i + i - 1
+                break
+            res = e1 + 1.0 / ss
+            self.table[k1 - 1] = res
+            k1 = k1 - 2
+            estimate = err2 + abs(res - e2) + err3
+            if not estimate > error:
+                error = estimate
+                result = res
+        if not converged:
+            if n == 50:
+                n = 49
+            shift = 2 if count % 2 == 0 else 1
+            for _ in range(added + 1):
+                self.table[shift - 1] = self.table[shift + 1]
+                shift += 2
+            if count != n:
+                start = count - n
+                for i in range(n):
+                    self.table[i] = self.table[start + i]
+            if self.count < 4:
+                self.recent[self.count - 1] = result
+                error = HUGE
+            else:
+                error = (
+                    abs(result - self.recent[2])
+                    + abs(result - self.recent[1])
+                    + abs(result - self.recent[0])
+                )
+                self.recent[0] = self.recent[1]
+                self.recent[1] = self.recent[2]
+                self.recent[2] = result
+        self.n = n
+        return (result, max(error, 5.0 * EPSILON * abs(result)))
+
+    def push(self: InOut[Self], area: f64):
+        """Appends the approximation `area` to the table."""
+        self.n += 1
+        self.table[self.n - 1] = area
+
+
+def kronrod21[*Ts](
+    f: Callable[[f64, *Ts], f64], a: f64, b: f64, args: tuple[*Ts]
+) -> tuple[f64, f64, f64, f64]:
+    """The 21-point Gauss-Kronrod rule on [a, b], as `dqk21`: the Kronrod estimate, its error
+    estimate from the embedded 10-point Gauss rule, the integral of |f| and the integral of
+    |f − mean|. 21 calls of `f`."""
+    gauss = _Gauss(
+        0.066671344308688137593568809893332,
+        0.149451349150580593145776339657697,
+        0.219086362515982043995534934228163,
+        0.269266719309996355091226921569469,
+        0.295524224714752870173892994651338,
+    )
+    nodes = _Rule(
+        0.995657163025808080735527280689003,
+        0.973906528517171720077964012084452,
+        0.930157491355708226001207180059508,
+        0.865063366688984510732096688423493,
+        0.780817726586416897063717578345042,
+        0.679409568299024406234327365114874,
+        0.562757134668604683339000099272694,
+        0.433395394129247190799265943165784,
+        0.294392862701460198131126603103866,
+        0.148874338981631210884826001129720,
+        0.0,
+    )
+    weights = _Rule(
+        0.011694638867371874278064396062192,
+        0.032558162307964727478818972459390,
+        0.054755896574351996031381300244580,
+        0.075039674810919952767043140916190,
+        0.093125454583697605535065465083366,
+        0.109387158802297641899210590325805,
+        0.123491976262065851077958109831074,
+        0.134709217311473325928054001771707,
+        0.142775938577060080797094273138717,
+        0.147739104901338491374841515972068,
+        0.149445554002916905664936468389821,
+    )
+    left = _Values.zeros()
+    right = _Values.zeros()
+    centre = 0.5 * (a + b)
+    half = 0.5 * (b - a)
+    gauss_sum = 0.0
+    middle = f(centre, *args)
+    kronrod = weights[10] * middle
+    absolute = abs(kronrod)
+    for j in range(5):
+        k = 2 * j + 1
+        step = half * nodes[k]
+        low = f(centre - step, *args)
+        high = f(centre + step, *args)
+        left[k] = low
+        right[k] = high
+        pair = low + high
+        gauss_sum = gauss_sum + gauss[j] * pair
+        kronrod = kronrod + weights[k] * pair
+        absolute = absolute + weights[k] * (abs(low) + abs(high))
+    for j in range(5):
+        k = 2 * j
+        step = half * nodes[k]
+        low = f(centre - step, *args)
+        high = f(centre + step, *args)
+        left[k] = low
+        right[k] = high
+        pair = low + high
+        kronrod = kronrod + weights[k] * pair
+        absolute = absolute + weights[k] * (abs(low) + abs(high))
+    mean = kronrod * 0.5
+    deviation = weights[10] * abs(middle - mean)
+    for j in range(10):
+        deviation = deviation + weights[j] * (abs(left[j] - mean) + abs(right[j] - mean))
+    result = kronrod * half
+    absolute = absolute * abs(half)
+    deviation = deviation * abs(half)
+    error = abs((kronrod - gauss_sum) * half)
+    if deviation != 0.0 and error != 0.0:
+        error = deviation * min(1.0, pow(200.0 * error / deviation, 1.5))
+    if absolute > TINY / (50.0 * EPSILON):
+        error = max((EPSILON * 50.0) * absolute, error)
+    return (result, error, absolute, deviation)
+
+
+def kronrod15i[*Ts](
+    f: Callable[[f64, *Ts], f64], args: tuple[*Ts], transform: tuple[int, f64], a: f64, b: f64
+) -> tuple[f64, f64, f64, f64]:
+    """The 15-point Gauss-Kronrod rule on [a, b] within (0, 1], after the change of variable
+    that maps an infinite interval onto (0, 1], as `dqk15i`: x = `bound` + (1 − t) / t for
+    `inf` 1, x = `bound` − (1 − t) / t for −1, and both x = (1 − t) / t and −x for 2, the
+    whole line. `transform` is (`inf`, `bound`). Gives the same four values as `kronrod21`.
+    15 calls of `f`, 30 for the whole line."""
+    inf, bound = transform
+    gauss = _Rule15(
+        0.0,
+        0.129484966168869693270611432679082,
+        0.0,
+        0.279705391489276667901467771423780,
+        0.0,
+        0.381830050505118944950369775488975,
+        0.0,
+        0.417959183673469387755102040816327,
+    )
+    nodes = _Rule15(
+        0.991455371120812639206854697526329,
+        0.949107912342758524526189684047851,
+        0.864864423359769072789712788640926,
+        0.741531185599394439863864773280788,
+        0.586087235467691130294144838258730,
+        0.405845151377397166906606412076961,
+        0.207784955007898467600689403773245,
+        0.0,
+    )
+    weights = _Rule15(
+        0.022935322010529224963732008058970,
+        0.063092092629978553290700663189204,
+        0.104790010322250183839876322541518,
+        0.140653259715525918745189590510238,
+        0.169004726639267902826583426598550,
+        0.190350578064785409913256402421014,
+        0.204432940075298892414161999234649,
+        0.209482141084727828012999174891714,
+    )
+    left = _Values15.zeros()
+    right = _Values15.zeros()
+    direction = f64(min(1, inf))
+    centre = 0.5 * (a + b)
+    half = 0.5 * (b - a)
+    x = bound + direction * (1.0 - centre) / centre
+    value = f(x, *args)
+    if inf == 2:
+        value = value + f(-x, *args)
+    middle = (value / centre) / centre
+    gauss_sum = gauss[7] * middle
+    kronrod = weights[7] * middle
+    absolute = abs(kronrod)
+    for j in range(7):
+        step = half * nodes[j]
+        t1 = centre - step
+        t2 = centre + step
+        x1 = bound + direction * (1.0 - t1) / t1
+        x2 = bound + direction * (1.0 - t2) / t2
+        low = f(x1, *args)
+        high = f(x2, *args)
+        if inf == 2:
+            low = low + f(-x1, *args)
+            high = high + f(-x2, *args)
+        low = (low / t1) / t1
+        high = (high / t2) / t2
+        left[j] = low
+        right[j] = high
+        pair = low + high
+        gauss_sum = gauss_sum + gauss[j] * pair
+        kronrod = kronrod + weights[j] * pair
+        absolute = absolute + weights[j] * (abs(low) + abs(high))
+    mean = kronrod * 0.5
+    deviation = weights[7] * abs(middle - mean)
+    for j in range(7):
+        deviation = deviation + weights[j] * (abs(left[j] - mean) + abs(right[j] - mean))
+    result = kronrod * half
+    deviation = deviation * half
+    absolute = absolute * half
+    error = abs((kronrod - gauss_sum) * half)
+    if deviation != 0.0 and error != 0.0:
+        error = deviation * min(1.0, pow(200.0 * error / deviation, 1.5))
+    if absolute > TINY / (50.0 * EPSILON):
+        error = max((EPSILON * 50.0) * absolute, error)
+    return (result, error, absolute, deviation)
+
+
+def rule[*Ts](
+    f: Callable[[f64, *Ts], f64], args: tuple[*Ts], transform: tuple[int, f64], a: f64, b: f64
+) -> tuple[f64, f64, f64, f64]:
+    """`kronrod21` on [a, b] when `transform` is (0, _), a finite interval, and `kronrod15i`
+    otherwise: the rule `dqagse` or `dqagie` applies to each piece."""
+    inf, _ = transform
+    if inf == 0:
+        return kronrod21(f, a, b, args)
+    return kronrod15i(f, args, transform, a, b)
+
+
+class Intervals(Struct):
+    """The subintervals of an adaptive integration, as QUADPACK's work arrays: interval `k`
+    is [`lower[k - 1]`, `upper[k - 1]`], with its integral `area[k - 1]`, error estimate
+    `error[k - 1]` and number of halvings `level[k - 1]`. `order` lists intervals by
+    decreasing error, as far as `sort_errors` keeps it. Each array has `limit` slots."""
+
+    lower: Array[f64, 1]
+    upper: Array[f64, 1]
+    area: Array[f64, 1]
+    error: Array[f64, 1]
+    order: Array[int, 1]
+    level: Array[int, 1]
+    limit: int
+
+
+def intervals(limit: int) -> Intervals:
+    """Work arrays for at most `limit` subintervals: 6 × `limit` numbers."""
+    return Intervals(
+        Array.zeros(limit),
+        Array.zeros(limit),
+        Array.zeros(limit),
+        Array.zeros(limit),
+        Array.zeros(limit, int),
+        Array.zeros(limit, int),
+        limit,
+    )
+
+
+def sort_errors(r: InOut[Intervals], last: int, maxerr: int, nrmax: int) -> tuple[int, f64, int]:
+    """Puts the two halves of interval `maxerr`, now `maxerr` and `last`, in their places in
+    `r.order`, as `dqpsrt`, and gives the interval to halve following, its error and the new
+    `nrmax`. Only the first `limit + 3 - last` places are kept in order once more than half
+    the intervals are used, since the rest will never be halved."""
+    if last <= 2:
+        r.order[0] = 1
+        r.order[1] = 2
+    else:
+        largest = r.error[maxerr - 1]
+        if nrmax != 1:
+            for _ in range(nrmax - 1):
+                above = r.order[nrmax - 2]
+                if largest <= r.error[above - 1]:
+                    break
+                r.order[nrmax - 1] = above
+                nrmax -= 1
+        top = last
+        if last > r.limit // 2 + 2:
+            top = r.limit + 3 - last
+        smallest = r.error[last - 1]
+        bound = top - 1
+        placed = False
+        i = nrmax + 1
+        while i <= bound:
+            following = r.order[i - 1]
+            if largest >= r.error[following - 1]:
+                r.order[i - 2] = maxerr
+                k = bound
+                inserted = False
+                for _ in range(i, bound + 1):
+                    following = r.order[k - 1]
+                    if smallest < r.error[following - 1]:
+                        r.order[k] = last
+                        inserted = True
+                        break
+                    r.order[k] = following
+                    k -= 1
+                if not inserted:
+                    r.order[i - 1] = last
+                placed = True
+                break
+            r.order[i - 2] = following
+            i += 1
+        if not placed:
+            r.order[bound - 1] = maxerr
+            r.order[top - 1] = last
+    maxerr = r.order[nrmax - 1]
+    return (maxerr, r.error[maxerr - 1], nrmax)
+
+
+def bisect[*Ts](
+    f: Callable[[f64, *Ts], f64],
+    args: tuple[*Ts],
+    transform: tuple[int, f64],
+    r: InOut[Intervals],
+    maxerr: int,
+    last: int,
+) -> tuple[f64, f64, f64, f64, f64, f64, bool]:
+    """Halves interval `maxerr` as QUADPACK does: one half stays in slot `maxerr`, the other
+    goes to slot `last`, and the half with the larger error takes slot `maxerr`. Gives the
+    ends `a1`, the midpoint `b1` and `b2`, the halves' summed integral and error, the integral
+    the whole interval had, and whether neither half's error equals its integral of
+    |f − mean|, the condition under which QUADPACK counts roundoff. `transform` chooses the
+    rule, as for `rule`. 42 calls of `f` on a finite interval."""
+    level = r.level[maxerr - 1] + 1
+    a1 = r.lower[maxerr - 1]
+    b1 = 0.5 * (r.lower[maxerr - 1] + r.upper[maxerr - 1])
+    a2 = b1
+    b2 = r.upper[maxerr - 1]
+    area1, error1, _, whole1 = rule(f, args, transform, a1, b1)
+    area2, error2, _, whole2 = rule(f, args, transform, a2, b2)
+    previous = r.area[maxerr - 1]
+    r.level[maxerr - 1] = level
+    r.level[last - 1] = level
+    r.area[maxerr - 1] = area1
+    r.area[last - 1] = area2
+    if error2 > error1:
+        r.lower[maxerr - 1] = a2
+        r.lower[last - 1] = a1
+        r.upper[last - 1] = b1
+        r.area[maxerr - 1] = area2
+        r.area[last - 1] = area1
+        r.error[maxerr - 1] = error2
+        r.error[last - 1] = error1
+    else:
+        r.lower[last - 1] = a2
+        r.upper[maxerr - 1] = b1
+        r.upper[last - 1] = b2
+        r.error[maxerr - 1] = error1
+        r.error[last - 1] = error2
+    steady = not (whole1 == error1 or whole2 == error2)
+    return (a1, b1, b2, area1 + area2, error1 + error2, previous, steady)
+
+
+def total_area(r: Intervals, last: int) -> f64:
+    """The sum of the first `last` intervals' integrals, in order, as QUADPACK adds them."""
+    result = 0.0
+    for k in range(last):
+        result = result + r.area[k]
+    return result
+
+
+def conclude(
+    r: Intervals,
+    last: int,
+    estimate: tuple[f64, f64, f64, f64, f64],
+    codes: tuple[int, int, bool],
+    whole: f64,
+) -> tuple[f64, f64, int]:
+    """The end of `dqagse` and `dqagpe` after the halving stops, from label 100 (170 in
+    `dqagpe`): chooses between the extrapolated `result` and the sum of the intervals, and
+    gives the final integral, error and code. `estimate` is the extrapolated result and its
+    error, the area and the summed error of the intervals, and `correc`, added to the error
+    when roundoff was found in the extrapolation; `codes` holds `ier`, `ierro` and whether the
+    integral's sign was steady (`ksgn = 1`); `whole` is the first rule's integral of |f|."""
+    result, error, area, errors, correction = estimate
+    ier, roundoff, steady = codes
+    summed = False
+    if error == HUGE:
+        summed = True
+    elif ier + roundoff != 0:
+        if roundoff == 3:
+            error = error + correction
+        if ier == 0:
+            ier = 3
+        if result != 0.0 and area != 0.0:
+            summed = error / abs(result) > errors / abs(area)
+        elif error > errors:
+            summed = True
+        elif area == 0.0:
+            return (result, error, ier - 1 if ier > 2 else ier)
+    if summed:
+        result = total_area(r, last)
+        error = errors
+    elif not (not steady and max(abs(result), abs(area)) <= whole * 0.01):
+        if 0.01 > result / area or result / area > 100.0 or errors > abs(area):
+            ier = 6
+    return (result, error, ier - 1 if ier > 2 else ier)

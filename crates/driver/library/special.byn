@@ -21,15 +21,33 @@ and never sees the files behind it.
 """
 
 from special_gamma import gamma as gamma, rgamma as rgamma, gammasgn as gammasgn, gammaln as gammaln
-from special_gamma import loggamma as loggamma, psi as psi, digamma as digamma
+from special_gamma import psi as psi, digamma as digamma
+from special_loggamma import loggamma as loggamma
 from special_gamma import polygamma as polygamma, factorial as factorial
 from special_beta import beta as beta, betaln as betaln, poch as poch
 from special_error import erf as erf, erfc as erfc, erfcx as erfcx, erfinv as erfinv
-from special_error import erfcinv as erfcinv, ndtr as ndtr, ndtri as ndtri, log_ndtr as log_ndtr
+from special_error import erfcinv as erfcinv, ndtr as ndtr, log_ndtr as log_ndtr
+from special_ndtri import ndtri as ndtri
 from special_error import dawsn as dawsn
 from special_bessel_jy import j0 as j0, j1 as j1, y0 as y0, y1 as y1, jn as jn, yn as yn
 from special_bessel_ik import i0e as i0e, i1e as i1e, i0 as i0, i1 as i1, k0e as k0e, k1e as k1e
 from special_bessel_ik import k0 as k0, k1 as k1, kn as kn
+from special_bessel_real import jv as jv, yv as yv, iv as iv, kv as kv, jve as jve, yve as yve
+from special_bessel_real import ive as ive, kve as kve, jvp as jvp, yvp as yvp, ivp as ivp
+from special_bessel_real import kvp as kvp
+from special_bessel_spherical import spherical_jn as spherical_jn
+from special_bessel_spherical import spherical_yn as spherical_yn
+from special_bessel_spherical import spherical_in as spherical_in
+from special_bessel_spherical import spherical_kn as spherical_kn
+from special_airy import airy as airy, airye as airye
+from special_kelvin import kelvin as kelvin, ber as ber, bei as bei, ker as ker, kei as kei
+from special_kelvin import berp as berp, beip as beip, kerp as kerp, keip as keip
+from special_struve import struve as struve, modstruve as modstruve
+from special_hyp0f1 import hyp0f1 as hyp0f1
+from special_hyp1f1 import hyp1f1 as hyp1f1
+from special_hyperu import hyperu as hyperu
+from special_hyp2f1 import hyp2f1 as hyp2f1
+from special_parabolic import pbdv as pbdv, pbvv as pbvv, pbwa as pbwa
 from special_incomplete_gamma import gammainc as gammainc, gammaincc as gammaincc
 from special_incomplete_gamma import gammaincinv as gammaincinv, gammainccinv as gammainccinv
 from special_incomplete_beta import betainc as betainc, betaincc as betaincc
@@ -43,4 +61,42 @@ from special_kolmogorov import kolmogorov as kolmogorov, kolmogi as kolmogi, owe
 from special_kolmogorov import smirnov as smirnov, smirnovi as smirnovi
 from special_helpers import expit as expit, log_expit as log_expit, logit as logit, xlogy as xlogy
 from special_helpers import xlog1py as xlog1py, entr as entr, rel_entr as rel_entr, kl_div as kl_div
-from special_helpers import binom as binom, comb as comb, perm as perm
+from special_helpers import binom as binom, comb as comb, perm as perm, logsumexp as logsumexp
+from special_helpers import softmax as softmax
+from special_integrals import exp1 as exp1, expi as expi, expn as expn, sici as sici
+from special_integrals import shichi as shichi, fresnel as fresnel
+from special_zeta import zeta as zeta, zetac as zetac, spence as spence
+from special_lambertw import lambertw as lambertw
+from special_mathieu import mathieu_a as mathieu_a, mathieu_b as mathieu_b
+from special_mathieu import mathieu_cem as mathieu_cem, mathieu_sem as mathieu_sem
+from special_mathieu_radial import mathieu_modcem1 as mathieu_modcem1
+from special_mathieu_radial import mathieu_modcem2 as mathieu_modcem2
+from special_mathieu_radial import mathieu_modsem1 as mathieu_modsem1
+from special_mathieu_radial import mathieu_modsem2 as mathieu_modsem2
+from special_mathieu_radial import mathieu_even_coef as mathieu_even_coef
+from special_mathieu_radial import mathieu_odd_coef as mathieu_odd_coef
+from special_spheroidal import pro_cv as pro_cv, obl_cv as obl_cv, pro_cv_seq as pro_cv_seq
+from special_spheroidal import obl_cv_seq as obl_cv_seq, pro_ang1 as pro_ang1
+from special_spheroidal import obl_ang1 as obl_ang1, pro_ang1_cv as pro_ang1_cv
+from special_spheroidal import obl_ang1_cv as obl_ang1_cv
+from special_spheroidal_radial import pro_rad1 as pro_rad1, pro_rad2 as pro_rad2
+from special_spheroidal_radial import obl_rad1 as obl_rad1, obl_rad2 as obl_rad2
+from special_spheroidal_radial import pro_rad1_cv as pro_rad1_cv, pro_rad2_cv as pro_rad2_cv
+from special_spheroidal_radial import obl_rad1_cv as obl_rad1_cv, obl_rad2_cv as obl_rad2_cv
+from special_elliptic import ellipk as ellipk, ellipkm1 as ellipkm1, ellipe as ellipe
+from special_elliptic import ellipkinc as ellipkinc, ellipeinc as ellipeinc, ellipj as ellipj
+from special_carlson import elliprc as elliprc, elliprd as elliprd, elliprf as elliprf
+from special_carlson import elliprg as elliprg, elliprj as elliprj
+from special_orthogonal import eval_legendre as eval_legendre, eval_chebyt as eval_chebyt
+from special_orthogonal import eval_chebyu as eval_chebyu, eval_hermite as eval_hermite
+from special_orthogonal import eval_hermitenorm as eval_hermitenorm, eval_laguerre as eval_laguerre
+from special_orthogonal import eval_genlaguerre as eval_genlaguerre, eval_jacobi as eval_jacobi
+from special_orthogonal import eval_gegenbauer as eval_gegenbauer, lpmv as lpmv
+from special_orthogonal import sph_harm_y as sph_harm_y
+from special_quadrature import roots_legendre as roots_legendre, roots_chebyt as roots_chebyt
+from special_quadrature import roots_chebyu as roots_chebyu, roots_hermite as roots_hermite
+from special_quadrature import roots_hermitenorm as roots_hermitenorm
+from special_quadrature import roots_laguerre as roots_laguerre
+from special_quadrature import roots_genlaguerre as roots_genlaguerre
+from special_quadrature import roots_jacobi as roots_jacobi
+from special_quadrature import roots_gegenbauer as roots_gegenbauer

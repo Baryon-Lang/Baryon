@@ -1,9 +1,9 @@
 //! A module's top-level names: what it defines and what it imports, before any import is
 //! resolved. Other modules read this when they import from it.
 
-use database::{Db, File};
+use database::{Db, File, library_module};
 use diagnostics::Diagnostic;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syntax::{NodeId, Role, SyntaxKind, SyntaxTree};
 
 /// Every name bound at the top level of one module.
@@ -99,7 +99,11 @@ pub(crate) fn module_items(db: &dyn Db, file: File) -> ModuleItems {
         repeated: Vec::new(),
         diagnostics: Vec::new(),
     };
+    let library = library_module(file.source(db).name()).is_some();
+    // The names whose first binding defines a function, which a library module may define again.
+    let mut functions = BTreeSet::new();
     for statement in tree.children(tree.root()) {
+        let function = tree.kind(statement) == SyntaxKind::FunctionDefinition;
         for (name, binding) in top_level_bindings(tree, text, statement) {
             let node = binding_node(&binding);
             if let Some(first) = items.names.get(&name) {
@@ -107,6 +111,12 @@ pub(crate) fn module_items(db: &dyn Db, file: File) -> ModuleItems {
                     && same_module(&again.target, &earlier.target)
                 {
                     items.repeated.push(again.clone());
+                    continue;
+                }
+                // Decision 0067: a standard-library module may define one function name more
+                // than once. The name binds the first definition, and the checker finds the
+                // rest beside it when it chooses one for a call.
+                if library && function && functions.contains(&name) {
                     continue;
                 }
                 let first = binding_node(first);
@@ -117,6 +127,9 @@ pub(crate) fn module_items(db: &dyn Db, file: File) -> ModuleItems {
                         .with_note("one name means one thing in a module; rename one of them"),
                 );
             } else {
+                if function {
+                    functions.insert(name.clone());
+                }
                 items.names.insert(name, binding);
             }
         }

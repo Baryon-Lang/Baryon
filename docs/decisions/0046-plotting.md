@@ -1,6 +1,6 @@
 # 0046. Plots are drawn with matplotlib's object-oriented names, in a `byplot` module, to SVG first
 
-Status: Accepted (Collins, 2026-11-12), amended twice on 2026-11-13
+Status: Accepted (chief designer, 2026-11-12), amended twice on 2026-11-13
 Date: 2026-11-12
 Roadmap: 3.15
 
@@ -10,7 +10,7 @@ Roadmap 3.15 gives Baryon plots: the line, scatter, bar, histogram and image plo
 data scientist makes every day, written to files that go into a paper, a report or a notebook.
 Phase 3's gate asks for a 30-line script that loads, groups, fits and plots.
 
-Native first is the rule (Collins, 2026-11-10): the plotting library is Baryon code in the
+Native first is the rule (chief designer, 2026-11-10): the plotting library is Baryon code in the
 standard library (decision 0038), never a call into Python or matplotlib. Its names follow the
 library readers already know, as NumPy's (0040, 0042, 0043) and AstroPy's (0039, 0044) do. For
 plots that library is matplotlib, and the code its users write looks like this:
@@ -114,7 +114,7 @@ Three ways were weighed:
 
 ## Amendment, 2026-11-13: the files under `pyplot` are internal
 
-Collins accepted this amendment on 2026-11-13.
+The chief designer accepted this amendment on 2026-11-13.
 
 `pyplot` draws through smaller library files, named as matplotlib names its own: `colors`, `cm`,
 `artist`, `transforms`, `axis`, `legend`, `image`, `colorbar`, `backend_svg` and `png`. As
@@ -131,12 +131,13 @@ keeping the files internal changes nothing a program can see and renames nothing
 
 ## Amendment, 2026-11-13: the module is `byplot`
 
-Collins set a naming rule at 03:54 UTC on 2026-11-13: no Baryon name contains "py", which marks a
-Python project, and Baryon's own names use a short Baryon abbreviation instead, chosen by the
-project (his words: "let's make sure names don't have "py" in them but rather a shorter Baryon
-abbreviation"). The coordinator chose `by`, as in `.byn`. The module this record calls `pyplot` is
-therefore `byplot`, and programs write `import byplot as plt`; the rest of this record reads with
-that name. Everything inside keeps matplotlib's names, `Axes`, `plot`, `savefig` and the keyword
-arguments, since those carry no "py" and are what a matplotlib user already knows. Only the import
-line of a moved script changes, from `import matplotlib.pyplot as plt` to `import byplot as plt`,
-and a script that keeps the old name fails to compile at the import instead of drawing anything.
+The chief designer set a naming rule at 03:54 UTC on 2026-11-13: no Baryon name contains "py", which
+marks a Python project, and Baryon's own names use a short Baryon abbreviation instead, chosen by
+the project (in the chief designer's words: "let's make sure names don't have "py" in them but
+rather a shorter Baryon abbreviation"). The coordinator chose `by`, as in `.byn`. The module this
+record calls `pyplot` is therefore `byplot`, and programs write `import byplot as plt`; the rest of
+this record reads with that name. Everything inside keeps matplotlib's names, `Axes`, `plot`,
+`savefig` and the keyword arguments, since those carry no "py" and are what a matplotlib user
+already knows. Only the import line of a moved script changes, from `import matplotlib.pyplot as
+plt` to `import byplot as plt`, and a script that keeps the old name fails to compile at the import
+instead of drawing anything.

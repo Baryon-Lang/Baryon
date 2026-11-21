@@ -82,12 +82,11 @@ error: `~` does not apply to `Array[f64, 1]`
 4 |     e = ~a
   |         ^^ its elements are not `bool`s or integers
 
-error: `&` cannot mix `f64` and `f64`
+error: `&` needs whole numbers or `bool`s, found `f64`
  --> main.byn:5:9
   |
 5 |     f = a & a
-  |         ^^^^^ different number types
-  = note: convert one side so both are the same type, such as `f64(x)`
+  |         ^^^^^ not a whole number
 
 error: a condition must be a `bool`, found `Array[bool, 1]`
  --> main.byn:6:8
@@ -274,5 +273,73 @@ error: expected `f64`, found `Array[i32, 1]`
   |
 9 |     wrong: f64 = days.unique()
   |                  ^^^^^^^^^^^^^ the annotation says `f64`"
+    );
+}
+
+/// `<<` and `>>` are not element-wise (roadmap 1.9.64): with an array on either side, or in
+/// place on one, each is an error at the operation. Before, the checker let it through and the
+/// build stopped in lowering.
+#[test]
+fn shifts_on_arrays_are_reported() {
+    let program = r"def shifts(a: InOut[Array[i64, 1]], x: Fixed[i64, (2,)]) -> i64:
+    b = a << 1
+    c = 1 >> x
+    a <<= 2
+    return 3 << 1
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `<<` does not apply to arrays
+ --> main.byn:2:9
+  |
+2 |     b = a << 1
+  |         ^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop
+
+error: `>>` does not apply to arrays
+ --> main.byn:3:9
+  |
+3 |     c = 1 >> x
+  |         ^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop
+
+error: `<<` does not apply to arrays
+ --> main.byn:4:5
+  |
+4 |     a <<= 2
+  |     ^^^^^^^ an array
+  = note: a shift applies to single whole numbers: shift each element in a loop"
+    );
+}
+
+/// `&`, `|`, `^`, `<<` and `>>` given a float or a complex number say what they need (roadmap
+/// 1.9.65). Before, `1.5 | 2.5` said `|` cannot mix `f64` and `f64`, as if the types differed.
+#[test]
+fn bitwise_operators_on_fractions_say_what_they_need() {
+    let program = r"def bits(x: f64, z: complex128) -> i64:
+    a = x | 2.5
+    b = 1 ^ z
+    c = x >> 1
+    return 0
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `|` needs whole numbers or `bool`s, found `f64`
+ --> main.byn:2:9
+  |
+2 |     a = x | 2.5
+  |         ^^^^^^^ not a whole number
+
+error: `^` needs whole numbers or `bool`s, found `complex128`
+ --> main.byn:3:9
+  |
+3 |     b = 1 ^ z
+  |         ^^^^^ not a whole number
+
+error: `>>` needs whole numbers, found `f64`
+ --> main.byn:4:9
+  |
+4 |     c = x >> 1
+  |         ^^^^^^ not a whole number"
     );
 }

@@ -6,6 +6,7 @@
 //! been reported by the resolver: it lowers to [`TypeKind::Unknown`] without a second error.
 
 use crate::outline::{Base, Kind, outline};
+use crate::written_bounds::Bounds;
 use database::{Definition, File, Package, Resolution};
 use diagnostics::Diagnostic;
 use syntax::{Flags, NodeId, Operator, Role, SyntaxKind, SyntaxTree};
@@ -32,6 +33,9 @@ pub(crate) struct Lowerer<'db> {
     type_parameters: Vec<NodeId>,
     /// The errors found so far, in the order found.
     pub(crate) diagnostics: Vec<Diagnostic>,
+    /// Whether each written type argument of a class is checked against its parameter's bound
+    /// as it is lowered, and where the errors go (the `written_bounds` module).
+    pub(crate) bounds: Bounds,
 }
 
 /// The builtin types that take arguments, each with an example of how to write it.
@@ -106,7 +110,14 @@ impl<'db> Lowerer<'db> {
             self_type,
             type_parameters,
             diagnostics: Vec::new(),
+            bounds: Bounds::Unchecked,
         }
+    }
+
+    /// Whether `binding`, the `Name` node a local name resolves to, is a type parameter in
+    /// scope rather than a variable: the `T` of `def f[T](x: T)` or of `class Box[T]`.
+    pub(crate) fn is_type_parameter(&self, binding: NodeId) -> bool {
+        self.type_parameters.contains(&binding)
     }
 
     /// The type parameters of `definition`, as types, in order.
@@ -155,7 +166,10 @@ impl<'db> Lowerer<'db> {
     pub(crate) fn lower(&mut self, node: NodeId) -> Type<'db> {
         match self.tree.kind(node) {
             SyntaxKind::None => Type::new(self.db, TypeKind::None),
-            SyntaxKind::Name => self.named(node, node, None),
+            SyntaxKind::Name => {
+                let ty = self.named(node, node, None);
+                self.bare_pack(node, ty)
+            }
             SyntaxKind::Attribute => match self.tree.child(node, Role::Attribute) {
                 Some(attribute) => self.named(node, attribute, None),
                 None => self.unknown(),
@@ -194,10 +208,18 @@ impl<'db> Lowerer<'db> {
 
     /// The type a name means. `node` is the whole annotation, where errors point; `name` the
     /// `Name` node to look up; `subscript` the subscript that gives it arguments, if any.
-    fn named(&mut self, node: NodeId, name: NodeId, subscript: Option<NodeId>) -> Type<'db> {
+    pub(crate) fn named(
+        &mut self,
+        node: NodeId,
+        name: NodeId,
+        subscript: Option<NodeId>,
+    ) -> Type<'db> {
         let written = self.tree.text(name, self.text);
         match self.resolution.definition(name) {
-            None | Some(Definition::Standard { .. }) => self.unknown(),
+            None => self.unknown(),
+            Some(Definition::Standard { module, member }) => {
+                self.standard_type(node, module, member.as_deref(), subscript)
+            }
             Some(Definition::Builtin("DataFrame")) => self.frame(node, subscript),
             Some(Definition::Builtin(builtin)) => self.builtin(node, builtin, subscript),
             Some(&Definition::Item(file, item)) => self.item(node, written, file, item, subscript),
@@ -306,7 +328,7 @@ impl<'db> Lowerer<'db> {
                 Type::new(self.db, TypeKind::Dict { key, value })
             }
             ("tuple", items) => {
-                let items = items.iter().map(|&item| self.lower(item)).collect();
+                let items = self.items(items);
                 Type::new(self.db, TypeKind::Tuple(items))
             }
             ("Array", &[element, rank]) => self.array(element, rank),
@@ -360,11 +382,12 @@ impl<'db> Lowerer<'db> {
                         _ => self.arity(node, written, expected, found),
                     };
                 }
-                let arguments = arguments
+                let arguments: Vec<_> = arguments
                     .unwrap_or_default()
                     .into_iter()
                     .map(|argument| self.lower(argument))
                     .collect();
+                self.written_bounds(node, written, file, &class.type_parameters, &arguments);
                 let nominal = Nominal {
                     file,
                     name,

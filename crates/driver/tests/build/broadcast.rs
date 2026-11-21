@@ -1,6 +1,7 @@
 //! Broadcasting (roadmap 3.9), built and run: whole-array arithmetic on arrays of different
 //! ranks and of length 1 prints what `NumPy` prints for the same program, and shapes that do not
-//! broadcast panic with the dimension and both lengths.
+//! broadcast panic with the dimension and both lengths. `**` on whole arrays (roadmap 1.9.58)
+//! gives each element's power as `**` on two numbers does, checked as it is.
 
 use super::{baryon_build, package, panic_report, stderr};
 use std::io;
@@ -171,5 +172,137 @@ def main():
     assert_eq!(
         stdout,
         "[1.+0.j 2.+0.j]\n[-1.+2.j -2.+4.j]\n[2.5 3.5]\n[1.5 3. ]\n"
+    );
+}
+
+/// Integer `//` and `%` of arrays check each divisor, as the same operators on two integers do,
+/// so a zero divisor panics at the expression rather than stopping the program with `SIGFPE`
+/// (roadmap 1.9.37). `NumPy` gives 0 with a warning there instead; Baryon keeps one rule for
+/// integers, scalar or array.
+#[test]
+fn integer_array_division_by_zero_panics() {
+    let program = "\
+def main():
+    a = Array([7, -7, 4])
+    print(a // Array([2, 2, 3]), a % Array([2, 2, 3]), a // 2)
+    print(a % Array([1, 0, 2]))
+";
+    let (code, stdout, report) = run("broadcast-divide-by-zero", program).unwrap();
+    assert_eq!(code, Some(101));
+    assert_eq!(stdout, "[ 3 -4  1] [1 1 1] [ 3 -4  2]\n");
+    assert_eq!(
+        report,
+        "panic: integer division by zero\n  --> main.byn:4:11\n"
+    );
+}
+
+/// `/` of integer arrays gives a float array, as in `NumPy`, whatever side the integers are on
+/// (roadmap 1.9.38); before, the backend could not divide two integers.
+#[test]
+fn integer_arrays_divide_to_floats() {
+    let program = "\
+def main():
+    c = Array([1, 2, 3])
+    d = Array([1, 4, 2])
+    print(c / d, c / 2, 3 / d, d / Array([0, 0, 0]))
+";
+    let (code, stdout, report) = run("broadcast-true-divide", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "[1.  0.5 1.5] [0.5 1.  1.5] [3.   0.75 1.5 ] [inf inf inf]\n"
+    );
+}
+
+/// Float `//` by zero gives `a / b`, as `NumPy` does, for a scalar and an array alike: an
+/// infinity with the quotient's sign, or NaN for `0.0 // 0.0`; `%` by zero gives NaN (roadmap
+/// 1.9.39). Python raises `ZeroDivisionError` for both.
+#[test]
+fn float_floor_division_by_zero_follows_numpy() {
+    let program = "\
+def main():
+    a = 2.0
+    zero = 0.0
+    print(a // zero, -a // zero, zero // zero, a % zero, -7.0 // 2.0, -0.0 // 3.0)
+    print(Array([2.0, -2.0, 0.0]) // Array([0.0, 0.0, 0.0]), Array([2.0, -2.0]) // -0.0)
+    print(Array([2.0, -2.0]) % Array([0.0, 0.0]))
+";
+    let (code, stdout, report) = run("broadcast-float-floor-by-zero", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "inf -inf nan nan -4.0 -0.0\n[ inf -inf  nan] [-inf  inf]\n[nan nan]\n"
+    );
+}
+
+/// Float, integer and complex arrays to a number, a number to an array, an array to an array,
+/// a power inside a sum, a broadcast matrix, `**=` on an array and on a slice, and a power in a
+/// `prange` loop: every line is what `NumPy` prints. Before, lowering stopped on "`**` on
+/// arrays" and "`**=`".
+#[test]
+fn powers_of_arrays_print_what_numpy_prints() {
+    let program = "\
+def main():
+    x = Array([1.0, 2.0, 3.0])
+    print(x ** 2, x ** 0.5, 2.0 ** x)
+    n = Array([1, 2, 3, 4])
+    print(n ** 2, n ** n, 2 ** n, n ** 0.5)
+    print(((x - 2.0) ** 2).sum())
+    m: Array[f64, 2] = Array.zeros((2, 2))
+    m[0, 1] = 3.0
+    print(m ** Array([1.0, 2.0]))
+    x **= 2
+    x[1:] **= 0.5
+    n **= 2
+    print(x, n)
+    total = 0.0
+    for i in prange(3):
+        total += (x ** 2)[i]
+    print(total)
+    z = Array([1j, 2.0 + 0j])
+    print(z ** 2)
+";
+    let (code, stdout, report) = run("array_powers", program).unwrap();
+    assert_eq!((code, report.as_str()), (Some(0), ""));
+    assert_eq!(
+        stdout,
+        "\
+[1. 4. 9.] [1.         1.41421356 1.73205081] [2. 4. 8.]
+[ 1  4  9 16] [  1   4  27 256] [ 2  4  8 16] [1.         1.41421356 1.73205081 2.        ]
+2.0
+[[0. 9.]
+ [0. 0.]]
+[1. 2. 3.] [ 1  4  9 16]
+14.0
+[-1.+0.j  4.+0.j]
+"
+    );
+}
+
+/// An integer power that overflows panics naming `**`, and a negative integer exponent panics
+/// naming it, as `**` on two integers does.
+#[test]
+fn integer_powers_of_arrays_are_checked() {
+    let overflow = "\
+def main():
+    big = Array([10, 4000000000])
+    print(big ** 2)
+";
+    let (code, _, report) = run("array_power_overflow", overflow).unwrap();
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        report,
+        "panic: integer overflow in `**`\n  --> main.byn:3:11\n"
+    );
+    let negative = "\
+def main():
+    n = Array([1, 2, 3])
+    print(n ** Array([1, -1, 2]))
+";
+    let (code, _, report) = run("array_power_negative", negative).unwrap();
+    assert_eq!(code, Some(101));
+    assert_eq!(
+        report,
+        "panic: negative exponent -1 in integer `**`\n  --> main.byn:3:11\n"
     );
 }

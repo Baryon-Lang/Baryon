@@ -43,6 +43,7 @@ impl<'db> Body<'db> {
             "savetxt" => return self.array_savetxt(node, arguments),
             "load" => return self.array_load(node, arguments, expected),
             "save" => return self.array_save(node, arguments),
+            "interp" => return self.array_interp(node, arguments),
             _ => {}
         }
         if !matches!(name, "zeros" | "ones" | "fill") {
@@ -98,6 +99,11 @@ impl<'db> Body<'db> {
                 "no value",
                 Some("for example `Array.fill((n,), 1.0)`"),
             );
+        }
+        if fill_value.is_none()
+            && let Some(error) = self.union_has_no_zero(node, name, element, rank)
+        {
+            return error;
         }
         if matches!(element.kind(self.db), TypeKind::Str) {
             let message = format!("`Array.{name}` cannot make an array of `str` yet");
@@ -360,15 +366,20 @@ impl<'db> Body<'db> {
         if name == "decode" && is_array {
             return Some(self.decode(node, base, arguments));
         }
-        if matches!(name, "mean" | "var" | "std") {
-            return Some(self.statistic(node, (base, element), name, arguments));
+        if matches!(name, "mean" | "var" | "std" | "any" | "all") {
+            return Some(self.summary(node, (base, element), name, arguments));
         }
+        let reduced = if name == "sum" {
+            self.summed(element)
+        } else {
+            element
+        };
         Some(match (name, arguments.positional.as_slice()) {
             ("copy" | "round", []) => base,
-            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => element,
+            ("sum" | "min" | "max", []) if arguments.keywords.is_empty() => reduced,
             ("sum" | "min" | "max", _) => {
                 let axis = self.axis_argument(arguments);
-                self.axis_reduction(node, (base, element), name, axis, arguments)
+                self.axis_reduction(node, (base, reduced), name, axis, arguments)
             }
             ("argsort" | "unique" | "nunique", [])
                 if is_array && rank_one && arguments.keywords.is_empty() =>

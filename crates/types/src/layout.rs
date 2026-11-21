@@ -292,7 +292,7 @@ impl<'db> Layouter<'_, 'db> {
                 let flag = primitive_layout(Primitive::Bool);
                 Ok(Layout::record([flag, payload]).ok_or(too_large)?.layout())
             }
-            TypeKind::Parameter { .. } => Err(LayoutError::Generic),
+            TypeKind::Parameter { .. } | TypeKind::Unpacked(_) => Err(LayoutError::Generic),
             TypeKind::Unknown => Err(LayoutError::Unknown),
         }
     }

@@ -16,6 +16,21 @@ array types, chosen by one question: is the shape known when the code is written
 `Fixed[f64, (3, 3)]` a 3 × 3 matrix. The rank (number of dimensions) of an `Array` is part of its
 type; the lengths of its dimensions are not.
 
+## NumBaryon
+
+NumBaryon is the name of Baryon's array and numerics layer: what NumPy is to Python. It is a name
+for documentation, not a package. Its arrays are built into the language and need no import:
+`Array`, `Fixed`, slicing, broadcasting, `@` and the array methods in this chapter. Its libraries
+are ordinary standard-library modules, imported under their own names, never under `numbaryon`:
+
+- `math` and `random` for numbers ([random numbers](#random-numbers));
+- `stats` for statistics ([Statistics](statistics.md));
+- `linalg` and `fft` for linear algebra and Fourier transforms
+  ([Linear algebra and FFT](linear-algebra.md)).
+
+NumBaryon keeps NumPy's names and results wherever it matches NumPy, so this reference often
+compares the two.
+
 ## Element types
 
 An array's elements are all of one copy type: a number, `bool`, a `Fixed` array, or a struct
@@ -86,6 +101,18 @@ def twice[T: Number](values: Array[T, 1]) -> Array[T, 1]:
 
 `twice(Array([1, 2, 3]))` gives `[2 4 6]`, an array of `int`, and `twice(Array([1.5, 2.0]))`
 gives `[3. 4.]`. A parameter with no bound has no zero, so `Array.zeros(n, T)` is an error there.
+
+A [union](types.md#unions-of-structs) has no zero or one either, so `Array.zeros` and
+`Array.ones` of a union are errors: no member is picked to stand for the union. Name the members
+the array starts with instead, in a list with the array type written out, or repeat one member
+with `Array.fill`:
+
+```python
+Shape = Circle | Square
+
+shapes: Array[Shape, 1] = Array([Circle(1.0), Square(2.0)])
+walls: Array[Shape, 1] = Array.fill(100, Circle(0.0))
+```
 
 A `Fixed` array is created by calling its type with its elements, or with one of the same
 functions without the shape:
@@ -171,7 +198,13 @@ direction = residual + beta * direction
   checked when the line runs, and shapes that do not broadcast panic; shapes of `Fixed` operands
   are checked when compiling. An `Array` and a `Fixed` array do not combine.
 - The number mixing rules of [Types](types.md#number-mixing) apply to the element types.
+- `/` of integer arrays gives an `f64` array, as in NumPy, and integer `//` and `%` panic on a
+  zero divisor, as they do for two integers. Float division by zero gives NumPy's infinities and
+  NaN; [Numbers](types.md#numbers) has the rule.
 - `-a` negates each element and `+a` keeps it. Both need an array of numbers.
+- `**` raises each element to a power, as `**` on two numbers does: `x ** 2`, `2.0 ** x` and
+  `a ** b` of two arrays, and `x **= 2` in place. An integer power is checked for overflow,
+  and a negative integer exponent panics, where NumPy raises `ValueError`.
 - An expression of element-wise operations runs as a single loop with no temporary arrays.
   `x += alpha * direction` reads each element of `direction` once and writes each element of `x`
   once.
@@ -285,6 +318,8 @@ def main():
   `counts > 1.5` compares an integer array as floats.
 - `&`, `|` and `^` combine two arrays of `bool`s element by element: and, or, and exclusive or.
   `~mask` is `not` of each element. All four also apply to integer arrays, bit by bit.
+- `<<` and `>>` shift single whole numbers only: `a << 1` on an array is an error. Shift each
+  element in a loop.
 - Python's `and`, `or` and `not` take one `bool`, not an array, so write `&`, `|` and `~`.
   They bind tighter than comparisons, as in Python: the parentheses in
   `(prices > 180.0) & (volume >= 250)` are needed.
@@ -317,6 +352,8 @@ def main():
   that order; a position may repeat. Each position is bounds-checked as an index is, so one
   below 0 or past the end panics. NumPy counts a negative position from the end; here only a
   negative literal index does, as in [Indexing](#indexing).
+- A `list` chooses as the array of its items does, as in NumPy: `prices[[3, 0]]` is
+  `prices[Array([3, 0])]`. The list is copied into an array first, one allocation.
 - Either is a new array that owns its elements, not a view, so it can be kept in a name,
   returned, or chosen from again: `volume[order][volume[order] > 60]`.
 - `a[mask] = value` and `a[positions] = value` set every chosen element to one value, which is
@@ -333,7 +370,8 @@ set.
 | Method | Result |
 | --- | --- |
 | `a.copy()` | A new contiguous array with the same elements |
-| `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element |
+| `a.sum()`, `a.min()`, `a.max()` | The sum, smallest and largest element. The sum of `bool` elements counts the `True` ones and is an `int`, as in NumPy: `(a > 0.0).sum()` is how many elements are positive |
+| `mask.any()`, `mask.all()` | Whether an element of an array of `bool`s is `True`, and whether every one is, over the whole array whatever its rank, as in NumPy: `(a > 0.0).all()`. Of an empty array `any()` is `False` and `all()` is `True`. An array of numbers is compared first, `(a != 0).any()`, and `axis=` is not built. Cost: one pass over the whole array |
 | `a.sum(axis=k)`, `a.min(axis=k)`, `a.max(axis=k)` | The sums, smallest and largest elements along axis `k`: an array with that axis removed. See [Reductions along an axis](#reductions-along-an-axis) |
 | `a.mean()`, `a.mean(axis=k)` | The mean of the elements, or of each line along axis `k`, with NumPy's bits. See [Means and variances](#means-and-variances) |
 | `a.var(ddof=0)`, `a.std(ddof=0)`, each with `axis=k` | The variance and standard deviation of float elements, dividing by `n - ddof`, with NumPy's bits |
@@ -390,7 +428,9 @@ This prints `[2 0 1] [171.  189.5 410. ]`.
   real part.
 - `a` is read, not changed. Arrays of higher rank and NumPy's `axis=` and `kind=` are not
   built.
-- **Cost:** about `n log n` comparisons, and two arrays of `n` positions while it runs.
+- **Cost:** about `n` steps for `f64` elements spread evenly between the smallest and the
+  largest and for `i64` elements in a range not much wider than `n`, and about `n log n`
+  comparisons otherwise. Four arrays of `n` numbers while it runs.
 
 ### Distinct elements
 
@@ -461,8 +501,11 @@ adds in the same tree, so it has the same bits as storing the expression and sum
 `numpy.sum`. It never stores the expression: the compiler computes the elements one leaf of the
 tree at a time, at most 128 of them, into a small buffer, sums each leaf, and adds the leaf sums
 in the tree's order ([decision 0041](../decisions/0041-one-pass-reductions.md)). That saves an
-array as large as the expression and a pass over it. It applies to `Array`s of floats; a sum
-along an axis of an expression still stores the expression first.
+array as large as the expression and a pass over it. It applies to `Array`s of floats, and also
+of integers and `bool`s, whose sum of an expression, such as `(a * b + r).sum()` or
+`(a > 0.0).sum()`, keeps one running total and checks each `+` for overflow as before. A sum
+along an axis of an expression is one pass too, as the next section says. `Fixed` arrays, which
+are small, store the expression first.
 
 `a.dot(b)` of floats adds its products in the same tree: each product `a[i] * b[i]` is rounded,
 never fused with the add that follows, and the products are summed as `sum` sums its elements. So
@@ -499,6 +542,13 @@ summed by the pairwise tree of [`a.sum()`](#the-order-sum-adds-in). Along any ot
 result starts at `0.0` and the elements are added one at a time from the first, which reads the
 array in row-major order. Integer sums are exact in any order, and overflow is checked as `+`
 checks it.
+
+A sum along an axis of a whole-array expression, such as `((u - v) * (u - v)).sum(axis=0)`,
+adds in the same orders without storing the expression (decision 0041's amendment). Along any
+axis but the last of floats, each value is computed and added into its place. Along the last
+axis, each row is computed into a buffer one row long and summed by the pairwise tree, so each
+row keeps its bits. Either way the only memory is the result, and one row, instead of an array
+as large as the expression.
 
 `a.min(axis=k)` and `a.max(axis=k)` follow the rules of `a.min()`: a NaN anywhere in a line makes
 that result NaN, and an axis of length 0 panics, even when the other axes are long, as NumPy
@@ -605,7 +655,8 @@ def apply(m: Array[f64, 2], x: Array[f64, 1], b: Array[f64, 1]) -> Array[f64, 1]
 ```
 
 Each entry adds its products one at a time, from `p = 0`. This order is not part of the language:
-with the build option `--blas` (roadmap 3.10.2), `@` will call BLAS, which adds in an order that
+with the build option [`--blas`](commands.md#matrix-products-through-blas), `@` of two `f32` or
+`f64` matrices calls BLAS, many times faster on large matrices, which adds in an order that
 depends on the machine, as NumPy's `@` does. Where the last bits must be reproducible, use `dot`
 and `sum`, whose order is fixed.
 
@@ -754,8 +805,10 @@ Use it where terms cancel: an energy summed over a long orbital integration, a r
 check of a result computed another way. `sum` is the fast default: it compensates a list's sum
 and adds an array's [pairwise](#the-order-sum-adds-in),
 which is accurate enough for most data but can still lose digits when large terms cancel.
-`fsum` is several times slower than `sum`, about six float operations per element for each
-partial sum it keeps, and it keeps only a few for typical data. It allocates one small list.
+`fsum` costs about twelve float operations per element for numbers of like size, which it adds
+exactly as two floats, with no memory. Numbers too far apart for that are added a second time
+as partial sums, about six float operations per element for each partial it keeps, a few for
+typical data, in one small list. The result is the same bits either way.
 
 A list display such as `fsum([1, 2.5])` reads its numbers as `f64`s, as Python converts them.
 Other element types are an error that asks for a conversion: `f64(n)` of each `int`. A table,
@@ -787,11 +840,13 @@ from math import f64x2
 
 def residual(a: f64, x: f64, b: f64) -> f64:
     """`b - a * x` with the product kept exact, then rounded once."""
-    product = f64x2(a, 0.0).mul(f64x2(x, 0.0))
-    return f64x2(b, 0.0).sub(product).to_f64()
+    product = f64x2.of(a).mul(f64x2.of(x))
+    return f64x2.of(b).sub(product).to_f64()
 ```
 
-`f64x2(x, 0.0)` makes one from an `f64`, exactly. Until a struct can define operators
+`f64x2.of(x)` makes one from an `f64`, exactly, as the constructor `f64x2(x, 0.0)` does. It
+holds that `f64` and nothing more: `f64x2.of(0.1)` is the `f64` nearest 0.1, and
+`f64x2.of(1.0).div(f64x2.of(10.0))` is 0.1 to 32 digits. Until a struct can define operators
 ([decision 0058](../decisions/0058-operators-are-dunder-methods.md), roadmap 3.34), the
 operations are methods, each taking and returning an `f64x2`, so `a * b + c` is written
 `a.mul(b).add(c)`:
@@ -802,13 +857,48 @@ operations are methods, each taking and returning an `f64x2`, so `a * b + c` is 
 | `a.sqrt()`, `a.neg()`, `a.abs()` | The square root, `-a`, `abs(a)` |
 | `a.eq(b)`, `a.ne(b)`, `a.lt(b)`, `a.le(b)`, `a.gt(b)`, `a.ge(b)` | `==`, `!=`, `<`, `<=`, `>`, `>=` as a `bool` |
 | `a.to_f64()` | The value rounded to an `f64` |
-| `a.to_str()` | 31 significant digits: `f64x2(2.0, 0.0).sqrt().to_str()` is `1.414213562373095048801688724210e+00` |
+| `a.to_str()` | 31 significant digits: `f64x2.of(2.0).sqrt().to_str()` is `1.414213562373095048801688724210e+00` |
 
 Each operation is accurate to a few units of 2**-104, about 1e-32 relative; the last digit of
 `to_str` can be one off. An infinite or NaN result is the one an `f64` would give, and `sqrt` of
 a negative value is NaN, as for the other `math` functions. `f64x2` is `Copy`. `print(a)` writes
 its two fields; print `a.to_str()` for the decimal value. Keep `f64x2` code out of
 `with fastmath:`, whose reordering silently removes the extra digits.
+
+## Interpolation
+
+`Array.interp(x, xp, fp)` is NumPy's `interp`: the piecewise linear interpolation of the points
+`(xp[i], fp[i])` at each element of `x`, as a new `Array[f64, 1]`
+([decision 0069](../decisions/0069-interpolate-api.md)). Each value has the bits
+`numpy.interp` gives, so a test can compare with NumPy using `==`.
+
+```python
+def temperature_at(times: Array[f64, 1]) -> Array[f64, 1]:
+    """Temperatures read every 6 hours, interpolated at `times`, in hours."""
+    hours = Array([0.0, 6.0, 12.0, 18.0, 24.0])
+    celsius = Array([4.1, 3.2, 11.8, 9.5, 4.4])
+    return Array.interp(times, hours, celsius)
+```
+
+- `xp` must increase. That is not checked, as NumPy does not check it; points out of order give
+  values that mean nothing.
+- Below `xp[0]` the result is `left`, by default `fp[0]`, and above the last point it is
+  `right`, by default the last value: `Array.interp(x, xp, fp, left=0.0, right=0.0)`.
+- With `period=`, `x` and `xp` are taken modulo the period, for angles or times of day, and `xp`
+  need not be sorted. `left` and `right` are ignored then, as in NumPy.
+- A NaN in `x` gives NaN.
+- `xp` and `fp` of different lengths, an empty `xp`, or `period=0.0` panic with NumPy's message
+  where NumPy raises `ValueError`, as [decision 0040](../decisions/0040-linear-algebra-and-fft.md)
+  does for shapes that do not fit.
+
+Differences from NumPy:
+
+- `x` must be an array. NumPy also takes one number and gives one back. Here, write
+  `Array.interp(Array([t]), xp, fp)[0]` until functions apply element by element (idea I.61).
+- Complex `fp` is not built yet.
+
+Cost: a bisection of `xp` for each element of `x`, so `O(len(x) * log(len(xp)))`, and one new
+array as long as `x`. With `period=`, `xp` is also sorted into a copy.
 
 ## Random numbers
 
@@ -820,6 +910,8 @@ parallel streams never share state ([decision 0028](../decisions/0028-philox-ran
   panics.
 - `generator.uniform()` draws the next `f64` in `[0, 1)`. It changes the generator, so
   `generator` must be a variable or an `InOut` parameter.
+- `Philox` is also the generator's type, so a function takes one as
+  `def walk(generator: InOut[Philox]) -> f64:`, or `random.Philox` after `import random`.
 
 A `Philox` moves; it is not a copy type, so two values can never draw the same numbers by
 accident. Give each `prange` chunk its own stream, as the

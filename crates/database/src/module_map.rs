@@ -330,6 +330,16 @@ mod tests {
         assert_eq!(modules.get(&name), Some(first));
     }
 
+    /// A package builds without `--blas` until the application sets it (decision 0040).
+    #[test]
+    fn a_package_starts_without_blas() {
+        let mut database = Database::default();
+        let package = package(&database, &["main.byn"]);
+        assert!(!package.blas(&database));
+        package.set_blas(&mut database).to(true);
+        assert!(package.blas(&database));
+    }
+
     #[test]
     fn library_files_are_listed_apart_from_modules() {
         let database = Database::default();

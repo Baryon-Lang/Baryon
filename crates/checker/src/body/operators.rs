@@ -24,7 +24,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_arithmetic(node, operator, left_type, right_type);
         }
         if operator == Operator::Divide
             && let Some(path) = self.path_join(node, left_type, right_type)
@@ -65,7 +65,19 @@ impl<'db> Body<'db> {
         let symbol = operator.symbol();
         match (left.kind(self.db), right.kind(self.db)) {
             (TypeKind::Primitive(a), TypeKind::Primitive(b)) => {
+                let fraction =
+                    |p: &Primitive| matches!(p, Primitive::Float(_) | Primitive::Complex(_));
                 let result = match operator {
+                    Operator::BitAnd
+                    | Operator::BitOr
+                    | Operator::BitXor
+                    | Operator::LeftShift
+                    | Operator::RightShift
+                        if fraction(a) || fraction(b) =>
+                    {
+                        let found = if fraction(a) { *a } else { *b };
+                        return self.bits_of_fraction(node, operator, found);
+                    }
                     Operator::BitAnd
                     | Operator::BitOr
                     | Operator::BitXor
@@ -122,6 +134,26 @@ impl<'db> Body<'db> {
         }
     }
 
+    /// Reports a bitwise operator or a shift given `found`, a float or complex number (roadmap
+    /// 1.9.65). Before, `1.5 & 2.5` said `&` cannot mix `f64` and `f64`, which reads as two
+    /// different types.
+    fn bits_of_fraction(
+        &mut self,
+        node: NodeId,
+        operator: Operator,
+        found: Primitive,
+    ) -> Type<'db> {
+        let symbol = operator.symbol();
+        let wanted = if matches!(operator, Operator::LeftShift | Operator::RightShift) {
+            "whole numbers"
+        } else {
+            "whole numbers or `bool`s"
+        };
+        let message = format!("`{symbol}` needs {wanted}, found `{found}`");
+        self.lowerer
+            .error(node, &message, "not a whole number", None)
+    }
+
     /// Reports two numbers an operator or a built-in function, `symbol`, cannot mix, suggesting a conversion.
     pub(super) fn mixing_error(
         &mut self,
@@ -156,7 +188,7 @@ impl<'db> Body<'db> {
             return self.text_array_unbuilt(node, &format!("`{}`", operator.symbol()));
         }
         if self.is_optional_array(operand) {
-            return self.optional_array_unbuilt(node, &format!("`{}`", operator.symbol()));
+            return self.optional_array_unary(node, operator, operand);
         }
         if matches!(operator, Operator::Negate | Operator::Plus)
             && self.number_context(operand) == Some(operand)
@@ -310,6 +342,19 @@ impl<'db> Body<'db> {
                 }
                 None => self.operands(left_node, right_node),
             };
+            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
+                let compared =
+                    self.optional_array_comparison(comparator, operator, left_type, right_type);
+                if count > 1 {
+                    self.lowerer.error(
+                        node,
+                        "a chain of comparisons cannot compare arrays",
+                        "more than one comparison",
+                        Some("compare in pairs and combine them: `(a < b) & (b < c)`"),
+                    );
+                }
+                return compared;
+            }
             if self.is_text_array(left_type) || self.is_text_array(right_type) {
                 let compared =
                     self.text_array_comparison(comparator, operator, left_type, right_type);
@@ -322,10 +367,6 @@ impl<'db> Body<'db> {
                     );
                 }
                 return compared;
-            }
-            if self.is_optional_array(left_type) || self.is_optional_array(right_type) {
-                let what = format!("`{}`", operator.symbol());
-                return self.optional_array_unbuilt(comparator, &what);
             }
             let ordering = matches!(
                 operator,

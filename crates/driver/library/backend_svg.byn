@@ -177,8 +177,9 @@ class RendererSVG(Struct, RendererBase):
         its top left corner at `(x, y)`, `width` by `height` points, as a PNG embedded in the
         file, as matplotlib embeds images. `smooth` lets the viewer blend neighbouring pixels,
         as matplotlib's antialiasing does when it shrinks an image; otherwise each pixel stays
-        a sharp rectangle, as its `"nearest"` interpolation draws an image it enlarges. Costs
-        about 5.5 bytes of the file a pixel, until PNG data are compressed (roadmap 3.27)."""
+        a sharp rectangle, as its `"nearest"` interpolation draws an image it enlarges. The PNG is
+        compressed with `zlib`, so it costs from about 0.5 bytes of the file a pixel for a
+        smooth field to about 2.3 for noise, written in base64."""
         cut = _clip(clip, self.clips)  # the clip attribute, if any
         sharp = "" if smooth else ' style="image-rendering:pixelated"'
         self.elements.append(

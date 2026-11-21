@@ -1,0 +1,195 @@
+"""Spherical Bessel functions for `special` (roadmap 3.18.5): `spherical_jn`, `spherical_yn`,
+`spherical_in` and `spherical_kn`, each with its derivative.
+
+jₙ(x) = √(π/(2x)) Jₙ₊½(x), and yₙ, iₙ and kₙ likewise from Y, I and K, through the functions of
+real order in `special_bessel_real`. kₙ of a negative argument, where K is not real, is
+SciPy's continuation of the closed form, −π iₙ(|x|) − (−1)ⁿ kₙ(|x|).
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import inf, isinf, isnan, nan, pi, sqrt
+from special_bessel_real import iv, jv, kv, yv
+
+
+def _root(x: f64) -> f64:
+    """√(π/(2x)), the factor between a spherical Bessel function and its cylinder function."""
+    return sqrt(pi / (2.0 * x))
+
+
+def _first(n: int, x: f64) -> f64:
+    """jₙ(x) for `n` of 0 or more and every `x`."""
+    if isnan(x):
+        return nan
+    if isinf(x):
+        return 0.0
+    if x == 0.0:
+        if n == 0:
+            return 1.0
+        return 0.0
+    if x < 0.0:
+        if n % 2 == 1:
+            return -_first(n, -x)
+        return _first(n, -x)
+    return _root(x) * jv(n + 0.5, x)
+
+
+def spherical_jn(n: int, z: f64, derivative: bool = False) -> f64:
+    """The spherical Bessel function of the first kind, jₙ(z) = √(π/(2z)) Jₙ₊½(z), or its
+    derivative jₙ′(z) = jₙ₋₁(z) − (n + 1)/z jₙ(z) when `derivative`, as
+    `scipy.special.spherical_jn` for a real `z`. jₙ(−z) = (−1)ⁿ jₙ(z). NaN for a negative `n`.
+
+    ```python
+    from special import spherical_jn
+
+    print(spherical_jn(2, 1.5))  # 0.12734928368840825
+    ```
+    """
+    if n < 0:
+        return nan
+    if not derivative:
+        return _first(n, z)
+    if n == 0:
+        return -_first(1, z)
+    if z == 0.0:
+        if n == 1:
+            return 1.0 / 3.0
+        return 0.0
+    if isinf(z):
+        return 0.0
+    return _first(n - 1, z) - (n + 1) / z * _first(n, z)
+
+
+def _second(n: int, x: f64) -> f64:
+    """yₙ(x) for `n` of 0 or more and every `x`."""
+    if isnan(x):
+        return nan
+    if isinf(x):
+        return 0.0
+    if x == 0.0:
+        return -inf
+    if x < 0.0:
+        if n % 2 == 0:
+            return -_second(n, -x)
+        return _second(n, -x)
+    return _root(x) * yv(n + 0.5, x)
+
+
+def spherical_yn(n: int, z: f64, derivative: bool = False) -> f64:
+    """The spherical Bessel function of the second kind, yₙ(z) = √(π/(2z)) Yₙ₊½(z), or its
+    derivative yₙ₋₁(z) − (n + 1)/z yₙ(z) when `derivative`, as `scipy.special.spherical_yn` for
+    a real `z`. yₙ(−z) = (−1)ⁿ⁺¹ yₙ(z). −∞ at z = 0, where the derivative is ∞; NaN for a
+    negative `n`.
+
+    ```python
+    from special import spherical_yn
+
+    print(spherical_yn(2, 1.5))  # -1.3457126936204509
+    ```
+    """
+    if n < 0:
+        return nan
+    if not derivative:
+        return _second(n, z)
+    if n == 0:
+        return -_second(1, z)
+    if z == 0.0:
+        return inf
+    if isinf(z):
+        return 0.0
+    return _second(n - 1, z) - (n + 1) / z * _second(n, z)
+
+
+def _modified_first(n: int, x: f64) -> f64:
+    """iₙ(x) for `n` of 0 or more and every `x`."""
+    if isnan(x):
+        return nan
+    if x == 0.0:
+        if n == 0:
+            return 1.0
+        return 0.0
+    if x < 0.0:
+        if n % 2 == 1:
+            return -_modified_first(n, -x)
+        return _modified_first(n, -x)
+    if isinf(x):
+        return inf
+    return _root(x) * iv(n + 0.5, x)
+
+
+def spherical_in(n: int, z: f64, derivative: bool = False) -> f64:
+    """The modified spherical Bessel function of the first kind, iₙ(z) = √(π/(2z)) Iₙ₊½(z), or
+    its derivative iₙ₋₁(z) − (n + 1)/z iₙ(z) when `derivative`, as `scipy.special.spherical_in`
+    for a real `z`. iₙ(−z) = (−1)ⁿ iₙ(z). NaN for a negative `n`.
+
+    ```python
+    from special import spherical_in
+
+    print(spherical_in(2, 1.5))  # 0.17566633204538637
+    ```
+    """
+    if n < 0:
+        return nan
+    if not derivative:
+        return _modified_first(n, z)
+    if n == 0:
+        return _modified_first(1, z)
+    if z == 0.0:
+        if n == 1:
+            return 1.0 / 3.0
+        return 0.0
+    if isinf(z):
+        if z > 0.0 or n % 2 == 0:
+            return inf
+        return -inf
+    return _modified_first(n - 1, z) - (n + 1) / z * _modified_first(n, z)
+
+
+def _modified_second(n: int, x: f64) -> f64:
+    """kₙ(x) for `n` of 0 or more and every `x`: from K above 0, and below 0 by
+    kₙ(−x) = −π iₙ(x) − (−1)ⁿ kₙ(x), from kₙ(z) = (−1)ⁿ⁺¹ (π/2)(iₙ(z) − i₋ₙ₋₁(z)), which is the
+    continuation SciPy gives there. The upward recurrence from k₀ would lose every digit for
+    large `n`, since its terms alternate in sign below 0."""
+    if isnan(x):
+        return nan
+    if x == 0.0:
+        return inf
+    if isinf(x):
+        if x > 0.0:
+            return 0.0
+        return -inf
+    if x > 0.0:
+        return _root(x) * kv(n + 0.5, x)
+    first = pi * _modified_first(n, -x)
+    second = _modified_second(n, -x)
+    if n % 2 == 0:
+        return -first - second
+    return second - first
+
+
+def spherical_kn(n: int, z: f64, derivative: bool = False) -> f64:
+    """The modified spherical Bessel function of the second kind, kₙ(z) = √(π/(2z)) Kₙ₊½(z),
+    or its derivative −kₙ₋₁(z) − (n + 1)/z kₙ(z) when `derivative`, as
+    `scipy.special.spherical_kn` for a real `z`. ∞ at z = 0, where the derivative is −∞; below
+    0 it is SciPy's continuation (π/2) e⁻ᶻ/z Σₖ (n + k)!/(k! (n − k)!) (2z)⁻ᵏ, which is
+    −π iₙ(|z|) − (−1)ⁿ kₙ(|z|). NaN for a negative `n`.
+
+    ```python
+    from special import spherical_kn
+
+    print(spherical_kn(2, 1.5))  # 1.0125325483240084
+    ```
+    """
+    if n < 0:
+        return nan
+    if not derivative:
+        return _modified_second(n, z)
+    if n == 0:
+        return -_modified_second(1, z)
+    if z == 0.0:
+        return -inf
+    if isinf(z):
+        if z > 0.0:
+            return 0.0
+        return inf
+    return -_modified_second(n - 1, z) - (n + 1) / z * _modified_second(n, z)

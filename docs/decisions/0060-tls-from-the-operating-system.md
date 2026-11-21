@@ -13,7 +13,7 @@ having no TLS, and it needs expert review and constant patching.
 ## Decision
 
 TLS comes from the operating system: OpenSSL on Linux and Apple's Security framework on macOS.
-Collins chose this on 2026-11-13.
+The chief designer chose this on 2026-11-13.
 
 ## Consequences
 

@@ -17,6 +17,7 @@ formats one at a time, those that need no outside library first.
 | Format | Read | Write |
 | --- | --- | --- |
 | [Text tables](#text-tables) of numbers: CSV, whitespace-separated columns | `Array.loadtxt(fname)` | `Array.savetxt(fname, X)` |
+| [CSV files](csv-files.md) with a header row and columns of mixed types | `DataFrame.read_csv(path)` | `df.to_csv(path)` |
 | [`.npy` files](#npy-files), NumPy's own format | `Array.load(file)` | `Array.save(file, arr)` |
 | [FITS images and headers](#fits-files), astronomy's format | `fits.getdata(filename)`, `fits.getheader(filename)` | `fits.writeto(filename, data, header)` |
 | [NetCDF files](#netcdf-files), classic and NetCDF-4, the format of climate and weather data | `Dataset(filename).variables[name][:]` | `ds.variables[name][:] = values`, classic formats only |
@@ -360,16 +361,21 @@ the same calls, fill values and padding included; the tests compare them.
 
 - **Each call changes the file at once.** The file is the only state, so `ds.close()` and the
   end of a `with` block have nothing left to write, and a program that stops halfway leaves a
-  valid file with what it defined and wrote so far. Each change writes the new file beside the
-  old one and then renames it over it, so even a crash or a full disk in the middle of a change
-  leaves the old file or the new one, never one cut short, and the file keeps its permissions.
-  A variable is filled with its type's fill value until it is
-  written. Each change and each write reads the whole file into memory and writes it again,
-  which is quick for the small headers of classic files but makes many small definitions of a
-  large file slow: define everything first, then write the values. The file must fit in
-  memory, records added included: a write that would not fit raises `OSError` with the kind
-  `INVALID_DATA`, or, on a system that promises more memory than it has, can end the program.
-  Writing in place is idea I.53 on the roadmap.
+  valid file with what it defined and wrote so far. A new dimension, variable or attribute
+  writes the new file beside the old one and then renames it over it, so a crash or a full disk
+  in the middle of a definition leaves the old file or the new one, never one cut short, and
+  the file keeps its permissions. A write of values, `var[...] = values`, changes the file in
+  place: records it adds go first, then its values, then the header's count of records, each
+  step flushed to the disk before the next. A crash in the middle of a write may leave that one
+  write partly done, some of its values written and others not, but the file stays valid and
+  everything written before it stays. A variable is filled with its type's fill value until it
+  is written.
+- **What a change costs.** A new dimension, variable or attribute changes the header's length,
+  which moves every value, so the file is copied into its new layout: one pass over the file
+  through a buffer of a megabyte, whatever its size (a definition on a 1 GB file takes about
+  4 s and 13 MB of memory). A write of values moves nothing, so it writes only the bytes it
+  changes, the records it adds and four bytes of header, whatever the file's size: writing one
+  record to a 1 GB file writes one record. Define everything first, then write the values.
 - **A type is named as `netCDF4` names it** (`"f4"`, `"f8"`, `"i1"`, `"i2"`, `"i4"`) or as NumPy
   names or codes it (`"float32"`, `"f"`, `"int16"`, `"h"` and so on). `dimensions` is a tuple of
   names, or one name, and up to four of them so far.

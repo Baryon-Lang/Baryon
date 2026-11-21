@@ -1,0 +1,289 @@
+"""Parabolic cylinder functions for `special` (roadmap 3.18.14): `pbdv`, `pbvv` and `pbwa`,
+Weber's functions D_v(x), V_v(x) and W(a, x) with their derivatives, for real arguments.
+
+D_v and V_v solve w″ − (x²/4 + a) w = 0 with a = −v − ½ (DLMF 12.2). D_v(x) = U(a, x) is the
+solution that decays as x grows; V_v(x) = V(a, x) grows there. Each is built from x of 0 up:
+
+- D_v(x) is 2^(v/2) e^(−x²/4) U(−v/2, ½, x²/2), Tricomi's function of `hyperu` (DLMF 12.7.14);
+- V_v(x) is V(a, 0) u₁ + V′(a, 0) u₂ (DLMF 12.4.2), with u₁ = e^(−x²/4) M(−v/2, ½, x²/2) and
+  u₂ = x e^(−x²/4) M((1 − v)/2, 3/2, x²/2) the even and odd solutions of `hyp1f1`
+  (DLMF 12.7.12 and 12.7.13), and V(a, 0), V′(a, 0) from DLMF 12.2.8 and 12.2.9.
+
+Below 0 both come from the same two at |x|, by DLMF 12.2.15 and 12.2.18 with the reflection
+formula of Γ folded in, so that no pole of Γ is reached at a whole v:
+D_v(−x) = cos(πv) D_v(x) + π/Γ(−v) V_v(x) and
+V_v(−x) = −sin(πv)/Γ(1 + v) D_v(x) − cos(πv) V_v(x).
+
+e^(−x²/4) is taken with x² carried as two `f64`s, so it is rounded once, not with the
+rounding of x² magnified by x²/4.
+
+W(a, x) solves w″ + (x²/4 − a) w = 0 instead (DLMF 12.14) and is built from its power
+series in `f64x2`; `pbwa` says how.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import copysign, exp, f64x2, fma, inf, isinf, isnan, log, nan, pi, pow
+from special_common import cospi, is_integer, sinpi
+from special_gamma import gammaln, gammasgn, rgamma
+from special_hyp1f1 import hyp1f1
+from special_hyperu import hyperu
+
+_SQRT_TWO: Final = 1.4142135623730951  # √2
+_SQRT_TWO_OVER_PI: Final = 0.7978845608028654  # √(2/π)
+
+
+def _gauss(x: f64) -> f64:
+    """e^(−x²/4), with x² formed as an exact sum of two `f64`s."""
+    square = x * x
+    low = fma(x, x, -square)
+    return exp(-0.25 * square) * (1.0 - 0.25 * low)
+
+
+def _decaying(v: f64, x: f64) -> f64:
+    """D_v(x) for x at least 0: 2^(v/2) e^(−x²/4) U(−v/2, ½, x²/2)."""
+    return pow(2.0, 0.5 * v) * _gauss(x) * hyperu(-0.5 * v, 0.5, 0.5 * x * x)
+
+
+def _growing_far(v: f64, x: f64, shift: f64 = 0.0) -> f64:
+    """V_v(x) for large x by its asymptotic expansion (DLMF 12.9.2),
+    √(2/π) e^(x²/4) x^(−v−1) Σ (v + 1)₂ₛ / (s! (2x²)ˢ), or NaN where the terms do not fall to
+    1e-17 of the sum. The exponential and the power are taken as one `exp` once e^(x²/4) alone
+    would overflow, or when a caller passes a `shift`, the log of a factor it multiplies by,
+    so that a value past the largest `f64` scaled by a tiny factor is not lost."""
+    term = 1.0
+    total = 1.0
+    w = 0.5 / (x * x)
+    for s in range(1, 200):
+        term *= (v + 2.0 * s - 1.0) * (v + 2.0 * s) * w / s
+        total += term
+        if abs(term) <= 1.0e-17 * abs(total):
+            square = x * x
+            low = fma(x, x, -square)
+            if square < 2800.0 and shift == 0.0:
+                lead = exp(0.25 * square) * pow(x, -v - 1.0)
+            else:
+                lead = exp(0.25 * square - (v + 1.0) * log(x) + shift)
+            return _SQRT_TWO_OVER_PI * lead * (1.0 + 0.25 * low) * total
+        if s > 2 and abs(term) > abs(total):
+            return nan
+    return nan
+
+
+def _growing(v: f64, x: f64) -> f64:
+    """V_v(x) for x at least 0: V(a, 0) u₁ + V′(a, 0) u₂ with a = −v − ½, or past x = 37,
+    where e^(x²/2) in u₁ and u₂ would overflow, the asymptotic expansion."""
+    if x > 37.0:
+        far = _growing_far(v, x)
+        if not isnan(far):
+            return far
+    scale = pow(2.0, -0.5 * v) * _gauss(x)
+    z = 0.5 * x * x
+    even = -sinpi(0.5 * v) * rgamma(1.0 + 0.5 * v) * hyp1f1(-0.5 * v, 0.5, z)
+    odd = _SQRT_TWO * cospi(0.5 * v) * rgamma(0.5 + 0.5 * v) * x * hyp1f1(0.5 - 0.5 * v, 1.5, z)
+    return scale * (even + odd)
+
+
+def _d(v: f64, x: f64) -> f64:
+    """D_v(x) for any finite x."""
+    if x >= 0.0:
+        return _decaying(v, x)
+    y = -x
+    reciprocal = rgamma(-v)
+    if reciprocal == 0.0:
+        # A whole v from 0 up: D_n(−x) = (−1)ⁿ D_n(x).
+        return cospi(v) * _decaying(v, y)
+    if y > 37.0:
+        # π/Γ(−v) V_v(y) with 1/Γ(−v) folded into the exponential: V_v alone can pass the
+        # largest `f64` where the product does not.
+        far = _growing_far(v, y, -gammaln(-v))
+        if not isnan(far):
+            return cospi(v) * _decaying(v, y) + pi * gammasgn(-v) * far
+    return cospi(v) * _decaying(v, y) + pi * reciprocal * _growing(v, y)
+
+
+def _v(v: f64, x: f64) -> f64:
+    """V_v(x) for any finite x."""
+    if x >= 0.0:
+        return _growing(v, x)
+    y = -x
+    return -sinpi(v) * rgamma(1.0 + v) * _decaying(v, y) - cospi(v) * _growing(v, y)
+
+
+def pbdv(v: f64, x: f64) -> tuple[f64, f64]:
+    """The parabolic cylinder function D_v(x) and its derivative D_v′(x), as
+    `scipy.special.pbdv`.
+
+    D_v′ is x/2 D_v(x) − D_{v+1}(x) (DLMF 12.8.3). For a whole v = n, D_n(x) is
+    e^(−x²/4) Heₙ(x), a Hermite polynomial times a Gaussian.
+
+    ```python
+    from special import pbdv
+
+    d, slope = pbdv(1.0, 2.0)
+    print(d)        # 0.7357588823428848, 2/e
+    print(slope)    # -0.3678794411714422, −1/e
+    ```
+    """
+    if isnan(v) or isnan(x) or isinf(v):
+        return (nan, nan)
+    if x == inf or (x == -inf and is_integer(v)):
+        return (0.0, 0.0)
+    if x == -inf:
+        # D_v(x) grows as π/Γ(−v) V_v(|x|) and falls toward its far end.
+        sign = copysign(1.0, rgamma(-v))
+        return (sign * inf, -sign * inf)
+    value = _d(v, x)
+    return (value, 0.5 * x * value - _d(v + 1.0, x))
+
+
+def pbvv(v: f64, x: f64) -> tuple[f64, f64]:
+    """The parabolic cylinder function V_v(x) and its derivative V_v′(x), as
+    `scipy.special.pbvv`: V(a, x) of DLMF 12.2 with a = −v − ½.
+
+    V_v′ is V_{v−1}(x) − x/2 V_v(x) (DLMF 12.8.9).
+
+    ```python
+    from special import pbvv
+
+    value, slope = pbvv(0.5, 1.0)
+    print(value)    # 0.22003508652565454
+    print(slope)    # 0.9226713556199727
+    ```
+    """
+    if isnan(v) or isnan(x) or isinf(v):
+        return (nan, nan)
+    if x == inf:
+        return (inf, inf)
+    if x == -inf:
+        # V_v(x) grows as −cos(πv) V_v(|x|), or falls to 0 where cos(πv) is 0.
+        turn = cospi(v)
+        if turn == 0.0:
+            return (0.0, 0.0)
+        sign = -copysign(1.0, turn)
+        return (sign * inf, -sign * inf)
+    value = _v(v, x)
+    return (value, _v(v - 1.0, x) - 0.5 * x * value)
+
+
+def _complex_step(total: tuple[f64x2, f64x2], step: tuple[f64x2, f64x2],
+                  coefficient: f64x2) -> tuple[f64x2, f64x2]:
+    """total × step + coefficient, with each complex number a real and an imaginary `f64x2`:
+    one step of Horner's rule."""
+    return (total[0].mul(step[0]).sub(total[1].mul(step[1])).add(coefficient),
+            total[0].mul(step[1]).add(total[1].mul(step[0])))
+
+
+def _exp_small(r: f64x2) -> f64x2:
+    """eʳ in `f64x2` for |r| below 0.02, by its Taylor series to r¹⁴/14!, past 1e-35."""
+    total = f64x2.of(1.0)
+    for step in range(14):
+        total = f64x2.of(1.0).add(r.mul(total).div(f64x2.of(14.0 - step)))
+    return total
+
+
+def _gamma_ratio_root(y: f64) -> f64x2:
+    """√(G₁/G₃), with G₁ = |Γ(¼ + iy)| and G₃ = |Γ(¾ + iy)|, in `f64x2`: where W is far
+    below the two parts it is built from, their difference needs this to about 30 digits.
+
+    Both Γ are moved up by 24 with Γ(z) = Γ(z + 1)/z, which leaves the product
+    P = Π ((k + ¾)² + y²)/((k + ¼)² + y²) over k below 24. At u = 24¼ + iy,
+    log Γ(u + ½) − log Γ(u) = ½ log u + D(u), with D(u) = −1/(8u) + 1/(192u³) − … in odd powers of
+    1/u from Bernoulli polynomials at ½ and 0; thirteen terms reach 1e-32 there. So
+    (G₁/G₃)² = P e^(−2 Re D(u)) / |u|, and its fourth root is the answer."""
+    square = f64x2.of(y).mul(f64x2.of(y))
+    upper = f64x2.of(1.0)
+    lower = f64x2.of(1.0)
+    for k in range(24):
+        # (k + ¾)² and (k + ¼)² are exact in `f64`.
+        upper = upper.mul(square.add(f64x2.of((k + 0.75) * (k + 0.75))))
+        lower = lower.mul(square.add(f64x2.of((k + 0.25) * (k + 0.25))))
+    size = square.add(f64x2.of(588.0625))  # |u|², with 24¼² = 588.0625
+    real = f64x2.of(24.25).div(size)
+    imaginary = f64x2.of(-y).div(size)
+    # step is 1/u², and total the sum in its powers, as a real and an imaginary part.
+    step = (real.mul(real).sub(imaginary.mul(imaginary)), real.mul(imaginary).mul(f64x2.of(2.0)))
+    total = (f64x2(-4386.206601307094, 2.9103830456733704e-13), f64x2.of(0.0))
+    total = _complex_step(total, step, f64x2(313.69655055423146, -7.414358981844523e-15))
+    total = _complex_step(total, step, f64x2(-26.80572169735318, 1.691768418476429e-16))
+    total = _complex_step(total, step, f64x2(2.784861777958117, 1.8698493046318425e-16))
+    total = _complex_step(total, step, f64x2(-0.359287374159869, -2.6122894697062506e-17))
+    total = _complex_step(total, step, f64x2(0.059100405375162764, -3.23815048849004e-18))
+    total = _complex_step(total, step, f64x2(-0.012819730318509616, 5.337610695313253e-19))
+    total = _complex_step(total, step, f64x2(0.0038341175426136365, -1.182766006347823e-19))
+    total = _complex_step(total, step, f64x2(-0.001681857638888889, 9.637352644315594e-20))
+    total = _complex_step(total, step, f64x2(0.0011858258928571428, 9.29316147844718e-20))
+    total = _complex_step(total, step, f64x2(-0.0015625, 8.673617379884036e-20))
+    total = _complex_step(total, step, f64x2(0.005208333333333333, 2.8912057932946783e-19))
+    total = _complex_step(total, step, f64x2(-0.125, 0.0))
+    tail = total[0].mul(real).sub(total[1].mul(imaginary))
+    squared = upper.div(lower).mul(_exp_small(tail.mul(f64x2.of(-2.0)))).div(size.sqrt())
+    return squared.sqrt().sqrt()
+
+
+def _weber_series(a: f64, x: f64, odd: bool) -> tuple[f64x2, f64x2]:
+    """The even (y₁, with y₁(0) = 1) or odd (y₂, with y₂′(0) = 1) solution of
+    w″ + (x²/4 − a) w = 0 and its derivative at x above 0, by the power series Σ cₖ xᵏ with
+    (k + 2)(k + 1) cₖ₊₂ = a cₖ − cₖ₋₂/4, summed in `f64x2`: the terms reach up to 1e15 times W
+    in the domain of `pbwa`, so `f64` would keep few digits or none. The derivative is
+    Σ k cₖ xᵏ divided by x once, since a rounded k/x on each term would lose those digits."""
+    square = f64x2.of(x).mul(f64x2.of(x))
+    shift = f64x2.of(a).mul(square)
+    quarter = square.mul(square).mul(f64x2.of(0.25))
+    # term is cₖ xᵏ, and before is the cₖ₋₂ xᵏ⁻² it follows.
+    k = 1.0 if odd else 0.0
+    before = f64x2.of(0.0)
+    term = f64x2.of(x) if odd else f64x2.of(1.0)
+    total = term
+    weighted = term if odd else f64x2.of(0.0)
+    bound = abs(a) * x * x + x * x * x * x
+    while k < 400.0:
+        following = shift.mul(term).sub(quarter.mul(before)).div(
+            f64x2.of((k + 2.0) * (k + 1.0)))
+        before = term
+        term = following
+        k += 2.0
+        total = total.add(term)
+        weighted = weighted.add(term.mul(f64x2.of(k)))
+        small = abs(term.hi) + abs(before.hi) <= 1.0e-34 * abs(total.hi)
+        if small and k * k > bound:
+            break
+    return (total, weighted.div(f64x2.of(x)))
+
+
+def pbwa(a: f64, x: f64) -> tuple[f64, f64]:
+    """The parabolic cylinder function W(a, x) and its derivative W′(a, x), as
+    `scipy.special.pbwa`, for |a| up to 5 and |x| up to 10, and NaN beyond.
+
+    W(a, x) solves w″ + (x²/4 − a) w = 0 (DLMF 12.14). It is built from the even and odd
+    solutions y₁ and y₂ of the power series as
+    W(a, ±x) = 2^(−3/4) (√(G₁/G₃) y₁(x) ∓ √(2G₃/G₁) y₂(x)), with G₁ = |Γ(¼ + ia/2)| and
+    G₃ = |Γ(¾ + ia/2)| (DLMF 12.14.4 to 12.14.9). Where a is above 0 and x is too, W can be
+    1e15 times smaller than the two parts, so both they and the Γ ratio are carried to about 30
+    digits in `f64x2`. SciPy answers only for |a| and |x| up to 5.
+
+    ```python
+    from special import pbwa
+
+    w, slope = pbwa(1.0, 0.5)
+    print(w)        # 0.4679105355315861
+    print(slope)    # -0.3951391931515281
+    ```
+    """
+    if isnan(a) or isnan(x) or abs(a) > 5.0 or abs(x) > 10.0:
+        return (nan, nan)
+    root = _gamma_ratio_root(0.5 * a)
+    even_part = f64x2(0.5946035575013605, 1.991007615732823e-17).mul(root)  # 2^(−3/4) √(G₁/G₃)
+    odd_part = f64x2(0.8408964152537145, 4.099505010290748e-17).div(root)  # 2^(−1/4) √(G₃/G₁)
+    y = abs(x)
+    if y == 0.0:
+        return (even_part.to_f64(), -odd_part.to_f64())
+    even, even_slope = _weber_series(a, y, False)
+    odd, odd_slope = _weber_series(a, y, True)
+    if x < 0.0:
+        # y₁ and y₂′ are even, y₂ and y₁′ odd.
+        odd = odd.neg()
+        even_slope = even_slope.neg()
+    value = even_part.mul(even).sub(odd_part.mul(odd))
+    slope = even_part.mul(even_slope).sub(odd_part.mul(odd_slope))
+    return (value.to_f64(), slope.to_f64())

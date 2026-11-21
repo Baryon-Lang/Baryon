@@ -22,7 +22,9 @@ a number live in a register; Python's unbounded integers cannot.
 
 Floating-point arithmetic follows IEEE 754 exactly, with no reordering, unless a future
 `with fastmath:` block allows it. Dividing a float by zero gives an infinity or NaN, as in IEEE
-754 and NumPy; dividing an integer by zero panics.
+754 and NumPy: `/` and `//` give an infinity with the sign of the quotient, or NaN when both sides
+are zero, and `%` gives NaN. Dividing an integer by zero with `//` or `%` panics, for two numbers
+and for arrays alike.
 
 ### Number literals
 
@@ -271,11 +273,16 @@ def report(step: i64, name: str, energy: f64) -> str:
 
 `report(7, "argon", -1.25)` returns `step    7: argon =    -1.2500 {ok}`. Fill, alignment, sign,
 `#`, `0`, width, `,` and `_` grouping, precision and the type letters `d b o x X e E f F g G %`
-and `s` all work as in Python, and a value with no specification is written as `print` writes it.
+and `s` all work as in Python, and a value with no specification is written as `print` writes it,
+whatever its type: `f"{xs}"` of a list is `[1, 2, 3]` and `f"{p}"` of a struct is
+`Point(x=1.5, y=2.0)`. A specification on a value other than a number, `bool` or `str`, such as
+`{xs:>10}`, is not built yet.
 The compiler checks each specification against its value's type, so `{name:+}` on a `str` is a
 compile error rather than a run-time one. Not supported yet: the `z` flag, the `n` and `c` type
-letters, `!r`, `{value=}`, `\N{name}` escapes, and a
-specification built from other values, such as `{x:{width}}`.
+letters, `!r`, `!a`, `{value=}`, `\N{name}` escapes, and a
+specification built from other values, such as `{x:{width}}`. The compiler reports `!r`, `!a`
+and `{value=}` where they are written; `!s` is allowed, since it is what an interpolation does
+anyway.
 
 A `str` is a pointer and a length. A literal points at the program's own copy of its text and is
 never copied ([decision 0022](../decisions/0022-str-values.md)); an f-string, `+` and `s.copy()`
@@ -285,6 +292,22 @@ build new text, which the value owns and frees when it is dropped.
 
 `(a, b, c)` is a tuple: a fixed number of values, each with its own type, written `tuple[int, f64]`.
 Tuples unpack in assignments and `for` loops: `x, y, z = position`.
+
+Where the tuple's type is written, in an annotation, a return type or a parameter, an item may
+be `None` or a plain value where that type has a `T | None`, and a member where it has a union,
+as in Python:
+
+```python
+def root(x: f64) -> tuple[f64, f64 | None]:
+    if x < 0.0:
+        return (x, None)
+    return (x, x ** 0.5)
+```
+
+With no type written, a tuple or dict whose part is only ever `None`, such as
+`print((1.5, None))` or `{"a": None}`, is a compile error for now: the compiler does not yet
+store the type `None` on its own inside another value. Write the type
+with room for a value, `t: tuple[f64, f64 | None] = (1.5, None)`.
 
 ## Lists
 
@@ -301,6 +324,13 @@ inserts at `i`, and `more` stays as it was. It rebuilds the list, one pass over 
 with a step, `values[::2] = more`, cannot be assigned to yet. A list is for building up data of
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
+
+A list's items share one type, so `[1, "a"]` is a compile error. `None` is the one exception:
+items of one type `T` and `None` make a `list[T | None]`, a list of
+[optional values](#optional-values), with no annotation. `[1.5, None, 2.5]` is a
+`list[f64 | None]`, wherever it is written and whichever item comes first. Two types other
+than `None` stay an error, with or without a `None` beside them, and so does a `None` in a list
+whose written type has no room for one, such as `values: list[f64] = [1.5, None]`.
 
 ```python
 def main():
@@ -413,6 +443,12 @@ def describe(distance: f64 | None) -> str:
 Using a `T | None` as a `T` without the check is a compile error. There is no null pointer and no
 sentinel value: `None` on a value type costs a flag, not an allocation.
 
+A `T` or `None` goes wherever a `T | None` is expected, and so does a conditional expression
+whose branches are one of each: `best: f64 | None = None if empty else total / count`, or the
+same as a return value or an argument. Without an expected type, the branches of a conditional
+must have one type, so `None if empty else total` on its own is an error; annotate the
+variable. A conditional of two members of a [union](#unions-of-structs) works the same way.
+
 The compiler follows the program's branches to know where a variable has been checked:
 
 - Inside `if x is not None:`, and after `if x is None:` whose body ends in `return`, `raise`,
@@ -468,6 +504,25 @@ class Particle(Struct):
 
   start = Point.origin()
   end = Point.on_axis(2.5)
+  ```
+- A struct that defines `__call__` can be called like a function, as a Python object can:
+  `p(3.0)` is `p.__call__(3.0)`, with `p` passed as `self`
+  ([decision 0058](../decisions/0058-operators-are-dunder-methods.md)). It costs what the
+  method call costs. The struct can be any expression, not only a name: a field,
+  `result.sol(0.5)`, or the result of a call, `p.derivative()(2.0)`. A struct without `__call__`
+  cannot be called.
+
+  ```python
+  class Line(Struct, Copy):
+      slope: f64
+      intercept: f64
+
+      def __call__(self, x: f64) -> f64:
+          return self.slope * x + self.intercept
+
+
+  f = Line(2.0, 1.0)
+  print(f(3.0))       # 7.0
   ```
 - Structs have no inheritance
   ([decision 0015](../decisions/0015-no-class-inheritance.md)): no base besides `Struct` and,
@@ -626,7 +681,10 @@ it is one. A union is not accepted where a wider union is expected yet, such as 
 
 `match` takes a union apart with class patterns. A class pattern names a struct and matches its
 fields by position, in declaration order, or by keyword; fields it does not name match anything.
-A capture binds the field's value.
+A capture binds the field's value. A field of a copy type is copied; any other field is borrowed
+when the subject is borrowed, such as a read-only parameter or `self`, so the capture can be read
+in its case but not moved or changed, and `name.copy()` keeps it (decision 0032). A capture from
+any other subject, such as a local variable, that is not a copy type is not built yet.
 
 ```python
 def ghost_value(boundary: Boundary, inside: f64, dx: f64) -> f64:
@@ -693,6 +751,9 @@ followed by room for its largest member, so an `Array` of a union stores every e
 size of the largest kind: a `Periodic` in a `Boundary` array takes 32 bytes, 24 for the fields of a
 `Robin` and 8 for the tag and its padding.
 A hot loop over millions of values of one kind is faster with its own array of that kind.
+An array of a union is built from members the program names, with `Array.fill` or from a list;
+`Array.zeros` and `Array.ones` of a union are errors, since a union has no zero
+([Creating arrays](arrays.md#creating-arrays)).
 
 What builds today, and what a union cannot do yet, is in [What builds today](status.md#types).
 
@@ -763,8 +824,117 @@ A parameter of type `Callable[[f64, Vec3], Vec3]` takes a function with that sig
 one copy of the receiving function per function passed to it, so the passed function is inlined
 and the call costs nothing ([decision 0026](../decisions/0026-functions-as-arguments.md)).
 The receiving function may pass the parameter on to another `Callable` parameter or copy it into
-a local. Which function a name holds must be known when compiling, so a local that holds one of
-two different functions depending on a branch is reported when building.
+a local. A local may hold a module-level function too, `f = sq`, with or without an annotation:
+`f: Callable[[f64], f64] = sq` checks `sq`'s signature, and `f` is still `sq`, so `f(2.0)` is a
+direct call of `sq`, and a function that raises raises through it. Which function a
+name holds must be known when compiling, so a local that holds one of two different functions
+depending on a branch is reported when building. A `prange` loop may call a `Callable` parameter
+or such a local; each iteration calls the function directly.
+
+These forms need a function value at run time, which version 0 leaves out. Each is a checker
+error that names decision 0026, at the expression or annotation:
+
+- a method read as a value, bound (`s.at`) or through its class (`Scale.double`);
+- a generic function read as a value (`twice` in `apply(twice, 1.0)`);
+- a `Callable` in a struct field, a return type, or inside a parameter's type, such as
+  `Callable[[f64], f64] | None` or `list[Callable[[f64], f64]]`: a `Callable` must be a
+  parameter's whole type;
+- a struct value with a `__call__` method passed to a `Callable` parameter. The struct can be
+  called, `p(3.0)`, but it carries data, so passing it would make it a closure.
+
+Lambdas, nested functions and module-level variables are errors of their own. To pass a method
+or a generic function, wrap it in a module-level function:
+
+```python
+def apply(f: Callable[[f64], f64], x: f64) -> f64:
+    return f(x)
+
+
+def twice[T: Float](x: T) -> T:
+    return x + x
+
+
+def twice_f64(x: f64) -> f64:
+    return twice(x)
+
+
+print(apply(twice_f64, 1.5))        # 3.0
+```
+
+A function with an optional callback, such as SciPy's `jac=None`, is two functions in version 0:
+one that takes the callback and one that does not.
+
+### Extra arguments for a callback
+
+SciPy's solvers take a callback and a tuple `args` of extra values to pass it, as
+`solve_ivp(fun, ..., args=(k, m))`. Baryon writes this with a *variadic type parameter*, a type
+parameter that stands for a list of types instead of one type. It is written `*Ts` in the type
+parameter list; `tuple[*Ts]` is a tuple of those types, and `Callable[[f64, *Ts], f64]` a function
+that takes an `f64` and then one argument of each. A call spreads a tuple into separate
+arguments with `*`, `f(x, *args)` ([decision 0026](../decisions/0026-functions-as-arguments.md),
+amended).
+
+```python
+def apply[*Ts](f: Callable[[f64, *Ts], f64], x: f64, args: tuple[*Ts] = ()) -> f64:
+    return f(x, *args)
+
+
+def double(x: f64) -> f64:
+    return 2.0 * x
+
+
+def line(x: f64, slope: f64, offset: f64) -> f64:
+    return slope * x + offset
+
+
+print(apply(double, 2.0))               # 4.0, Ts is empty
+print(apply(line, 2.0, (3.0, 1.0)))     # 7.0, Ts is f64, f64
+```
+
+The compiler finds `Ts` from the tuple passed as `args`, or from the function when `args` is
+left out, and the two must agree: `apply(line, 2.0)` is an error, since `line` needs two more
+`f64` values. Like any generic, `apply` is compiled once per set of types, so the spread costs
+nothing at run time. The rules in version 0:
+
+- a function has at most one variadic type parameter, and a class has none;
+- `*Ts` comes last, in the type parameter list, in `tuple[...]` and in a `Callable`'s parameters;
+- `Ts` alone, without `*`, is an error: it is a list of types, not one type;
+- a `tuple[*Ts]` parameter defaults only to `()`;
+- `*` in a call unpacks a tuple, as the last argument, with no keyword arguments, into a call of
+  a `Callable` parameter or local. A tuple of known length spreads the same way,
+  `f(1.0, *t)` with `t: tuple[f64, f64]`. A list does not, since its length is not known when
+  compiling.
+
+## Overloaded library functions
+
+Some functions of the standard library have more than one *overload*: one name defined more than
+once, for different argument types, as SciPy's `loggamma` takes a real or a complex number
+([decision 0067](../decisions/0067-library-overloading.md)). A call runs the overload its
+arguments fit, and each overload has its own return type:
+
+```python
+from special import loggamma
+
+
+def main():
+    print(loggamma(2.5))                    # 0.2846828704729192, an f64
+    print(loggamma(complex(1.0, 2.0)))      # (-1.876078786430929+0.12964631630978873j)
+```
+
+The rules:
+
+- Only the standard library defines overloads. In a program's own module a name defined twice is
+  an error, as before.
+- A number literal fits a wider number type too, and takes its nearest one: an int literal an
+  integer type, then `f64`, then `complex128`; a float literal `f64`, then `complex128`. So
+  `loggamma(3)` is the real `loggamma`. Any other call that fits two overloads equally well is an
+  error naming both.
+- A call no overload fits is an error that lists the overloads.
+- An overloaded name used as a value, without calling it, must go where a `Callable` is expected,
+  such as `apply(special.loggamma, z)` with `f: Callable[[complex128], complex128]`; it stands for
+  the overload with that signature.
+- An overload may be generic only when its bound excludes every other overload's argument types,
+  as `[T: Float]` excludes `complex128`, so no call fits two.
 
 ## Generics
 
@@ -786,7 +956,30 @@ from the arguments. Each type parameter takes the type of the first argument tha
 left to right and number literals last, so `largest(x, 0)` with `x: f32` makes the `0` an `f32`.
 Every other argument must then have the same type: `largest(x, n)` with `x: f64` and `n: i64` is an
 error, as in non-generic code. A generic struct is built the same way: `Pair(1.5, 2.5)` is a
-`Pair[f64]`.
+`Pair[f64]`. Its type arguments may also be written, as on a class function, and the arguments
+are then checked against them: `Box[f64]([])` is a `Box` with an empty `list[f64]`, and
+`Pair[f64](1, 2)` makes its literals `f64`
+([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). A written
+type argument must satisfy its parameter's bound, as an inferred one must, wherever it is written:
+`p: Pair[str]`, `Pair[str].both("a")` and `Pair[str]("a", "b")` are each an error for
+`class Pair[T: Number]`. Type arguments are never taken from an annotation, so
+`c: Box[f64] = Box([])` is an error. A built-in constructor takes none written:
+`Array[f64, 1]([1.0])` and `DataFrame[Trade]({...})` are errors, and the type goes on the
+variable instead, `a: Array[i64 | None, 1] = Array([10, None])`. A call whose
+arguments leave a type parameter unfixed, such as `make()` for `def make[T]() -> list[T]`, is an
+error too. A `None` passed for a `T | None` fixes `T` only when no other argument
+does: `pick(None, 3)` with `def pick[T: Number](a: T | None, b: T | None)` takes `T` from the
+`3`. When only `None` fixes it, `T` is the type `None`, and `T | None` is then `None`, since
+a union's repeats do not matter: `show(None)` for `def show[T](x: T | None)` builds.
+
+A generic function's body is compiled once for all its type arguments, so for now it cannot
+show four kinds of value whose text the library writes: a frame, an array with missing values,
+a text array and a `Path`. A call that gives `T` one of them, or a value that holds one, is an
+error when the function prints its `T` or puts it in an f-string, `print(value)` or
+`f"{value}"` for `value: T`; print the value outside the function instead. The compiler finds
+such a use where the value printed starts at a parameter, `value`, `xs[0]` or `p.field`; one
+copied into a local variable first, or passed to another generic function, is not seen and
+prints the parts the compiler stores it in. Showing them through a type parameter is idea I.71.
 
 A generic struct's method called through its class finds the class's type arguments the same
 way, from all its arguments: `Pair.both(1.5)` is the `both` of `Pair[f64]`, and
@@ -814,9 +1007,17 @@ print(Pair.total(p))        # 3.0, the same as p.total()
 ```
 
 Inside a generic function, a type parameter is its own type: a `T` matches only `T`, and only the
-operations its bound allows apply to it. A number literal takes the type `T` under `Float`; under
-`Number` only an integer literal does, since `T` may be an integer type, so `x * 0.5` needs
-`[T: Float]`. Under `VectorSpace` a literal is an `f64`, which is what scales a vector.
+operations its bound allows apply to it. Under `Number` or `Float` it converts one real number,
+an integer or a float of any width, as the number type it stands for would: `T(len(xs))` is
+`f32(len(xs))` in the `f32` copy, and `T(n)` panics in the `i8` copy where `i8(n)` would
+([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). Under any other
+bound `T(0)` is an error. The reverse, a number conversion of a `T`'s value such as `f64(x)`,
+is not built yet and is a compile error; convert the other value to `T` instead, as in
+`x * T(k)`. A type parameter has no methods but its trait's, so `x.copy()` on an
+unbounded `T` is an error too. A number literal
+takes the type `T` under `Float`; under `Number` only an integer literal does, since `T` may be an
+integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which
+is what scales a vector.
 
 ### Traits
 
@@ -826,7 +1027,7 @@ declares its own ([decision 0031](../decisions/0031-traits-are-protocols.md)).
 | Trait | A type satisfies it if it supports | Satisfied by |
 | --- | --- | --- |
 | `Number` | `+ - * /`, comparison, and literals | Every number type |
-| `Float` | `Number`, plus the `math` functions | `f32`, `f64` |
+| `Float` | `Number`, plus the `math` functions and `**`, which is `math.pow` | `f32`, `f64` |
 | `VectorSpace` | `+` and `-` with itself, and `*` by an `f64` on either side | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
 | `Copy` | Copying on assignment | See [copy types](values-and-references.md#copy-types) |
 
@@ -954,8 +1155,10 @@ ion.energy()    # ion.particle.energy()
 ## Scope and definite assignment
 
 Variables have function scope, as in Python: one assigned inside an `if` or a loop is visible after
-it. A variable may be used only where every path that reaches the use has assigned it; the compiler
-checks this and names the path that does not.
+it. The one exception is the name an `except ... as` binds, which belongs to its `except` block
+(see [Errors](errors.md)), as Python deletes it when the block ends. A variable may be used only
+where every path that reaches the use has assigned it; the compiler checks this and names the path
+that does not.
 
 ```python
 def classify(energy: f64) -> str:

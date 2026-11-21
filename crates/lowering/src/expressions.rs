@@ -2,6 +2,7 @@
 //! statements and, for `and`, `or`, conditionals and calls, blocks.
 
 use crate::builder::Builder;
+use crate::frames::erase;
 use database::Definition;
 use mir::{Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
@@ -47,12 +48,31 @@ impl<'db> Builder<'db> {
             SyntaxKind::Subscript if self.is_environ_item(node) => {
                 self.environ_item(place, node);
             }
+            SyntaxKind::Subscript if self.is_optional_text_item(node) => {
+                self.optional_text_item(place, node);
+            }
             SyntaxKind::Subscript if self.is_text_subscript(node) => {
                 self.text_subscript(place, node);
             }
             SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript => {
                 let operand = self.operand(node);
                 self.assign(place, Rvalue::Use(operand), node);
+            }
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation
+                if self.is_optional_mask_operation(node) =>
+            {
+                self.optional_mask_operation(place, node);
+            }
+            SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation
+                if self.is_optional_arithmetic(node) =>
+            {
+                self.optional_arithmetic(place, node);
+            }
+            SyntaxKind::Compare if self.is_optional_text_comparison(node) => {
+                self.optional_text_comparison(place, node);
+            }
+            SyntaxKind::Compare if self.is_optional_comparison(node) => {
+                self.optional_comparison(place, node);
             }
             SyntaxKind::BinaryOperation | SyntaxKind::UnaryOperation | SyntaxKind::Compare
                 if self.is_array(ty) =>
@@ -67,7 +87,21 @@ impl<'db> Builder<'db> {
             SyntaxKind::Call => self.call(place, node),
             SyntaxKind::Tuple => {
                 let items: Vec<NodeId> = self.tree.children_with(node, Role::Item).collect();
-                let operands = items.into_iter().map(|item| self.operand(item)).collect();
+                // An item the checker widened, such as a `None` in a `tuple[f64, f64 | None]`,
+                // is converted to its place's type, as a list's items are. A tuple that splices
+                // a `*args` has no place per item and builds its items as they are.
+                let places = match ty.kind(self.db) {
+                    TypeKind::Tuple(places) if places.len() == items.len() => places.clone(),
+                    _ => Vec::new(),
+                };
+                let operands = items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, item)| match places.get(index) {
+                        Some(&to) => self.operand_as(item, to),
+                        None => self.operand(item),
+                    })
+                    .collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
             SyntaxKind::List => self.list_display(place, node),
@@ -119,6 +153,7 @@ impl<'db> Builder<'db> {
         }
         let temporary = self.temporary(ty, node);
         self.write(Place::from(temporary), ty, node);
+        self.drop_later(temporary);
         self.take(Place::from(temporary), ty)
     }
 
@@ -143,6 +178,7 @@ impl<'db> Builder<'db> {
         let rvalue = self.coerce(operand, from, to);
         let temporary = self.temporary(to, node);
         self.assign(Place::from(temporary), rvalue, node);
+        self.drop_later(temporary);
         self.take(Place::from(temporary), to)
     }
 
@@ -201,18 +237,25 @@ impl<'db> Builder<'db> {
         }
         match self.tree.kind(node) {
             SyntaxKind::Name => {
-                if let Some(&Definition::Local(binding)) = self.definition(node)
-                    && let Some(element) = self.aliases.get(&binding)
+                let (place, held) = if let Some(&Definition::Local(binding)) = self.definition(node)
+                    && let Some((element, ty)) = self.aliases.get(&binding)
                 {
-                    return Some(element.clone());
-                }
-                let Some(local) = self.variable(node) else {
-                    self.unsupported(node, "names other than variables, parameters and constants");
-                    return None;
+                    (element.clone(), *ty)
+                } else {
+                    let Some(local) = self.variable(node) else {
+                        self.unsupported(
+                            node,
+                            "names other than variables, parameters and constants",
+                        );
+                        return None;
+                    };
+                    (Place::from(local), self.local_type(local))
                 };
-                let held = self.local_type(local);
-                let read = self.typed.expression(node);
-                let place = Place::from(local);
+                // A loop variable that borrows its element is narrowed as any variable is
+                // (roadmap 1.9.35). The local holds the stored form of a frame, a text array
+                // or an array with gaps, so the type read is compared in that form too
+                // (roadmap 1.9.55).
+                let read = self.typed.expression(node).map(|ty| erase(self.db, ty));
                 Some(match read {
                     Some(read) if read != held && self.optional_value(held) == Some(read) => {
                         place.project(Projection::Value)

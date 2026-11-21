@@ -1,0 +1,385 @@
+"""The radial spheroidal wave functions for `special` (roadmap 3.18.14): `pro_rad1`, `pro_rad2`,
+`obl_rad1` and `obl_rad2` with their derivatives, and their `_cv` forms, which take the
+characteristic value instead of finding it.
+
+The radial functions solve the radial spheroidal equation, which the angular one of
+`special_spheroidal` becomes on the other coordinate: for prolate spheroids, with ξ > 1,
+
+    ((ξ² − 1) R′)′ − (λ − c² ξ² + m²/(ξ² − 1)) R = 0,
+
+and for oblate ones, with ξ ≥ 0, ((ξ² + 1) R′)′ − (λ − c² ξ² − m²/(ξ² + 1)) R = 0. Both read
+P² R″ + 2ξ P R′ − ((λ − c²ξ²) P − s m²) R = 0, with P = ξ² + s and s = −1 for prolate and +1
+for oblate spheroids. The first kind is regular, like the spherical Bessel function j, and the
+second is the other solution, like y; far out they become j_n(cξ) and y_n(cξ).
+
+Each is a series of spherical Bessel functions over the angular function's coefficients d_r
+(DLMF 30.11.3 and 30.11.7, Flammer's 4.1.15 and 4.1.17):
+
+    R = (P/ξ²)^(m/2) Σ (−1)^((r + m − n)/2) w_r b_{m+r}(cξ) / Σ w_r,  w_r = d_r (r + 2m)!/r!,
+
+with b = j for the first kind and y for the second. The series for j converges at every ξ, by the
+fall of d_r alone. The one for y converges only as (1/ξ)^r once y_{m+r}(cξ) outgrows the fall of
+d_r, which is where m + r passes cξ, and its terms overflow there for small c. So the second kind
+is summed only from a starting point ξ* out. Every y_k(cξ) is still below its envelope 1/(cξ) at
+ξ = (k + 2)/(2c), with k the highest order in the sum, so ξ* is never beyond
+max(2, (k + 2)/(2c)); it starts at (k + 2)/(8c) (and at least 2 for prolate spheroids) and moves
+out by a quarter at a time until the series is exact there: its terms add to no more than 8 times
+its modulus, with 10¹⁶ times its last term counted among them. Nearer in, the equation itself
+carries R and R′ inward from ξ*, by Taylor series about one point after another, each step at most
+half the distance to the nearest singular point (ξ = ±1, or ±i for oblate ones) and at most 3/c.
+Every step rounds by about one unit in the last place of R's modulus, so fewer, longer steps keep
+the error down; measured on the reference values, 3/c does best, where the terms of a step peak
+near e³ times its result before they fall, while steps of 1/(2c), six times as many, lost up to
+eight times as much. Inward the second kind grows toward ξ = 1 as the first falls, so the steps do
+not amplify their rounding there.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import cos, inf, nan, pow, sin, sqrt
+from special_bessel_spherical import spherical_jn
+from special_common import is_integer
+from special_spheroidal import obl_cv, pro_cv, spheroidal_coefficients
+
+
+def _second_ladder(top: int, z: f64) -> Array[f64, 1]:
+    """y_0(z), y_1(z), …, y_top(z), upward by y_{k+1} = (2k + 1)/z y_k − y_{k−1}, which is stable
+    for y."""
+    ladder = Array.zeros(top + 2, f64)
+    ladder[0] = -cos(z) / z
+    ladder[1] = -cos(z) / (z * z) - sin(z) / z
+    for k in range(1, top + 1):
+        ladder[k + 1] = (2.0 * float(k) + 1.0) / z * ladder[k] - ladder[k - 1]
+    return ladder
+
+
+def _rest(x: f64, sign: f64) -> f64:
+    """P = ξ² + s, as (ξ − 1)(ξ + 1) for prolate spheroids, which keeps its precision near 1."""
+    if sign < 0.0:
+        return (x - 1.0) * (x + 1.0)
+    return x * x + 1.0
+
+
+def _bessel(m: f64, n: f64, c: f64, sign: f64, coefficients: Array[f64, 1], x: f64,
+            first: bool) -> tuple[f64, f64, f64]:
+    """R and R′ at ξ = x > 0 by the Bessel series of the module's documentation, or NaN where its
+    normalizing sum Σ w_r cancels by more than 10⁸, which it does for prolate c above about 20,
+    with the series' own error measure: the sum of its terms' sizes, plus 10¹⁶ times its last
+    term so that a series cut off before it converges counts as inexact, over the modulus
+    √(S² + S′²) of the sum S and its derivative in z. It is near 1 where the series is exact.
+
+    The factor ξ^(−m) of (P/ξ²)^(m/2) is carried into the sum, as c^m b_k(z)/z^m with z = cξ, and
+    the derivative uses b_k′ = −b_{k+1} + k b_k/z, so that (b_k/z^m)′ = −b_{k+1}/z^m +
+    (k − m) b_k/z^(m+1): for small z its two parts add, where the plain derivative of the
+    product would cancel."""
+    parity = int(n - m) % 2
+    count = coefficients.shape[0]
+    order = int(m)
+    z = c * x
+    top = order + parity + 2 * count
+    ladder = Array.zeros(1, f64)
+    if not first:
+        ladder = _second_ladder(top, z)
+    weight = 1.0
+    for j in range(1, 2 * order + 1):
+        weight *= float(parity + j)
+    scale = pow(z, -m)
+    total = 0.0
+    slope = 0.0
+    norm = 0.0
+    norm_size = 0.0
+    spread = 0.0
+    last = 0.0
+    for i in range(count):
+        r = parity + 2 * i
+        k = order + r
+        term = coefficients[i] * weight
+        norm += term
+        norm_size += abs(term)
+        if (abs(r + order - int(n)) // 2) % 2 == 1:
+            term = -term
+        here = 0.0
+        above = 0.0
+        if first:
+            here = spherical_jn(k, z)
+            above = spherical_jn(k + 1, z)
+        else:
+            here = ladder[k]
+            above = ladder[k + 1]
+        total += term * here * scale
+        spread += abs(term * here * scale)
+        last = abs(term * here * scale)
+        slope += term * (-above + (float(k) - m) * here / z) * scale
+        weight *= (float(r) + 2.0 * m + 1.0) * (float(r) + 2.0 * m + 2.0) / (
+            (float(r) + 1.0) * (float(r) + 2.0))
+    if norm_size > 1.0e8 * abs(norm):
+        return (nan, nan, nan)
+    rest = _rest(x, sign)
+    factor = pow(rest, 0.5 * m) * pow(c, m)
+    change = 0.0
+    if order > 0:
+        change = m * x * pow(rest, 0.5 * m - 1.0) * pow(c, m)
+    spread = (spread + 1.0e16 * last) / sqrt(total * total + slope * slope)
+    return (factor * total / norm, (change * total + factor * c * slope) / norm, spread)
+
+
+def _at_zero(m: f64, n: f64, c: f64, coefficients: Array[f64, 1]) -> tuple[f64, f64]:
+    """The oblate first kind and its derivative at ξ = 0, the limits of the series: only its
+    lowest term survives, j_k(cξ) → (cξ)^k/(2k + 1)!!, against the factor ξ^(−m)."""
+    parity = int(n - m) % 2
+    order = int(m)
+    weight = 1.0
+    for j in range(1, 2 * order + 1):
+        weight *= float(parity + j)
+    norm = 0.0
+    lowest = coefficients[0] * weight
+    for i in range(coefficients.shape[0]):
+        r = parity + 2 * i
+        norm += coefficients[i] * weight
+        weight *= (float(r) + 2.0 * m + 1.0) * (float(r) + 2.0 * m + 2.0) / (
+            (float(r) + 1.0) * (float(r) + 2.0))
+    if (abs(parity + order - int(n)) // 2) % 2 == 1:
+        lowest = -lowest
+    k = order + parity
+    power = 1.0
+    for j in range(k):
+        power *= c / (2.0 * float(j) + 3.0)
+    value = lowest * power / norm
+    if parity == 0:
+        return (value, 0.0)
+    return (0.0, value)
+
+
+def _step(m: f64, c: f64, cv: f64, sign: f64, start: f64, h: f64, value: f64,
+          slope: f64) -> tuple[f64, f64]:
+    """R and R′ at start + h from their values at `start`, by the Taylor series of the radial
+    equation about `start`. With t = ξ − start the equation's three coefficients are
+    polynomials in t, A of degree 4 multiplying R″, B of degree 3 multiplying R′ and E of degree
+    4 multiplying R, and the series terms v_k = u_k h^k follow from
+    a₀ (N + 2)(N + 1) v_{N+2} = −Σ (a_j h^j (N − j + 2)(N − j + 1) v_{N−j+2}
+    + b_j h^(j+1) (N − j + 1) v_{N−j+1} + e_j h^(j+2) v_{N−j}). Carrying v rather than u keeps
+    them finite near ξ = 1, where a₀ = P² is tiny and u_k grows like a₀^(−k/2)."""
+    p0 = start * start + sign
+    if sign < 0.0:
+        p0 = (start - 1.0) * (start + 1.0)
+    p1 = 2.0 * start
+    q0 = cv - c * c * start * start
+    q1 = -2.0 * c * c * start
+    q2 = -c * c
+    a = [p0 * p0, 2.0 * p0 * p1 * h, (p1 * p1 + 2.0 * p0) * h * h, 2.0 * p1 * h * h * h,
+         h * h * h * h]
+    b = [2.0 * start * p0 * h, (2.0 * start * p1 + 2.0 * p0) * h * h,
+         (2.0 * start + 2.0 * p1) * h * h * h, 2.0 * h * h * h * h]
+    e = [(-q0 * p0 + sign * m * m) * h * h, -(q0 * p1 + q1 * p0) * h * h * h,
+         -(q0 + q1 * p1 + q2 * p0) * h * h * h * h, -(q1 + q2 * p1) * h * h * h * h * h,
+         -q2 * h * h * h * h * h * h]
+    limit = 600
+    v = Array.zeros(limit + 2, f64)
+    v[0] = value
+    v[1] = slope * h
+    total = v[0] + v[1]
+    change = v[1]
+    size = max(abs(v[0]), abs(v[1]))
+    for big_n in range(limit):
+        acc = 0.0
+        for j in range(1, 5):
+            index = big_n - j + 2
+            if index >= 0:
+                acc += a[j] * float(index) * float(index - 1) * v[index]
+        for j in range(4):
+            index = big_n - j + 1
+            if index >= 0:
+                acc += b[j] * float(index) * v[index]
+        for j in range(5):
+            index = big_n - j
+            if index >= 0:
+                acc += e[j] * v[index]
+        k = big_n + 2
+        v[k] = -acc / (a[0] * float(k) * float(k - 1))
+        total += v[k]
+        change += float(k) * v[k]
+        size = max(size, abs(v[k]))
+        # Two small terms in a row: one alone can be a passing zero of the series.
+        if big_n > 6 and abs(v[k]) + abs(v[k - 1]) <= 1.0e-17 * size:
+            break
+    return (total, change / h)
+
+
+def _radial(m: f64, n: f64, c: f64, cv: f64, x: f64, prolate: bool,
+            first: bool) -> tuple[f64, f64]:
+    """R and R′ for checked arguments: the series at x, or for the second kind inside ξ*, the
+    series at ξ* and Taylor steps inward to x. The search for ξ* and the step length are the
+    module documentation's."""
+    sign = -1.0 if prolate else 1.0
+    if x == inf:
+        return (0.0, 0.0)
+    coefficients = spheroidal_coefficients(m, n, -sign * c * c, cv)
+    if first:
+        if x == 0.0:
+            return _at_zero(m, n, c, coefficients)
+        value, slope, spread = _bessel(m, n, c, sign, coefficients, x, True)
+        return (value, slope)
+    top = int(m) + int(n - m) % 2 + 2 * (coefficients.shape[0] - 1)
+    safe = max(2.0, (float(top) + 2.0) / (2.0 * c))
+    outer = max(x, (float(top) + 2.0) / (8.0 * c))
+    if prolate:
+        outer = max(outer, 2.0)
+    value, slope, spread = _bessel(m, n, c, sign, coefficients, outer, False)
+    while outer < safe and not spread <= 8.0:
+        outer = min(safe, 1.25 * outer)
+        value, slope, spread = _bessel(m, n, c, sign, coefficients, outer, False)
+    here = outer
+    while here > x:
+        reach = here - 1.0
+        if not prolate:
+            reach = sqrt(here * here + 1.0)
+        h = max(-0.5 * reach, -3.0 / c)
+        if here + h <= x:
+            h = x - here
+        value, slope = _step(m, c, cv, sign, here, h, value, slope)
+        here += h
+    return (value, slope)
+
+
+def _valid(m: f64, n: f64, c: f64) -> bool:
+    """Whether m and n are whole numbers with 0 ≤ m ≤ n and n − m at most 198, as for the
+    characteristic values, and c is finite and above 0, as the radial functions need: the
+    Bessel series are in cξ."""
+    if not (m >= 0.0 and n >= m and n - m <= 198.0 and c > 0.0 and c < inf):
+        return False
+    return is_integer(m) and is_integer(n) and m < 1.0e6
+
+
+def _prolate(m: f64, n: f64, c: f64, cv: f64, x: f64, first: bool) -> tuple[f64, f64]:
+    """A prolate radial function, NaN outside ξ > 1."""
+    if not (_valid(m, n, c) and x > 1.0 and cv == cv):
+        return (nan, nan)
+    return _radial(m, n, c, cv, x, True, first)
+
+
+def _oblate(m: f64, n: f64, c: f64, cv: f64, x: f64, first: bool) -> tuple[f64, f64]:
+    """An oblate radial function, NaN outside ξ ≥ 0."""
+    if not (_valid(m, n, c) and x >= 0.0 and cv == cv):
+        return (nan, nan)
+    return _radial(m, n, c, cv, x, False, first)
+
+
+def pro_rad1(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The prolate radial function of the first kind R⁽¹⁾_mn(c, x) and its derivative, as
+    `scipy.special.pro_rad1`, for x > 1 and c > 0; anything else gives NaN.
+
+    ```python
+    from special import pro_rad1
+
+    value, slope = pro_rad1(1.0, 2.0, 2.5, 1.5)
+    print(value)    # 0.31149518137922233
+    print(slope)    # 0.07075345545840275
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _prolate(m, n, c, pro_cv(m, n, c), x, True)
+
+
+def pro_rad2(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The prolate radial function of the second kind R⁽²⁾_mn(c, x) and its derivative, as
+    `scipy.special.pro_rad2`, for x > 1 and c > 0.
+
+    ```python
+    from special import pro_rad2
+
+    value, slope = pro_rad2(1.0, 2.0, 2.5, 1.5)
+    print(value)    # -0.2198251249398681
+    print(slope)    # 0.9773718215027126
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _prolate(m, n, c, pro_cv(m, n, c), x, False)
+
+
+def obl_rad1(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The oblate radial function of the first kind R⁽¹⁾_mn(−ic, ix) and its derivative, as
+    `scipy.special.obl_rad1`, for x ≥ 0 and c > 0.
+
+    ```python
+    from special import obl_rad1
+
+    value, slope = obl_rad1(1.0, 2.0, 2.5, 0.5)
+    print(value)    # 0.16150901900549186
+    print(slope)    # 0.30911324986071775
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _oblate(m, n, c, obl_cv(m, n, c), x, True)
+
+
+def obl_rad2(m: f64, n: f64, c: f64, x: f64) -> tuple[f64, f64]:
+    """The oblate radial function of the second kind R⁽²⁾_mn(−ic, ix) and its derivative, as
+    `scipy.special.obl_rad2`, for x ≥ 0 and c > 0.
+
+    ```python
+    from special import obl_rad2
+
+    value, slope = obl_rad2(1.0, 2.0, 2.5, 0.5)
+    print(value)    # -0.5863137687362597
+    print(slope)    # 0.859163447108363
+    ```
+    """
+    if not _valid(m, n, c):
+        return (nan, nan)
+    return _oblate(m, n, c, obl_cv(m, n, c), x, False)
+
+
+def pro_rad1_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`pro_rad1` with the characteristic value given, as `scipy.special.pro_rad1_cv`. `cv`
+    should be `pro_cv(m, n, c)`; for any other value the result belongs to no solution.
+
+    ```python
+    from special import pro_cv, pro_rad1_cv
+
+    cv = pro_cv(1.0, 2.0, 2.5)
+    print(pro_rad1_cv(1.0, 2.0, 2.5, cv, 1.5)[0])    # 0.31149518137922233
+    ```
+    """
+    return _prolate(m, n, c, cv, x, True)
+
+
+def pro_rad2_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`pro_rad2` with the characteristic value given, as `scipy.special.pro_rad2_cv`.
+
+    ```python
+    from special import pro_cv, pro_rad2_cv
+
+    cv = pro_cv(1.0, 2.0, 2.5)
+    print(pro_rad2_cv(1.0, 2.0, 2.5, cv, 1.5)[0])    # -0.2198251249398681
+    ```
+    """
+    return _prolate(m, n, c, cv, x, False)
+
+
+def obl_rad1_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`obl_rad1` with the characteristic value given, as `scipy.special.obl_rad1_cv`.
+
+    ```python
+    from special import obl_cv, obl_rad1_cv
+
+    cv = obl_cv(1.0, 2.0, 2.5)
+    print(obl_rad1_cv(1.0, 2.0, 2.5, cv, 0.5)[0])    # 0.16150901900549186
+    ```
+    """
+    return _oblate(m, n, c, cv, x, True)
+
+
+def obl_rad2_cv(m: f64, n: f64, c: f64, cv: f64, x: f64) -> tuple[f64, f64]:
+    """`obl_rad2` with the characteristic value given, as `scipy.special.obl_rad2_cv`.
+
+    ```python
+    from special import obl_cv, obl_rad2_cv
+
+    cv = obl_cv(1.0, 2.0, 2.5)
+    print(obl_rad2_cv(1.0, 2.0, 2.5, cv, 0.5)[0])    # -0.5863137687362597
+    ```
+    """
+    return _oblate(m, n, c, cv, x, False)

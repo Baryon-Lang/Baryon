@@ -7,7 +7,8 @@
 //!
 //! - A line ``File `ball/main.byn`:`` followed by a ```` ```python ```` block writes the block to
 //!   that path, relative to one scratch directory per page. A later block for the same path
-//!   replaces the file, so a page can grow a program step by step.
+//!   replaces the file, so a page can grow a program step by step. A data file a program
+//!   reads, such as ``File `readings.csv`:``, is a ```` ```text ```` block after the same line.
 //! - A ```` ```text ```` block whose first line is `$ baryon <command> <arguments>` runs that
 //!   command in the scratch directory. The rest of the block is what it prints, standard output
 //!   then standard error. The frames of a backtrace name the reader's own directory, so the guide
@@ -43,8 +44,8 @@ enum Step {
 ///
 /// # Errors
 ///
-/// Fails when a ``File `...`:`` line is not followed by a `python` block, or a block is not
-/// closed: either is a mistake in the page that would otherwise be silently skipped.
+/// Fails when a ``File `...`:`` line is not followed by a `python` or `text` block, or a block
+/// is not closed: either is a mistake in the page that would otherwise be silently skipped.
 fn steps(text: &str) -> Result<Vec<Step>, String> {
     let lines: Vec<&str> = text.lines().collect();
     let mut steps = Vec::new();
@@ -60,8 +61,8 @@ fn steps(text: &str) -> Result<Vec<Step>, String> {
                 .iter()
                 .position(|line| !line.is_empty())
                 .map(|offset| index + 1 + offset)
-                .filter(|&fence| lines[fence] == "```python")
-                .ok_or_else(|| format!("line {}: no python block follows", index + 1))?;
+                .filter(|&fence| matches!(lines[fence], "```python" | "```text"))
+                .ok_or_else(|| format!("line {}: no python or text block follows", index + 1))?;
             let (text, end) = block(&lines, fence)?;
             steps.push(Step::File {
                 path: path.to_owned(),
@@ -208,8 +209,8 @@ fn the_guide_runs_as_written() {
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n\n"));
 }
 
-/// The page format is read as documented: files, commands with their output, and other blocks
-/// left alone.
+/// The page format is read as documented: program files, data files, commands with their
+/// output, and other blocks left alone.
 #[test]
 fn guide_steps_are_read_from_the_page() {
     let page = "\
@@ -226,20 +227,31 @@ def main():
 cargo build
 ```
 
+File `data.csv`:
+
+```text
+a,b
+1,2
+```
+
 ```text
 $ baryon run hello
 hi
 ```
 ";
     let steps = steps(page).unwrap();
-    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps.len(), 3, "{steps:?}");
     assert!(matches!(
         &steps[0],
         Step::File { path, text } if path == "hello/main.byn" && text == "def main():\n    print(\"hi\")\n"
     ));
     assert!(matches!(
         &steps[1],
-        Step::Command { arguments, expected, line: 14 } if arguments == &["run", "hello"] && expected == "hi\n"
+        Step::File { path, text } if path == "data.csv" && text == "a,b\n1,2\n"
+    ));
+    assert!(matches!(
+        &steps[2],
+        Step::Command { arguments, expected, line: 21 } if arguments == &["run", "hello"] && expected == "hi\n"
     ));
 }
 

@@ -1,0 +1,203 @@
+"""Internal file of `linalg` (decision 0040): eigenvalues and eigenvectors of a symmetric
+matrix, `eigh` and `eigvalsh`, by Householder tridiagonalization and the implicit QL iteration.
+`linalg` re-exports each (decision 0062); a program cannot import this file.
+"""
+
+from math import copysign, fabs, hypot, sqrt
+from linalg_common import LinAlgError, epsilon
+
+
+def eigh[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 1], Array[T, 2]], LinAlgError]:
+    """The eigenvalues `w`, in ascending order, and eigenvectors `v` of a symmetric matrix `a`, as
+    `numpy.linalg.eigh(a)`: column `v[:, i]` is the unit eigenvector of `w[i]`.
+
+    Reads only `a`'s lower triangle, as NumPy does. Householder reduction to a tridiagonal matrix,
+    then the implicit QL iteration, EISPACK's `tred2` and `tql2`: about 9n³ multiply-adds. Each
+    eigenvector's sign is the algorithm's, as in NumPy, whose signs can differ. Raises
+    `LinAlgError` when the iteration does not converge; panics when `a` is not square.
+    """
+    n = a.shape[0]
+    assert a.shape[1] == n, "eigh needs a square matrix"
+    v = Array.zeros((n, n), T)
+    for i in range(n):
+        for j in range(i + 1):
+            v[i, j] = a[i, j]
+            v[j, i] = a[i, j]
+    d = Array.zeros(n, T)
+    e = Array.zeros(n, T)
+    if n > 0:
+        _tridiagonalize(v, d, e)
+        _diagonalize(v, d, e)
+    for i in range(n - 1):
+        smallest = i
+        for j in range(i + 1, n):
+            if d[j] < d[smallest]:
+                smallest = j
+        if smallest != i:
+            swap = d[i]
+            d[i] = d[smallest]
+            d[smallest] = swap
+            for row in range(n):
+                swap = v[row, i]
+                v[row, i] = v[row, smallest]
+                v[row, smallest] = swap
+    return d, v
+
+
+def eigvalsh[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]:
+    """The eigenvalues of a symmetric matrix `a` in ascending order, as `numpy.linalg.eigvalsh`:
+    the `w` of `eigh(a)`, at the same cost.
+    """
+    w, _ = eigh(a)
+    return w
+
+
+def _tridiagonalize[T: Float](v: InOut[Array[T, 2]], d: InOut[Array[T, 1]], e: InOut[Array[T, 1]]):
+    """Reduces the symmetric matrix in `v` to tridiagonal form by Householder reflections,
+    EISPACK's `tred2` as JAMA writes it: `d` gets the diagonal, `e` the subdiagonal in `e[1:]`,
+    and `v` the orthogonal matrix that does the reduction.
+    """
+    n = len(d)
+    for j in range(n):
+        d[j] = v[n - 1, j]
+    for i in range(n - 1, 0, -1):
+        scale: T = 0.0
+        h: T = 0.0
+        for k in range(i):
+            scale += fabs(d[k])
+        if scale == 0.0:
+            e[i] = d[i - 1]
+            for j in range(i):
+                d[j] = v[i - 1, j]
+                v[i, j] = 0.0
+                v[j, i] = 0.0
+        else:
+            for k in range(i):
+                d[k] /= scale
+                h += d[k] * d[k]
+            f = d[i - 1]
+            g = sqrt(h)
+            if f > 0.0:
+                g = -g
+            e[i] = scale * g
+            h -= f * g
+            d[i - 1] = f - g
+            for j in range(i):
+                e[j] = 0.0
+            for j in range(i):
+                f = d[j]
+                v[j, i] = f
+                g = e[j] + v[j, j] * f
+                for k in range(j + 1, i):
+                    g += v[k, j] * d[k]
+                    e[k] += v[k, j] * f
+                e[j] = g
+            f: T = 0.0
+            for j in range(i):
+                e[j] /= h
+                f += e[j] * d[j]
+            half = f / (h + h)
+            for j in range(i):
+                e[j] -= half * d[j]
+            for j in range(i):
+                f = d[j]
+                g = e[j]
+                for k in range(j, i):
+                    v[k, j] -= f * e[k] + g * d[k]
+                d[j] = v[i - 1, j]
+                v[i, j] = 0.0
+        d[i] = h
+    for i in range(n - 1):
+        v[n - 1, i] = v[i, i]
+        v[i, i] = 1.0
+        h = d[i + 1]
+        if h != 0.0:
+            for k in range(i + 1):
+                d[k] = v[k, i + 1] / h
+            for j in range(i + 1):
+                g: T = 0.0
+                for k in range(i + 1):
+                    g += v[k, i + 1] * v[k, j]
+                for k in range(i + 1):
+                    v[k, j] -= g * d[k]
+        for k in range(i + 1):
+            v[k, i + 1] = 0.0
+    for j in range(n):
+        d[j] = v[n - 1, j]
+        v[n - 1, j] = 0.0
+    v[n - 1, n - 1] = 1.0
+    e[0] = 0.0
+
+
+def _diagonalize[T: Float](
+    v: InOut[Array[T, 2]], d: InOut[Array[T, 1]], e: InOut[Array[T, 1]]
+) -> Raises[None, LinAlgError]:
+    """Finds the eigenvalues of the tridiagonal matrix `d`, `e` from `_tridiagonalize` by the
+    implicit QL iteration with Wilkinson shifts, EISPACK's `tql2` as JAMA writes it, rotating
+    `v`'s columns into the eigenvectors. Raises `LinAlgError` after 30 iterations on one
+    eigenvalue, as LAPACK's `steqr` does; `v` is then left as it was.
+    """
+    n = len(d)
+    # The rotations touch two columns of `v` each; they run on rows of its transpose, which lie
+    # contiguous in memory.
+    vt = Array.zeros((n, n), T)
+    for i in range(n):
+        for j in range(n):
+            vt[j, i] = v[i, j]
+    for i in range(1, n):
+        e[i - 1] = e[i]
+    e[n - 1] = 0.0
+    f: T = 0.0
+    largest: T = 0.0
+    machine_epsilon = epsilon(e[0])
+    for l in range(n):
+        largest = max(largest, fabs(d[l]) + fabs(e[l]))
+        m = l
+        while m < n - 1 and fabs(e[m]) > machine_epsilon * largest:
+            m += 1
+        iterations = 0
+        while m > l and fabs(e[l]) > machine_epsilon * largest:
+            iterations += 1
+            if iterations > 30:
+                raise LinAlgError("Eigenvalues did not converge")
+            g = d[l]
+            p = (d[l + 1] - g) / (2.0 * e[l])
+            r = copysign(hypot(p, 1.0), p)
+            d[l] = e[l] / (p + r)
+            d[l + 1] = e[l] * (p + r)
+            next_diagonal = d[l + 1]
+            h = g - d[l]
+            for i in range(l + 2, n):
+                d[i] -= h
+            f += h
+            p = d[m]
+            c: T = 1.0
+            c2: T = 1.0
+            c3: T = 1.0
+            next_off = e[l + 1]
+            s: T = 0.0
+            s2: T = 0.0
+            for i in range(m - 1, l - 1, -1):
+                c3 = c2
+                c2 = c
+                s2 = s
+                g = c * e[i]
+                h = c * p
+                r = hypot(p, e[i])
+                e[i + 1] = s * r
+                s = e[i] / r
+                c = p / r
+                p = c * d[i] - s * g
+                d[i + 1] = h + s * (c * g + s * d[i])
+                for k in range(n):
+                    h = vt[i + 1, k]
+                    vt[i + 1, k] = s * vt[i, k] + c * h
+                    vt[i, k] = c * vt[i, k] - s * h
+            p = -s * s2 * c3 * next_off * e[l] / next_diagonal
+            e[l] = s * p
+            d[l] = c * p
+        d[l] += f
+        e[l] = 0.0
+    for i in range(n):
+        for j in range(n):
+            v[i, j] = vt[j, i]

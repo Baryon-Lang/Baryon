@@ -265,6 +265,23 @@ Differences from NumPy: the order of the eigenvalues is the algorithm's, and can
 NumPy's; sort them when the order matters. `eig` and `eigvals` take `f64` matrices only: an `f32`
 matrix, whose eigenvalues NumPy gives as `complex64`, is not built yet (idea I.57).
 
+## Files under `linalg`
+
+`linalg` is one public file, `<std>/linalg.byn`, that re-exports each function and
+`LinAlgError` from an internal file of its family, as `from linalg_factor import solve as solve`
+([decision 0062](../decisions/0062-standard-library-reexports.md)). A program cannot import the
+internal files, and a program's own `linalg_factor.byn` is never hidden by them. This table is
+for those working on the library. A panic inside a function names the file it is in, such as
+`<std>/linalg_factor.byn` for `solve`.
+
+| File | Holds |
+| --- | --- |
+| `linalg_common` | `LinAlgError`, and `epsilon`, the machine epsilon of a float type, which the iterations of `eigh` and `svd` stop at |
+| `linalg_factor` | `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
+| `linalg_symmetric` | `eigh` and `eigvalsh`: Householder tridiagonalization and the implicit QL iteration |
+| `linalg_svd` | `svd` and `svdvals`: one-sided Jacobi rotations |
+| `linalg_eig` | `eig` and `eigvals`: balancing, Hessenberg reduction and the shifted double QR iteration |
+
 ## `fft`
 
 ```python
@@ -314,8 +331,10 @@ prints
 ```
 
 Any length works. A power of two uses the radix-2 algorithm, 0.08 s for 2²⁰ points on one core,
-about twice NumPy's time. Any other length uses Bluestein's algorithm, three power-of-two
-transforms of at least twice the length, so it costs about six times as much. The twiddle factors
+about twice NumPy's time. A length whose prime factors are all 23 or less, such as 1000, 3072 or
+10⁶, uses a mixed-radix algorithm, one pass for each factor, at most about twice the time of a
+power of two near it. Any other length uses Bluestein's algorithm, three power-of-two transforms
+of at least twice the length, so it costs about six times as much. The twiddle factors
 come from `cos` and `sin` for each angle, never from repeated multiplication, so the error stays
 within a few units in the last place of the largest entry, as NumPy's does.
 

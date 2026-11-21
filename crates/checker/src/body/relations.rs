@@ -131,7 +131,9 @@ fn contains<'db>(db: &'db dyn TypeDb, ty: Type<'db>, test: &dyn Fn(Type<'db>) ->
         | TypeKind::Function { .. }
         | TypeKind::Standard(_) => false,
         TypeKind::Tuple(items) | TypeKind::Union(items) => all(items),
-        TypeKind::List(item) | TypeKind::Optional(item) => contains(db, *item, test),
+        TypeKind::List(item) | TypeKind::Optional(item) | TypeKind::Unpacked(item) => {
+            contains(db, *item, test)
+        }
         TypeKind::Dict { key, value } => contains(db, *key, test) || contains(db, *value, test),
         TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. } => {
             contains(db, *element, test)
@@ -185,13 +187,19 @@ pub(crate) fn substitute<'db>(
         | TypeKind::Function { .. }
         | TypeKind::Standard(_)
         | TypeKind::Unknown => return ty,
-        TypeKind::Tuple(items) => TypeKind::Tuple(all(items)),
+        // A bound `*Ts` becomes its types in place (the 0026 amendment).
+        TypeKind::Tuple(items) => TypeKind::Tuple(types::spliced(db, all(items))),
+        TypeKind::Unpacked(pack) => TypeKind::Unpacked(map(*pack)),
         TypeKind::List(item) => TypeKind::List(map(*item)),
         TypeKind::Dict { key, value } => TypeKind::Dict {
             key: map(*key),
             value: map(*value),
         },
-        TypeKind::Optional(value) => TypeKind::Optional(map(*value)),
+        // `T | None` with `T` the type `None` is `None`, as a union's repeats do not matter.
+        TypeKind::Optional(value) => match map(*value) {
+            none if matches!(none.kind(db), TypeKind::None) => return none,
+            value => TypeKind::Optional(value),
+        },
         // Rebuilt through `types::union`, since two members may become one type.
         TypeKind::Union(members) => return types::union(db, all(members)),
         TypeKind::Array { element, rank } => TypeKind::Array {
@@ -218,7 +226,7 @@ pub(crate) fn substitute<'db>(
             parameters: callable,
             returns,
         } => TypeKind::Callable {
-            parameters: all(callable),
+            parameters: types::spliced(db, all(callable)),
             returns: map(*returns),
         },
         TypeKind::Fallible { value, errors } => TypeKind::Fallible {

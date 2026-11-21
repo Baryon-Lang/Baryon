@@ -9,7 +9,7 @@ and every output shown is what the command printed, so if a step does not work f
 bug: please open an issue. The compiler is a prototype and does not build the whole language yet;
 [What builds today](../reference/status.md) lists what it does.
 
-This guide is the first of four pages that together teach how to code in Baryon. Read them in
+This guide is the first of six pages that together teach how to code in Baryon. Read them in
 order:
 
 | Page | What it teaches |
@@ -18,6 +18,8 @@ order:
 | [A tour of the language](language-tour.md) | Values, strings and collections; structs, enums and unions; generics and traits; who owns a value; errors; modules |
 | [Arrays and numbers](arrays-and-numbers.md) | `Array`, parallel and vector loops, `math`, exact sums, random numbers, `linalg`, `fft` and `stats` |
 | [Data, files and plots](data-files-and-plots.md) | `DataFrame`, files and paths, text tables and `.npy`, NetCDF, HDF5 and FITS, compression, and plots with `byplot` |
+| [A worked analysis with DataFrame](dataframes.md) | One pandas analysis written again in Baryon, from a CSV file with missing values to a CSV file, and how fast `DataFrame` runs beside pandas and Polars |
+| [Special functions](special-functions.md) | `scipy.special`'s functions: probability, elliptic integrals, Bessel functions and Gauss quadrature; moving from SciPy; speed against SciPy |
 
 [Coding Baryon in VS Code](vscode.md) sets up an editor alongside them.
 
@@ -31,7 +33,7 @@ there run `sudo apt install clang-15` as well; `baryon` finds `clang-15` by itse
 
 ### Download a prebuilt `baryon`
 
-Prebuilt archives start with release 0.2.0, for two platforms:
+Each release has prebuilt archives for two platforms:
 
 | Platform | Archive |
 | --- | --- |
@@ -51,7 +53,7 @@ file a browser downloads as quarantined, and then refuses to run `baryon` until 
 mark. On Linux:
 
 ```sh
-version=0.2.0
+version=0.3.0
 target=x86_64-unknown-linux-gnu
 name=baryon-$version-$target
 curl -LO https://github.com/Baryon-Lang/Baryon/releases/download/v$version/$name.tar.gz
@@ -64,8 +66,8 @@ On a Mac, set `target=aarch64-apple-darwin` instead, and check the download with
 `shasum -a 256 -c $name.tar.gz.sha256`. The check prints `OK` when the file is intact; if it
 says `FAILED`, download it again.
 
-The archive unpacks to one directory, such as `baryon-0.2.0-x86_64-unknown-linux-gnu`, holding
-`baryon`, the runtime library `libruntime.a` that every program is linked with, and the license.
+The archive unpacks to one directory, such as `baryon-0.3.0-x86_64-unknown-linux-gnu`, holding
+`baryon`, the runtime library `libruntime.a` that every program is linked with, and the licenses.
 `baryon` looks for `libruntime.a` next to itself, so keep the two together: move the whole
 directory where you want it and put it on your `PATH`, for example in `~/.local`:
 
@@ -76,7 +78,7 @@ export PATH="$HOME/.local/baryon:$PATH"
 baryon --version
 ```
 
-The last line prints `baryon 0.2.0`. Add the `export` line to `~/.bashrc` on Linux or `~/.zshrc`
+The last line prints `baryon 0.3.0`. Add the `export` line to `~/.bashrc` on Linux or `~/.zshrc`
 on macOS so new terminals find `baryon` too.
 
 ### Build from source

@@ -167,3 +167,105 @@ def savetxt_vector(
             out.write(newline)
         if footer != "":
             _comment(out, footer, comments, newline)
+
+
+def _below(xp: Array[f64, 1], value: f64) -> int:
+    """The index `j` with `xp[j] <= value < xp[j + 1]`, by bisection of the increasing `xp`;
+    -1 when `value` is below `xp[0]`, and `len(xp)` when it is above the last. A `value` equal
+    to the last point gives `len(xp) - 1`. Any search gives the same `j`, so this is the index
+    NumPy's search with a guess finds.
+    """
+    n = len(xp)
+    if value < xp[0]:
+        return -1
+    if value > xp[n - 1]:
+        return n
+    low = 0
+    high = n - 1
+    while high - low > 1:
+        middle = (low + high) // 2
+        if xp[middle] <= value:
+            low = middle
+        else:
+            high = middle
+    return high if xp[high] <= value else low
+
+
+def _interp_sorted(
+    x: Array[f64, 1], xp: Array[f64, 1], fp: Array[f64, 1], left: f64, right: f64
+) -> Array[f64, 1]:
+    """`numpy.interp` of `x` on the points `xp` with values `fp`, of one length and at least
+    one point, after `period` has been handled: NumPy's C loop, step for step, so each value
+    has NumPy's bits.
+    """
+    n = len(xp)
+    result = Array.zeros(len(x))
+    for i in range(len(x)):
+        value = x[i]
+        if n == 1:
+            result[i] = left if value < xp[0] else (right if value > xp[0] else fp[0])
+            continue
+        if value != value:
+            result[i] = value
+            continue
+        j = _below(xp, value)
+        if j == -1:
+            result[i] = left
+        elif j == n:
+            result[i] = right
+        elif j == n - 1 or xp[j] == value:
+            result[i] = fp[j]
+        else:
+            slope = (fp[j + 1] - fp[j]) / (xp[j + 1] - xp[j])
+            found = slope * (value - xp[j]) + fp[j]
+            if found != found:
+                found = slope * (value - xp[j + 1]) + fp[j + 1]
+                if found != found and fp[j] == fp[j + 1]:
+                    found = fp[j]
+            result[i] = found
+    return result
+
+
+def interp(
+    x: Array[f64, 1],
+    xp: Array[f64, 1],
+    fp: Array[f64, 1],
+    left: f64 | None = None,
+    right: f64 | None = None,
+    period: f64 | None = None,
+) -> Array[f64, 1]:
+    """`Array.interp(x, xp, fp)`: `numpy.interp`, the piecewise linear interpolation of the
+    points `(xp, fp)` at each element of `x`, with NumPy's bits (decision 0069).
+
+    `xp` must increase, which is not checked, as NumPy does not check it. Below `xp[0]` the
+    result is `left`, by default `fp[0]`, and above the last point `right`, by default
+    `fp[-1]`. With `period`, `x` and `xp` are taken modulo `period`, `left` and `right` are
+    ignored, and `xp` need not increase. Points that do not fit panic with NumPy's message where
+    NumPy raises `ValueError`. Cost: a bisection of `xp` per element of `x`, and a new array.
+    """
+    assert len(xp) == len(fp), "fp and xp are not of the same length."
+    assert len(xp) > 0, "array of sample points is empty"
+    if period is None:
+        low = fp[0] if left is None else left
+        high = fp[len(fp) - 1] if right is None else right
+        return _interp_sorted(x, xp, fp, low, high)
+    assert period != 0.0, "period must be a non-zero value"
+    length = abs(period)
+    n = len(xp)
+    wrapped = Array.zeros(len(x))
+    for i in range(len(x)):
+        wrapped[i] = x[i] % length
+    points = Array.zeros(n)
+    for i in range(n):
+        points[i] = xp[i] % length
+    order = points.argsort()
+    xs = Array.zeros(n + 2)
+    fs = Array.zeros(n + 2)
+    for i in range(n):
+        xs[i + 1] = points[order[i]]
+        fs[i + 1] = fp[order[i]]
+    xs[0] = xs[n] - length
+    fs[0] = fs[n]
+    xs[n + 1] = xs[1] + length
+    fs[n + 1] = fs[1]
+    return _interp_sorted(wrapped, xs, fs, fs[0], fs[n + 1])

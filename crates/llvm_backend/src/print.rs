@@ -99,7 +99,7 @@ impl<'db> Function<'_, '_, 'db> {
                 self.operand(&Operand::Constant(constant.clone()))?
             }
             Argument::Owned(operand) => self.operand(operand)?,
-            Argument::Borrow(place) | Argument::InOut(place) => {
+            Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
                 let (address, ty) = self.place(place)?;
                 self.load(&address, ty)?.map(|value| (value, ty))
             }

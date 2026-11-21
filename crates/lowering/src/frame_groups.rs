@@ -8,29 +8,48 @@
 //! reduction is one pass over one column. The library reduces `f64` and `i64` columns only,
 //! so a column of another number type is converted here first, and the result converted
 //! back where pandas keeps the column's type. Cost for `n` rows: `n log n` comparisons for
-//! each key column, and one pass for each new column. A key of `str` is grouped by the
+//! each key column, and one pass for each new column. One key that is sorted as whole
+//! numbers takes two shorter ways, with the same results (roadmap 3.13.21): the library's
+//! `run_starts` finds where each group starts without reading every row, and its
+//! `keyed_sums` sums floats in one pass over the rows as they are stored. A key of `str`
+//! is grouped by the
 //! integers the library's `text_codes` gives for its text, and copied with `text_taken`; a
-//! column of `str` reduced by `agg` is read as those integers too.
+//! column of `str` reduced by `agg` is read as those integers too. A row whose key is `None`
+//! is in no group, and a column that may hold `None` is reduced by the values that are there
+//! ([`Builder::group_optional`]).
 
 use crate::builder::Builder;
+use crate::frames::erase;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{BinaryOperator, Constant, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Column, Float, Integer, Primitive, Type, TypeKind};
 
 /// The reductions of `agg`, each at the number the library's `group_floats` and
-/// `group_integers` know it by.
-const REDUCTIONS: [&str; 10] = [
-    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median",
+/// `group_integers` know it by. The last two, `size` and `nunique`, are counted by the
+/// [`frame_group_counts`](crate::frame_group_counts) module.
+pub(crate) const REDUCTIONS: [&str; 12] = [
+    "sum", "min", "max", "first", "last", "count", "mean", "var", "std", "median", "size",
+    "nunique",
 ];
 
 /// The rows of a frame sorted into groups: what each reduction reads.
-struct Groups {
+pub(crate) struct Groups {
     /// The local holding the rows' positions, sorted by the keys.
-    order: Local,
+    pub(crate) order: Local,
     /// The local holding where each group starts in `order`, and last where `order` ends.
-    starts: Local,
+    pub(crate) starts: Local,
     /// The local holding how many rows the frame has, those left out of `order` included.
-    count: Local,
+    pub(crate) count: Local,
+    /// Whether a group may have no rows, which the groups of a column that may hold `None`
+    /// may once its `None`s are left out. The library's `group_integers` reads the first
+    /// row of every group, so such groups go through `group_present_integers`.
+    pub(crate) gaps: bool,
+    /// The key column's place when the rows are grouped by one column of whole numbers:
+    /// the library's `keyed_sums` reads it to sum each group in one pass over the rows
+    /// (roadmap 3.13.21). `None` for several keys, a key of floats, or groups made from
+    /// other groups.
+    pub(crate) key: Option<Place>,
 }
 
 impl<'db> Builder<'db> {
@@ -42,12 +61,7 @@ impl<'db> Builder<'db> {
         else {
             return self.unsupported(node, "this `groupby`");
         };
-        let grouping = self
-            .tree
-            .child(node, Role::Function)
-            .and_then(|function| self.tree.child(function, Role::Value));
-        let by = grouping.and_then(|grouping| self.written(grouping).first().copied());
-        let Some(by) = by.map(|by| self.keyword_value(by)) else {
+        let Some((by, sorted)) = self.grouping_arguments(node) else {
             return self.unsupported(node, "this `groupby`");
         };
         let source = self.borrow(frame);
@@ -69,42 +83,52 @@ impl<'db> Builder<'db> {
             return;
         };
         self.drop_later(firsts);
+        // With `sort=False` the groups come in the order their first rows have.
+        let Some((firsts, turn)) = self.first_seen(firsts, sorted, node) else {
+            return;
+        };
         let mut made = Vec::with_capacity(result.len());
         for (key, column) in &keys {
-            let Some(taken) = self.taken_column(key.clone(), column, Place::from(firsts), node)
-            else {
+            let rows = ("taken", &Place::from(firsts));
+            let Some(taken) = self.chosen_column(key.clone(), column, rows, node) else {
                 return;
             };
-            made.push(Operand::Move(Place::from(taken)));
+            made.push(taken);
         }
-        let reduced = self.written(node);
-        for (argument, new) in reduced.into_iter().zip(&result[keys.len()..]) {
-            let pair: Vec<NodeId> = self
-                .tree
-                .children_with(self.keyword_value(argument), Role::Item)
-                .collect();
-            let (Some(&read), Some(&how)) = (pair.first(), pair.get(1)) else {
-                return self.unsupported(argument, "this column of `agg`");
-            };
-            let how = REDUCTIONS
-                .iter()
-                .position(|name| *name == self.written_text(how))
-                .and_then(|how| i128::try_from(how).ok());
-            let (Some((position, column)), Some(how)) = (self.named_column(columns, read), how)
-            else {
-                return self.unsupported(argument, "this column of `agg`");
-            };
-            let values = source.clone().project(Projection::Field(position));
-            let read = (values, column);
-            let column = if matches!(column.element.kind(self.db), TypeKind::Str) {
-                self.group_text(&groups, read, how, argument)
-            } else {
-                self.group_column(&groups, read, how, new, argument)
+        let Some(reductions) = self.group_reductions(node, &result[keys.len()..]) else {
+            return self.unsupported(node, "this reduction of a grouping");
+        };
+        for ((argument, read, how), new) in reductions.into_iter().zip(&result[keys.len()..]) {
+            let found = (0_u32..)
+                .zip(columns)
+                .find(|(_, column)| column.name == read);
+            let read = found.map(|(position, column)| {
+                (source.clone().project(Projection::Field(position)), column)
+            });
+            let column = match (how, read) {
+                (10, _) => self.group_sizes(&groups, argument),
+                (_, None) => return self.unsupported(argument, "this column of a grouping"),
+                (11, Some(read)) => self.group_distinct(&groups, read, argument),
+                (_, Some(read)) => match read.1.element.kind(self.db) {
+                    TypeKind::Str => self.group_text(&groups, read, how, argument),
+                    TypeKind::Optional(_) => self.group_optional(&groups, read, how, new, argument),
+                    _ => self.group_column(&groups, read, how, new, argument),
+                },
             };
             let Some(column) = column else {
                 return;
             };
-            made.push(Operand::Move(column));
+            let column = match &turn {
+                Some(turn) => {
+                    self.drop_later(column.local);
+                    self.chosen_column(column, new, ("taken", turn), argument)
+                }
+                None => Some(Operand::Move(column)),
+            };
+            let Some(column) = column else {
+                return;
+            };
+            made.push(column);
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
     }
@@ -129,6 +153,23 @@ impl<'db> Builder<'db> {
         let mut sorted: Vec<(Place, Type<'db>)> = Vec::with_capacity(keys.len());
         for (key, column) in keys {
             sorted.push(match column.element.kind(self.db) {
+                // A row whose key is `None` belongs to no group, as in pandas, so it leaves
+                // `order` here and the key is then compared by its values alone.
+                &TypeKind::Optional(element) => {
+                    let bits = key.clone().project(Projection::Field(VALIDITY));
+                    let arguments = vec![bits, Place::from(order)];
+                    order =
+                        self.frame_call("present_rows", Vec::new(), arguments, positions, node)?;
+                    self.drop_later(order);
+                    let values = key.clone().project(Projection::Field(VALUES));
+                    match element.kind(self.db) {
+                        TypeKind::Primitive(Primitive::Bool) => {
+                            (self.converted(values, element, int, node), int)
+                        }
+                        TypeKind::Str => (self.text_codes(values, node)?, int),
+                        _ => (values, element),
+                    }
+                }
                 TypeKind::Str => (self.text_codes(key.clone(), node)?, int),
                 TypeKind::Primitive(Primitive::Bool) => {
                     (self.converted(key.clone(), column.element, int, node), int)
@@ -157,22 +198,35 @@ impl<'db> Builder<'db> {
             order = self.frame_call("ordered", vec![key.1], arguments, positions, node)?;
             self.drop_later(order);
         }
-        let flags = self.array_of(boolean);
-        let unmarked = vec![Place::from(order)];
-        let mut marks = self.frame_call("no_marks", Vec::new(), unmarked, flags, node)?;
-        self.drop_later(marks);
-        for key in &sorted {
-            let arguments = vec![key.0.clone(), Place::from(order), Place::from(marks)];
-            marks = self.frame_call("group_marks", vec![key.1], arguments, flags, node)?;
+        // One key of whole numbers: the sorted rows of one value lie together, so the
+        // library finds where each run ends without reading every row.
+        let key = match sorted.as_slice() {
+            [(key, ty)] if *ty == int => Some(key.clone()),
+            _ => None,
+        };
+        let starts = if let Some(key) = &key {
+            let arguments = vec![key.clone(), Place::from(order)];
+            self.frame_call("run_starts", Vec::new(), arguments, positions, node)?
+        } else {
+            let flags = self.array_of(boolean);
+            let unmarked = vec![Place::from(order)];
+            let mut marks = self.frame_call("no_marks", Vec::new(), unmarked, flags, node)?;
             self.drop_later(marks);
-        }
-        let marks = vec![Place::from(marks)];
-        let starts = self.frame_call("group_starts", Vec::new(), marks, positions, node)?;
+            for key in &sorted {
+                let arguments = vec![key.0.clone(), Place::from(order), Place::from(marks)];
+                marks = self.frame_call("group_marks", vec![key.1], arguments, flags, node)?;
+                self.drop_later(marks);
+            }
+            let marks = vec![Place::from(marks)];
+            self.frame_call("group_starts", Vec::new(), marks, positions, node)?
+        };
         self.drop_later(starts);
         Some(Groups {
             order,
             starts,
             count,
+            gaps: false,
+            key,
         })
     }
 
@@ -193,20 +247,32 @@ impl<'db> Builder<'db> {
         let is_float =
             |ty: Type<'db>| matches!(ty.kind(self.db), TypeKind::Primitive(Primitive::Float(_)));
         let whole = !is_float(column.element) && !is_float(new.element);
-        let (function, through) = if whole {
-            ("group_integers", int)
-        } else {
-            ("group_floats", float)
+        let (function, through) = match (whole, groups.gaps) {
+            (true, false) => ("group_integers", int),
+            (true, true) => ("group_present_integers", int),
+            (false, _) => ("group_floats", float),
         };
         let values = self.converted(values, column.element, through, node);
+        // A sum (0) or a mean (6) of floats by one key of whole numbers is one pass over
+        // the rows in the library's `keyed_sums`, which takes the key column too.
+        let keyed = groups
+            .key
+            .clone()
+            .filter(|_| !whole && matches!(how, 0 | 6));
+        let function = if keyed.is_some() {
+            "keyed_sums"
+        } else {
+            function
+        };
         let how = Operand::Constant(Constant::integer(int, how));
         let how = self.held(int, how, node);
-        let arguments = vec![
-            values,
+        let mut arguments = vec![values];
+        arguments.extend(keyed);
+        arguments.extend([
             Place::from(groups.order),
             Place::from(groups.starts),
             Place::from(how),
-        ];
+        ]);
         let array = self.array_of(through);
         let reduced = self.frame_call(function, Vec::new(), arguments, array, node)?;
         if through == new.element {
@@ -215,6 +281,63 @@ impl<'db> Builder<'db> {
         self.drop_later(reduced);
         let result = self.converted_new(&Place::from(reduced), new.element, node);
         Some(Place::from(result))
+    }
+
+    /// The place of a new column holding one value for each group of `groups`: the values
+    /// of `read`, a column that may hold `None`, reduced the way `how` numbers, as the
+    /// column `new` of the result.
+    ///
+    /// The rows where the column is `None` leave the groups (the library's `present_rows`
+    /// and `present_starts`), and the values that stay are reduced as a column of them
+    /// would be ([`Builder::group_column`]). Where the checker made `new` a column that may
+    /// hold `None`, for `min`, `max`, `first` and `last`, the library's `group_bits` marks
+    /// the groups left with no value as `None`. Cost: two more passes over the rows.
+    fn group_optional(
+        &mut self,
+        groups: &Groups,
+        (stored, column): (Place, &Column<'db>),
+        how: i128,
+        new: &Column<'db>,
+        node: NodeId,
+    ) -> Option<Place> {
+        let &TypeKind::Optional(element) = column.element.kind(self.db) else {
+            return None;
+        };
+        let bits = stored.clone().project(Projection::Field(VALIDITY));
+        let there = self.present_groups(groups, bits, node)?;
+        let starts = there.starts;
+        let values = Column {
+            name: column.name.clone(),
+            element,
+        };
+        let read = (stored.project(Projection::Field(VALUES)), &values);
+        let text = matches!(element.kind(self.db), TypeKind::Str);
+        let &TypeKind::Optional(given) = new.element.kind(self.db) else {
+            if text {
+                return self.group_text(&there, read, how, node);
+            }
+            return self.group_column(&there, read, how, new, node);
+        };
+        let plain = Column {
+            name: new.name.clone(),
+            element: given,
+        };
+        let reduced = if text {
+            self.group_text(&there, read, how, node)?
+        } else {
+            self.group_column(&there, read, how, &plain, node)?
+        };
+        let bytes = self.array_of(Type::new(
+            self.db,
+            TypeKind::Primitive(Primitive::Integer(Integer::U8)),
+        ));
+        let arguments = vec![Place::from(starts)];
+        let marks = self.frame_call("group_bits", Vec::new(), arguments, bytes, node)?;
+        let whole = erase(self.db, new.array(self.db));
+        let parts = vec![Operand::Move(reduced), Operand::Move(Place::from(marks))];
+        let column = self.temporary(whole, node);
+        self.assign(Place::from(column), Rvalue::Aggregate(whole, parts), node);
+        Some(Place::from(column))
     }
 
     /// The place of a new array holding one value for each group of `groups`: the texts of
@@ -253,8 +376,13 @@ impl<'db> Builder<'db> {
             Place::from(how_held),
         ];
         if how == 5 {
-            let counts =
-                self.frame_call("group_integers", Vec::new(), arguments, positions, node)?;
+            // A group may be empty once the rows that hold `None` have left it.
+            let function = if groups.gaps {
+                "group_present_integers"
+            } else {
+                "group_integers"
+            };
+            let counts = self.frame_call(function, Vec::new(), arguments, positions, node)?;
             return Some(Place::from(counts));
         }
         let rows = self.frame_call("group_rows", Vec::new(), arguments, positions, node)?;
@@ -329,7 +457,7 @@ impl<'db> Builder<'db> {
     }
 
     /// The text the string literal `node` writes, without its quotes.
-    fn written_text(&self, node: NodeId) -> &'db str {
+    pub(crate) fn written_text(&self, node: NodeId) -> &'db str {
         let text = self.text_of(node);
         text.get(1..text.len().saturating_sub(1)).unwrap_or(text)
     }

@@ -16,6 +16,8 @@
 //!   it against the kind of value it formats.
 //! - [`union()`]: the one canonical form of a union type such as `Periodic | Dirichlet`
 //!   (decision 0032).
+//! - [`spliced()`]: a bound variadic type parameter, `*Ts`, spliced into the list of types it
+//!   stands in (the decision 0026 amendment).
 //! - [`Column`]: one column of a `DataFrame` type, with how a frame
 //!   [is stored](Type::frame_storage) (decision 0045).
 //! - [`Item`], [`Declaration`] and the [`TypeDb`] trait: what each definition declares in
@@ -58,6 +60,7 @@ mod frame;
 mod interned;
 mod layout;
 mod optional_array;
+mod pack;
 mod primitive;
 mod shape;
 mod text_array;
@@ -69,6 +72,7 @@ pub use display::Displayed;
 pub use format::{Align, FormatClass, FormatError, FormatSpec, Presentation, Sign};
 pub use interned::{Item, Type};
 pub use layout::{Declared, Layout, LayoutError, Record, layout};
+pub use pack::spliced;
 pub use primitive::{Complex, Float, Integer, Primitive};
 pub use shape::Shape;
 pub use union::union;
@@ -241,6 +245,13 @@ pub enum TypeKind<'db> {
         /// The parameter's `Name` node in that file.
         name: NodeId,
     },
+    /// `*Ts`, a variadic type parameter unpacked in place: the last element of a
+    /// [`Tuple`](Self::Tuple), `tuple[*Ts]`, or the last parameter of a
+    /// [`Callable`](Self::Callable), `Callable[[f64, S, *Ts], S]` (the 0026 amendment). It holds
+    /// the [`Parameter`](Self::Parameter) `Ts`, which stands for a list of types of any length.
+    /// An instance binds `Ts` to a `Tuple` of those types, and substituting splices them in where
+    /// `*Ts` stands, so no `Unpacked` is left in a concrete type.
+    Unpacked(Type<'db>),
     /// A type that could not be worked out because of an error already reported. Stages accept
     /// it anywhere without a further error, so one mistake gives one message.
     Unknown,

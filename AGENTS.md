@@ -35,6 +35,8 @@ undocumented code is unfinished code.
 - When the task needs a design choice that the docs and decision records do not settle, stop and
   ask, or propose a decision record for review. Do not decide it inside a code change.
 - Match the style of the code around you. Read the neighbouring module before writing a new one.
+- Refer to the project's lead as "the chief designer" in documents, code comments, commit
+  messages and pull request text, never by name.
 
 ## Commands
 

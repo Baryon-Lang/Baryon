@@ -16,7 +16,7 @@ reason in a line.
 | `__del__` runs when CPython's reference count reaches zero, maybe at exit, maybe never in a cycle; an error in it is printed and ignored | `__del__` is written `def __del__(self: InOut[Self])` and runs exactly once, where the value is dropped; an error from it panics; a panic or `sys.exit` does not run it; calling it by name is an error | Drops happen at points the source shows, so `__del__` can finish a value; ignoring its error would lose data quietly. [`__del__`](values-and-references.md#code-that-runs-when-a-value-is-dropped-__del__) |
 | `int` has no size limit | `int` is a 64-bit integer; sized types such as `i32` and `u8` exist | Fixed widths are what fit in a register. [Numbers](types.md#numbers) |
 | `float32` and `float64` mix silently in NumPy | Mixing widths is an error until converted with `f64(x)` | Precision never changes without a visible conversion. [Number mixing](types.md#number-mixing) |
-| `1.0 / 0.0` raises `ZeroDivisionError` | `1.0 / 0.0` is infinity, as in IEEE 754 and NumPy | Numeric code expects IEEE results. [Numbers](types.md#numbers) |
+| `1.0 / 0.0`, `1.0 // 0.0` and `1.0 % 0.0` raise `ZeroDivisionError` | Float `/` and `//` by zero give an infinity with the quotient's sign, or NaN for `0.0 / 0.0` and `0.0 // 0.0`; `%` by zero gives NaN, as in IEEE 754 and NumPy | Numeric code expects IEEE results. [Numbers](types.md#numbers) |
 | `(-8.0) ** (1 / 3)` is a complex number, and `math.sqrt(-1.0)` and `math.log(0.0)` raise `ValueError` | Float `**` and the `math` functions give IEEE 754 results, as NumPy does: `(-8.0) ** (1 / 3)` and `sqrt(-1.0)` are NaN, `log(0.0)` is `-inf` | The same rule as float division by zero: numeric code expects IEEE results, and a float never turns into a complex number. [Math functions](arrays.md#math-functions) |
 | `print` of a class instance writes `<Point object at 0x…>` unless the class defines `__repr__`; inside a list or tuple an enum member is `<Phase.GAS: 3>` | A struct prints as a dataclass does, `Point(x=1.0, y=2.0)`, and an enum member prints `Phase.GAS` everywhere | Every struct is a plain value, as a dataclass is, and the compiler keeps an enum member's position, not its value. [`print`](syntax.md#what-print-writes-for-each-value) |
 | `z / 0j` and `0j ** -1` raise `ZeroDivisionError` | They give IEEE 754 results, as NumPy does: `(1+1j) / 0` is `inf+infj`, `0j ** -1` is `nan+nanj` | The same rule as float division by zero. [Complex numbers](types.md#complex-numbers) |
@@ -63,12 +63,13 @@ reason in a line.
 ## What Python has that version 0 does not
 
 `lambda` and nested functions, generators and `yield`, `async`, `global` and `nonlocal`, `del`
-other than `del d[k]`, `*args` and `**kwargs`, star assignment, `:=`, `set` displays, `set` comprehensions,
-generator expressions, `try` with `finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other
-than `with unsafe:`, files and [context managers](syntax.md#with-and-context-managers), decorators other than `@test`, `@bench` and `@layout("C")`, and the `type`
-statement. The compiler rejects each with a message; none is silently ignored. Some will come
-later; the [Syntax](syntax.md) chapter lists what is accepted. Class inheritance will not come: it
-is left out by design (see the table above).
+other than `del d[k]`, `*args` in a definition, `*` on anything but a tuple in a call, `**kwargs`,
+star assignment, `:=`, `set` displays, `set` comprehensions, generator expressions, `try` with
+`finally` or `else`, `raise ... from`, `for` and `while` with `else`, `with` other than `with
+unsafe:`, files and [context managers](syntax.md#with-and-context-managers), decorators other than
+`@test`, `@bench` and `@layout("C")`, and the `type` statement. The compiler rejects each with a
+message; none is silently ignored. Some will come later; the [Syntax](syntax.md) chapter lists what
+is accepted. Class inheritance will not come: it is left out by design (see the table above).
 
 ## Names that look like Python's modules
 

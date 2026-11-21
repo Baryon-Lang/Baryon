@@ -1,0 +1,201 @@
+"""LZ4 raw blocks on byte arrays, for the Parquet reader and writer (decision 0049, point 6),
+written in Baryon.
+
+Parquet's `LZ4_RAW` pages are LZ4 blocks with no frame around them. A block is a run of
+sequences: a token byte whose high four bits count literals and whose low four bits count a
+match, the literals, bytes to copy from the block, a two-byte distance back into the bytes
+already decoded, and the match, at least four bytes copied from there. A count of 15 goes on
+in the bytes that follow, each adding up to 255. The last sequence stops after its literals.
+The block does not say how long its data is; Parquet's page header does. The format is the
+LZ4 project's `lz4_Block_format.md`.
+
+This file is no module a program can import: LZ4 has no module in Python's standard library
+to take names from, so only the library's own files call `lz4_decompress` and `lz4_compress`.
+"""
+
+from os import ErrorKind
+
+
+def lz4_decompress(data: Array[u8, 1], size: int) -> Raises[Array[u8, 1], OSError]:
+    """The `size` bytes the LZ4 raw block `data` holds. `size` is the exact length of the
+    data, which the format that holds the block records, as a Parquet page header does.
+
+    Raises `OSError` with the kind `INVALID_DATA` and the message `Decompression failed:
+    corrupt input or insufficient space in destination buffer`, the one the `lz4` package
+    for Python gives, without its error code, for a block that is not LZ4 or does not hold
+    `size` bytes: empty data, a sequence cut short, a match from 0 back or from before the
+    first byte, and more or fewer bytes than `size`. A negative `size` raises it too.
+
+    Costs one pass over `data` and over the result, which is allocated once. A `size` no
+    block of this length could reach, more than 255 times its bytes, is refused before
+    anything is allocated.
+    """
+    output = Array.zeros(0, u8)
+    if size < 0 or size > 255 * len(data) or not _decode(data, size, output):
+        message = "Decompression failed: corrupt input or insufficient space in destination buffer"
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), message, "")
+    return output
+
+
+def lz4_compress(data: Array[u8, 1]) -> Array[u8, 1]:
+    """`data` as one LZ4 raw block, which any LZ4 decoder reads back when told `len(data)`.
+
+    The search is the fast one of the LZ4 library: a table of 4,096 places remembers where a
+    hash of four bytes was last seen, a match is taken where the same four bytes come again
+    within 65,535 bytes and is stretched both ways, and the encoder steps faster through
+    bytes that find no match. As the format asks, the last five bytes are literals and no
+    match starts in the last twelve. The bytes are Baryon's own (decision 0049, point 5),
+    not promised to be the ones another library writes.
+
+    Costs one pass over `data`, a table of 4,096 numbers, and a buffer of `n + n // 255 + 16`
+    bytes for n bytes, the most a block can take, from which the result is copied.
+    """
+    count = len(data)
+    output = Array.zeros(count + count // 255 + 16, u8)
+    length = 0
+    anchor = 0
+    if count >= 13:
+        # A place is kept as one more than its position, so 0 means not seen.
+        table = Array.zeros(4096, i32)
+        last_start = count - 12
+        match_end = count - 5
+        table[_hash(_load(data, 0))] = i32(1)
+        at = 1
+        while at < last_start:
+            attempts = 64
+            candidate = 0
+            found = False
+            while at < last_start and not found:
+                value = _load(data, at)
+                slot = _hash(value)
+                candidate = int(table[slot]) - 1
+                table[slot] = i32(at + 1)
+                found = candidate >= 0 and at - candidate < 65536
+                if found:
+                    found = value == _load(data, candidate)
+                if not found:
+                    at += attempts >> 6
+                    attempts += 1
+            if not found:
+                break
+            while at > anchor and candidate > 0 and data[at - 1] == data[candidate - 1]:
+                at -= 1
+                candidate -= 1
+            run = 4
+            while at + run < match_end and data[candidate + run] == data[at + run]:
+                run += 1
+            length = _sequence(data, anchor, at - anchor, at - candidate, run, output, length)
+            at += run
+            anchor = at
+            if at < last_start:
+                table[_hash(_load(data, at - 2))] = i32(at - 1)
+    return output[: _sequence(data, anchor, count - anchor, 0, 0, output, length)].copy()
+
+
+def _load(data: Array[u8, 1], at: int) -> int:
+    """The four bytes of `data` from `at`, as one number with the first byte lowest."""
+    low = int(data[at]) | (int(data[at + 1]) << 8)
+    return low | (int(data[at + 2]) << 16) | (int(data[at + 3]) << 24)
+
+
+def _hash(value: int) -> int:
+    """The place in the encoder's table of 4,096 for the four bytes `value`: the top twelve
+    bits of the low 32 bits of their product with the multiplier the LZ4 library uses. The
+    product is taken in two halves, since the whole of it does not fit in an `int`."""
+    low = (value & 0xFFFF) * 2654435761
+    high = (((value >> 16) * 2654435761) & 0xFFFF) << 16
+    return ((low + high) & 0xFFFFFFFF) >> 20
+
+
+def _count(extra: int, output: InOut[Array[u8, 1]], length: int) -> int:
+    """Writes what is left of a count past the 15 its token holds, `extra`, at `length` in
+    `output`, as bytes of 255 and a last byte under 255, and returns where the next byte
+    goes."""
+    while extra >= 255:
+        output[length] = u8(255)
+        length += 1
+        extra -= 255
+    output[length] = u8(extra)
+    return length + 1
+
+
+def _sequence(
+    data: Array[u8, 1],
+    start: int,
+    literals: int,
+    distance: int,
+    run: int,
+    output: InOut[Array[u8, 1]],
+    length: int,
+) -> int:
+    """Writes one sequence at `length` in `output` and returns where the next goes: the
+    `literals` bytes of `data` from `start`, then a match of `run` bytes from `distance`
+    back. A `run` of 0 writes the last sequence, which has no match."""
+    token = length
+    length += 1
+    high = min(literals, 15)
+    if literals >= 15:
+        length = _count(literals - 15, output, length)
+    for k in range(literals):
+        output[length + k] = data[start + k]
+    length += literals
+    if run == 0:
+        output[token] = u8(high << 4)
+        return length
+    output[length] = u8(distance & 255)
+    output[length + 1] = u8(distance >> 8)
+    length += 2
+    output[token] = u8((high << 4) | min(run - 4, 15))
+    if run - 4 >= 15:
+        length = _count(run - 19, output, length)
+    return length
+
+
+def _decode(data: Array[u8, 1], size: int, output: InOut[Array[u8, 1]]) -> bool:
+    """Decodes the raw block `data`, which must hold `size` bytes, into `output`, which is
+    replaced by the result, and says whether the block was valid."""
+    count = len(data)
+    result = Array.zeros(size, u8)
+    position = 0
+    length = 0
+    while True:
+        if position >= count:
+            return False
+        token = int(data[position])
+        position += 1
+        literals = token >> 4
+        more = literals == 15
+        while more:
+            if position >= count:
+                return False
+            literals += int(data[position])
+            more = int(data[position]) == 255
+            position += 1
+        if position + literals > count or length + literals > size:
+            return False
+        for k in range(literals):
+            result[length + k] = data[position + k]
+        position += literals
+        length += literals
+        if position == count:
+            break
+        if position + 2 > count:
+            return False
+        distance = int(data[position]) | (int(data[position + 1]) << 8)
+        position += 2
+        run = (token & 15) + 4
+        more = run == 19
+        while more:
+            if position >= count:
+                return False
+            run += int(data[position])
+            more = int(data[position]) == 255
+            position += 1
+        if distance == 0 or distance > length or length + run > size:
+            return False
+        # A match may reach into the bytes it writes, so it goes byte by byte.
+        for k in range(run):
+            result[length + k] = result[length + k - distance]
+        length += run
+    output = result
+    return length == size

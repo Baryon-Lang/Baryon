@@ -87,13 +87,7 @@ impl<'db> Body<'db> {
         };
         let found = self.expression(rows, wanted);
         match found.kind(self.db) {
-            &TypeKind::List(row) => {
-                let frame = self.lowerer.frame_of(rows, row);
-                if self.has_missing_column(frame) {
-                    return self.missing_column_unbuilt(rows, "building it from a list of rows");
-                }
-                frame
-            }
+            &TypeKind::List(row) => self.lowerer.frame_of(rows, row),
             _ if relations::is_open(self.db, found) => self.lowerer.unknown(),
             _ => {
                 let message = format!(
@@ -260,11 +254,6 @@ impl<'db> Body<'db> {
                 ),
             );
         }
-        // A mask or a slice chooses rows of any frame; one row as a struct is not built for a
-        // column that may hold `None`.
-        if self.has_missing_column(base) {
-            return self.missing_column_unbuilt(index, "reading one row");
-        }
         row.unwrap_or_else(|| {
             let message = format!("no struct names the rows of `{}`", self.show(base));
             self.lowerer.error(
@@ -411,19 +400,6 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.missing_method(function, base, callee, arguments) {
             return frame;
         }
-        let built = [
-            "copy",
-            "head",
-            "tail",
-            "sort_values",
-            "assign",
-            "drop",
-            "rename",
-        ];
-        if !built.contains(&callee) && self.has_missing_column(base) {
-            self.untyped(arguments);
-            return self.missing_column_unbuilt(function, &format!("the method `{callee}`"));
-        }
         if let Some(rows) = self.rows_method(function, base, callee, arguments) {
             return rows;
         }
@@ -442,6 +418,9 @@ impl<'db> Body<'db> {
         if let Some(frame) = self.describe_method(function, base, callee, arguments) {
             return frame;
         }
+        if let Some(nothing) = self.csv_method(function, base, callee, arguments) {
+            return nothing;
+        }
         let given = arguments.positional.len() + arguments.keywords.len();
         self.untyped(arguments);
         match (callee, given) {
@@ -454,9 +433,12 @@ impl<'db> Body<'db> {
             ),
             ("groupby", _) => self.lowerer.error(
                 function,
-                "`groupby` is followed by `.agg(...)`, which says what to work out for each group",
+                "`groupby` is followed by a reduction, which says what to work out for each group",
                 "groups with nothing worked out",
-                Some("for example `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`"),
+                Some(
+                    "for example `df.groupby(\"symbol\").sum()` or \
+                     `df.groupby(\"symbol\").agg(total=(\"volume\", \"sum\"))`",
+                ),
             ),
             _ => {
                 let message = format!("a `DataFrame` has no method `{callee}` yet");
@@ -467,8 +449,8 @@ impl<'db> Body<'db> {
                     Some(
                         "a `DataFrame` has `copy`, `head`, `tail`, `itertuples`, `assign`, `drop`, \
                          `rename`, `sort_values`, `groupby(...).agg(...)`, `merge`, \
-                         `drop_duplicates`, `dropna` and `fillna` today; the rest of decision \
-                         0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9",
+                         `drop_duplicates`, `dropna`, `fillna` and `to_csv` today; the rest of \
+                         decision 0045's methods come with roadmap items 3.13.6, 3.13.8 and 3.13.9",
                     ),
                 )
             }

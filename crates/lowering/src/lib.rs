@@ -131,7 +131,9 @@
 //! Lowering grows in slices. A construct outside them gives an error that names it and roadmap
 //! 1.9.3, and no body: `/`, `//` and `%` on a type parameter, indexing and slicing lists and
 //! strings, `match` captures of values that are not copy types or inside `|`, `raise ... from`, an
-//! `except` that names its error through a module, calls that leave out an argument of a generic function, the built-in functions and methods other than
+//! `except` that names its error through a module, calls that leave out an argument of a generic
+//! function other than a literal or `Final` constant of a type every instance shares, the
+//! built-in functions and methods other than
 //! `print`, `min` and `max` of numbers, `len` of an array, `round` with one argument, the `math`
 //! functions above, the array constructors, `a.copy()`, `a.sum()`, and `dot` and `round` of a
 //! `Fixed` array, `**` on integers, `@`, `in`, nested unpacking, `with` other than `with unsafe:`,
@@ -282,6 +284,7 @@
 
 mod accumulate;
 mod array_files;
+mod array_sums;
 mod arrays;
 mod axes;
 mod builder;
@@ -300,11 +303,16 @@ mod facts;
 mod files;
 mod fits;
 mod frame_counts;
+mod frame_csv;
 mod frame_describe;
 mod frame_distinct;
+mod frame_dropna;
+mod frame_group_counts;
+mod frame_group_methods;
 mod frame_groups;
 mod frame_joins;
 mod frame_missing;
+mod frame_outer;
 mod frame_rows;
 mod frame_schema;
 mod frame_sort;
@@ -324,15 +332,22 @@ mod matrix;
 mod methods;
 mod netcdf;
 mod operators;
+mod optional_arithmetic;
 mod optional_arrays;
+mod optional_masks;
+mod optional_selection;
+mod optional_text;
 mod parallel;
 mod paths;
 mod patterns;
 mod process;
 mod random;
+mod range_walks;
 mod reductions;
 mod selection;
+mod shown_holders;
 mod slices;
+mod spread;
 mod statements;
 mod statistics;
 mod streams;

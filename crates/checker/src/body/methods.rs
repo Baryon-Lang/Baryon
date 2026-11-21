@@ -113,6 +113,7 @@ impl<'db> Body<'db> {
             _ if self.has_no_members(base) => {
                 return self.no_method(function, base, &callee, arguments);
             }
+            TypeKind::Parameter { .. } => return self.parameter_method(function, base, arguments),
             _ => return self.untyped(arguments),
         };
         if self.tree.text(attribute, self.text) == "__del__" {
@@ -147,7 +148,10 @@ impl<'db> Body<'db> {
                 let method = Callee::Method(item);
                 self.check_call(node, &callee, &signature, receiver, method, arguments)
             }
-            Some(Member::Field(ty)) => self.call_value(node, &callee, ty, arguments),
+            Some(Member::Field(ty)) => {
+                self.typed.expressions.insert(Key(function), ty);
+                self.call_value((node, function), &callee, ty, arguments)
+            }
             Some(Member::Copy) => {
                 let builtin = Callee::Builtin("struct.copy".to_owned());
                 self.check_call(node, &callee, &copy, Some(receiver), builtin, arguments)
@@ -193,6 +197,9 @@ impl<'db> Body<'db> {
         match self.lowerer.definition(class) {
             Some(Definition::Builtin("Array")) if !subscript => {
                 Some(self.array_function(node, callee, arguments, expected))
+            }
+            Some(Definition::Builtin("DataFrame")) if !subscript => {
+                Some(self.frame_function(node, callee, arguments, expected))
             }
             Some(&Definition::Item(file, name)) => {
                 let parameters = match outline(self.db, file).get(name).map(|entry| &entry.kind) {

@@ -69,6 +69,8 @@ documentation is unfinished, and unfinished code is not merged.
   documentation that points nowhere.
 - **Write for a learner.** Plain words, short sentences, and a definition the first time a term
   appears.
+- **Name roles, not people.** Documents, code comments, commit messages and pull request text
+  refer to the project's lead as "the chief designer", never by name.
 
 [`docs/README.md`](docs/README.md) maps all documentation by reader.
 

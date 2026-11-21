@@ -1,0 +1,452 @@
+"""CSV files read into the columns of a `DataFrame` and written from them, in Baryon
+(roadmap 3.14.4, decision 0045).
+
+The compiler calls these functions for `DataFrame.read_csv(path)` and `df.to_csv(path)`; a
+program cannot import this file. The schema comes from the program, so the compiler passes
+the names of the columns it wants and then asks for each column by the type its field has.
+
+- `csv_cells` reads the file once and finds every cell of the wanted columns. It gives the
+  file's bytes and, for each data row and each wanted column in turn, where the cell starts
+  and ends in them.
+- `csv_floats`, `csv_integers` and `csv_bools` read one column's cells as numbers or `bool`s.
+  An empty cell is NaN in a column of `f64`, as in pandas, and an error in the other two.
+- `csv_text_bytes` and `csv_text_offsets` give the two buffers of a column of `str`, as a
+  text array stores them: the cells' bytes end to end, and where each one starts.
+- `csv_validity` gives the validity bitmap of a column that may hold `None`: an empty cell is
+  `None`.
+
+The file is read as `pandas.read_csv` reads one with its defaults: fields separated by
+commas, a field in double quotes may hold commas, line ends and, written twice, a double
+quote; a line ends with `"\\n"`, `"\\r\\n"` or `"\\r"`; a blank line is skipped; a row with
+fewer fields than the header has empty cells at its end, and a row with more is an error.
+
+Cost: the whole file is held in memory while its columns are built, with 16 bytes for each
+cell of a wanted column. A whole number of digits alone is read where it lies; any other
+cell of a number is copied once to be read (roadmap 3.14.4.3).
+For `to_csv` the compiler asks for each column's cells as text, by the column's type, and
+hands them to `csv_write` with the names:
+
+- `csv_float_cells`, `csv_plain_cells` and `csv_text_cells` give the cells of a column of
+  `f64`, of whole numbers or `bool`s, and of `str`, and the `csv_optional_` function of each
+  gives them for a column that may hold `None`, whose cell is empty.
+- `csv_write` writes the header and the rows, the bytes
+  `pandas.DataFrame.to_csv(path, index=False)` writes.
+
+Cost of writing: one text for each cell, all held until the file is written.
+"""
+
+from math import isnan, nan
+
+
+def _record(data: InOut[Array[u8, 1]], start: int, fields: InOut[list[int]]) -> int:
+    """Reads the record that starts at byte `start` of `data`, and gives where the next one
+    starts. For each field it appends two numbers to `fields`: where the field's bytes start
+    and where they end.
+
+    A quoted field is rewritten in place without its quotes, a doubled quote inside it
+    becoming one, so every field is a plain run of bytes afterwards. The rewritten field is
+    never longer than the original, so nothing unread is overwritten.
+
+    The bytes it looks for are 34, a double quote; 44, a comma; 10, `"\\n"`; and 13, `"\\r"`.
+    """
+    count = len(data)
+    at = start
+    while True:
+        begin = at
+        write = at
+        if at < count and data[at] == u8(34):
+            at += 1
+            while at < count:
+                byte = data[at]
+                if byte != u8(34):
+                    data[write] = byte
+                    write += 1
+                    at += 1
+                elif at + 1 < count and data[at + 1] == u8(34):
+                    data[write] = byte
+                    write += 1
+                    at += 2
+                else:
+                    at += 1
+                    break
+        if write == at:
+            # Nothing was taken out, so the bytes stay where they are and are only read.
+            while at < count:
+                byte = data[at]
+                if byte == u8(44) or byte == u8(10) or byte == u8(13):
+                    break
+                at += 1
+            write = at
+        while at < count:
+            byte = data[at]
+            if byte == u8(44) or byte == u8(10) or byte == u8(13):
+                break
+            data[write] = byte
+            write += 1
+            at += 1
+        fields.append(begin)
+        fields.append(write)
+        if at >= count:
+            return at
+        byte = data[at]
+        at += 1
+        if byte == u8(44):
+            continue
+        if byte == u8(13) and at < count and data[at] == u8(10):
+            at += 1
+        return at
+
+
+def _skip_blank(data: Array[u8, 1], start: int) -> int:
+    """The first byte at or after `start` that does not end a line: blank lines are skipped."""
+    at = start
+    while at < len(data) and (data[at] == u8(10) or data[at] == u8(13)):
+        at += 1
+    return at
+
+
+def _position(data: Array[u8, 1], header: list[int], name: str) -> int:
+    """Which field of the header, whose bounds are `header`, is `name`; -1 when none is. The
+    first one counts when a name is there twice."""
+    wanted = name.encode()
+    for field in range(len(header) // 2):
+        start = header[2 * field]
+        if header[2 * field + 1] - start != len(wanted):
+            continue
+        same = True
+        for at in range(len(wanted)):
+            if data[start + at] != wanted[at]:
+                same = False
+                break
+        if same:
+            return field
+    return -1
+
+
+def csv_cells(
+    path: str, names: list[str]
+) -> Raises[tuple[Array[u8, 1], list[int]], OSError | ValueError]:
+    """Reads the CSV file `path` and finds the cells of the columns `names`.
+
+    Gives the file's bytes, with quoted fields rewritten in place as `_record` does, and the
+    bounds of each cell: for each data row, for each of `names` in turn, where the cell
+    starts and where it ends. A cell its row is too short to hold is empty.
+
+    Raises `OSError` when the file cannot be read, and `ValueError` when it is not UTF-8,
+    holds no header, its header lacks one of `names`, or a row has more fields than the
+    header.
+    """
+    data = Array.fromfile(path, u8)
+    # The columns of text are built from these bytes, so they must be UTF-8 as a whole.
+    checked = data.decode()
+    at = 0
+    if checked.startswith("﻿"):
+        at = 3
+    at = _skip_blank(data, at)
+    if at >= len(data):
+        raise ValueError(f"{path}: no columns to read, the file is empty")
+    header: list[int] = []
+    at = _record(data, at, header)
+    width = len(header) // 2
+    positions: list[int] = []
+    for name in names:
+        position = _position(data, header, name)
+        if position < 0:
+            raise ValueError(f"{path}: the header has no column '{name}'")
+        positions.append(position)
+    bounds: list[int] = []
+    fields: list[int] = []
+    row = 0
+    at = _skip_blank(data, at)
+    while at < len(data):
+        while len(fields) > 0:
+            fields.pop()
+        at = _record(data, at, fields)
+        row += 1
+        seen = len(fields) // 2
+        if seen > width:
+            raise ValueError(f"{path}: expected {width} fields in row {row}, saw {seen}")
+        for position in positions:
+            if position < seen:
+                bounds.append(fields[2 * position])
+                bounds.append(fields[2 * position + 1])
+            else:
+                bounds.append(0)
+                bounds.append(0)
+        at = _skip_blank(data, at)
+    return (data, bounds)
+
+
+def csv_bad(name: str, row: int, text: str, kind: str) -> str:
+    """The message for a cell of the column `name` in the 0-based data row `row` whose text
+    is not a `kind`."""
+    return f"column '{name}', row {row + 1}: could not read '{text}' as {kind}"
+
+
+def csv_empty(name: str, row: int) -> str:
+    """The message for an empty cell of the column `name`, whose type has no `None`, in the
+    0-based data row `row`."""
+    where = f"column '{name}', row {row + 1}"
+    return where + ": the cell is empty, and the column's type has no None"
+
+
+def csv_floats_as(
+    data: Array[u8, 1],
+    bounds: list[int],
+    column: int,
+    columns: int,
+    optional: bool,
+    name: str,
+    kind: str,
+) -> Raises[Array[f64, 1], OSError | ValueError]:
+    """Column `column` of the `columns` that `bounds` holds, named `name`, read as `f64` for
+    a column of the type named `kind`, `f64` or `f32`, which the error names. An empty cell
+    is 0.0 when `optional`, to stand under a `None`, and NaN otherwise, as pandas reads it
+    into a column of floats. A cell that is not a number is a `ValueError`. `inf`, `-inf`
+    and `nan` are numbers, as in pandas."""
+    rows = len(bounds) // (2 * columns)
+    result = Array.fill((rows,), 0.0)
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        if bounds[at] == bounds[at + 1]:
+            if not optional:
+                result[row] = nan
+            continue
+        # `float` skips the spaces around a number itself, so the cell is stripped only to
+        # be named in an error.
+        text = data[bounds[at] : bounds[at + 1]].decode()
+        if "_" in text:
+            raise ValueError(csv_bad(name, row, text.strip(), kind))
+        try:
+            result[row] = float(text)
+        except ValueError:
+            raise ValueError(csv_bad(name, row, text.strip(), kind))
+    return result
+
+
+def csv_floats(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[f64, 1], OSError | ValueError]:
+    """`csv_floats_as` for a column of `f64`."""
+    return csv_floats_as(data, bounds, column, columns, optional, name, "f64")
+
+
+def _digits(data: Array[u8, 1], start: int, end: int) -> int:
+    """The whole number the bytes of `data` from `start` to `end` write when they are one to
+    eighteen of the digits `0` to `9` and nothing else, and -1 otherwise.
+
+    Nearly every cell of a column of whole numbers is such a run, and reading it here copies
+    nothing; `csv_whole` reads any other cell, one with a sign, spaces or more digits, the
+    slow way, through `int`. Eighteen digits always fit in an `i64`. 48 is the byte `0`."""
+    if end <= start or end - start > 18:
+        return -1
+    value = 0
+    for at in range(start, end):
+        digit = int(data[at]) - 48
+        if digit < 0 or digit > 9:
+            return -1
+        value = value * 10 + digit
+    return value
+
+
+def csv_whole(
+    data: Array[u8, 1],
+    bounds: list[int],
+    column: int,
+    columns: int,
+    optional: bool,
+    name: str,
+    kind: str,
+    limits: tuple[int, int],
+) -> Raises[Array[i64, 1], OSError | ValueError]:
+    """`csv_floats_as` for a column of the whole number type named `kind`, read as `i64`:
+    each cell is a whole number, with an optional sign, from `limits[0]` to `limits[1]`,
+    the least and the greatest value of the type. A number outside them is a `ValueError`,
+    where pandas keeps its low bits. An empty cell is 0 when `optional` and a `ValueError`
+    otherwise. A cell of digits alone is read by `_digits`, with no copy, and is never below
+    `limits[0]`, which is 0 or less; a cell it gives -1 for, or a number above `limits[1]`,
+    goes through `int`, which also writes the error."""
+    rows = len(bounds) // (2 * columns)
+    result = Array.fill((rows,), 0)
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        if bounds[at] == bounds[at + 1]:
+            if not optional:
+                raise ValueError(csv_empty(name, row))
+            continue
+        plain = _digits(data, bounds[at], bounds[at + 1])
+        if plain >= 0 and plain <= limits[1]:
+            result[row] = plain
+            continue
+        text = data[bounds[at] : bounds[at + 1]].decode().strip()
+        if "_" in text:
+            raise ValueError(csv_bad(name, row, text, kind))
+        try:
+            result[row] = int(text)
+        except ValueError:
+            raise ValueError(csv_bad(name, row, text, kind))
+        if result[row] < limits[0] or result[row] > limits[1]:
+            raise ValueError(csv_bad(name, row, text, kind))
+    return result
+
+
+def csv_integers(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[i64, 1], OSError | ValueError]:
+    """`csv_whole` for a column of `i64`."""
+    limits = (-9223372036854775807 - 1, 9223372036854775807)
+    return csv_whole(data, bounds, column, columns, optional, name, "i64", limits)
+
+
+def csv_bools(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int, optional: bool, name: str
+) -> Raises[Array[bool, 1], OSError | ValueError]:
+    """`csv_floats` for a column of `bool`: each cell is `True` or `False`, in that case, all
+    lower case or all upper case, the spellings pandas reads."""
+    rows = len(bounds) // (2 * columns)
+    result = Array.fill((rows,), False)
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        if bounds[at] == bounds[at + 1]:
+            if not optional:
+                raise ValueError(csv_empty(name, row))
+            continue
+        text = data[bounds[at] : bounds[at + 1]].decode().strip()
+        if text in ["True", "true", "TRUE"]:
+            result[row] = True
+        elif text not in ["False", "false", "FALSE"]:
+            raise ValueError(csv_bad(name, row, text, "bool"))
+    return result
+
+
+def csv_text_offsets(bounds: list[int], column: int, columns: int) -> Array[i64, 1]:
+    """The offsets of column `column` as a text array: where each cell starts in the bytes
+    `csv_text_bytes` gives, and last where they end."""
+    rows = len(bounds) // (2 * columns)
+    offsets = Array.fill((rows + 1,), 0)
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        offsets[row + 1] = offsets[row] + bounds[at + 1] - bounds[at]
+    return offsets
+
+
+def csv_text_bytes(
+    data: Array[u8, 1], bounds: list[int], column: int, columns: int
+) -> Array[u8, 1]:
+    """The bytes of column `column` as a text array: its cells end to end, an empty cell
+    adding nothing."""
+    rows = len(bounds) // (2 * columns)
+    total = 0
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        total += bounds[at + 1] - bounds[at]
+    result = Array.fill((total,), u8(0))
+    write = 0
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        for read in range(bounds[at], bounds[at + 1]):
+            result[write] = data[read]
+            write += 1
+    return result
+
+
+def csv_validity(bounds: list[int], column: int, columns: int) -> Array[u8, 1]:
+    """The validity bitmap of column `column`: a bit for each row, lowest bit first, 1 where
+    the cell holds something and 0 where it is empty, which is `None`."""
+    rows = len(bounds) // (2 * columns)
+    bits = Array.fill(((rows + 7) // 8,), u8(0))
+    for row in range(rows):
+        at = 2 * (row * columns + column)
+        if bounds[at] != bounds[at + 1]:
+            bits[row // 8] = bits[row // 8] | (u8(1) << u8(row % 8))
+    return bits
+
+
+def csv_there(bits: Array[u8, 1], at: int) -> bool:
+    """Whether element `at` is there: its bit in the validity bitmap `bits` is 1."""
+    return ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1)
+
+
+def _quoted(text: str) -> str:
+    """`text` as a cell of a CSV file, as pandas writes it: in double quotes, each double
+    quote inside written twice, when it holds a comma, a double quote or a line end, and as
+    it is otherwise."""
+    if "," in text or "\"" in text or "\n" in text or "\r" in text:
+        return "\"" + text.replace("\"", "\"\"") + "\""
+    return text.copy()
+
+
+def csv_float_cells(column: Array[f64, 1]) -> list[str]:
+    """The cells of a column of `f64` for `to_csv`: each number as `print` writes it, which
+    is the shortest text that reads back as the same number, and an empty cell for NaN, as
+    pandas writes one."""
+    cells: list[str] = []
+    for value in column:
+        if isnan(value):
+            cells.append("")
+        else:
+            cells.append(f"{value}")
+    return cells
+
+
+def csv_optional_float_cells(values: Array[f64, 1], bits: Array[u8, 1]) -> list[str]:
+    """`csv_float_cells` for a column that may hold `None`, whose cell is empty too."""
+    cells = csv_float_cells(values)
+    for row in range(len(cells)):
+        if not csv_there(bits, row):
+            cells[row] = ""
+    return cells
+
+
+def csv_plain_cells[T: Copy](column: Array[T, 1]) -> list[str]:
+    """The cells of a column of integers or of `bool` for `to_csv`: each value as `print`
+    writes it, `True` and `False` for a `bool`."""
+    return [f"{value}" for value in column]
+
+
+def csv_optional_plain_cells[T: Copy](values: Array[T, 1], bits: Array[u8, 1]) -> list[str]:
+    """`csv_plain_cells` for a column that may hold `None`, whose cell is empty."""
+    cells: list[str] = []
+    for row in range(len(values)):
+        if csv_there(bits, row):
+            cells.append(f"{values[row]}")
+        else:
+            cells.append("")
+    return cells
+
+
+def csv_text_cells(column: Array[str, 1]) -> list[str]:
+    """The cells of a column of `str` for `to_csv`, each quoted where it must be."""
+    return [_quoted(text) for text in column]
+
+
+def csv_optional_text_cells(values: Array[str, 1], bits: Array[u8, 1]) -> list[str]:
+    """`csv_text_cells` for a column that may hold `None`, whose cell is empty."""
+    cells = csv_text_cells(values)
+    for row in range(len(cells)):
+        if not csv_there(bits, row):
+            cells[row] = ""
+    return cells
+
+
+def csv_write(
+    path: str, names: list[str], columns: list[list[str]], rows: int
+) -> Raises[None, OSError]:
+    """Writes the CSV file `path`: the header `names`, then `rows` lines of the cells
+    `columns` holds, a list for each column, split by commas and each line ended by `"\\n"`,
+    as `pandas.DataFrame.to_csv(path, index=False)` writes them. A row of one empty cell is
+    written `""`, as pandas writes it, since an empty line would be skipped when read.
+
+    Raises `OSError` when the file cannot be made or written.
+    """
+    with open(path, "w") as out:
+        out.write(",".join([_quoted(name) for name in names]) + "\n")
+        for row in range(rows):
+            line = ""
+            for position in range(len(columns)):
+                if position > 0:
+                    line += ","
+                line += columns[position][row]
+            if line == "":
+                line = "\"\""
+            out.write(line + "\n")

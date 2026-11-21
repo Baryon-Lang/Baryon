@@ -363,6 +363,7 @@ impl Writer<'_> {
                 Argument::Borrow(place) => place_text(place),
                 Argument::InOut(place) => format!("inout {}", place_text(place)),
                 Argument::Owned(operand) => format!("owned {}", self.operand(operand)),
+                Argument::Spread(place) => format!("*{}", place_text(place)),
             })
             .collect()
     }
@@ -496,6 +497,7 @@ fn binary_name(operator: BinaryOperator) -> &'static str {
         BinaryOperator::Divide => "Divide",
         BinaryOperator::FloorDivide => "FloorDivide",
         BinaryOperator::Remainder => "Remainder",
+        BinaryOperator::Power => "Power",
         BinaryOperator::BitAnd => "BitAnd",
         BinaryOperator::BitOr => "BitOr",
         BinaryOperator::BitXor => "BitXor",

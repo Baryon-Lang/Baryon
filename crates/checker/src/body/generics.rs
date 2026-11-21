@@ -18,7 +18,6 @@
 
 use super::Body;
 use super::relations;
-use crate::forms::is_copy;
 use crate::traits::{self, Trait, bound};
 use database::File;
 use syntax::{NodeId, Operator};
@@ -32,41 +31,6 @@ impl<'db> Body<'db> {
                 bound(self.db, self.lowerer.package, *file, *name)
             }
             _ => None,
-        }
-    }
-
-    /// Whether `ty` satisfies `bound`. A user trait is satisfied by a struct that names it, or
-    /// a trait that requires it, among its bases, by a type parameter bounded the same way
-    /// (decision 0031), and by a union whose every member satisfies it (decision 0032).
-    fn satisfies(&self, bound: Trait, ty: Type<'db>) -> bool {
-        if let Trait::User(wanted) = bound {
-            return matches!(ty.kind(self.db), TypeKind::Unknown)
-                || traits::implemented(self.db, self.lowerer.package, ty).contains(&wanted);
-        }
-        if let Some(own) = self.trait_of(ty) {
-            // Every float is a number, and every number is a copy type.
-            return own == bound
-                || (bound == Trait::Number && own == Trait::Float)
-                || (bound == Trait::Copy && own.is_numeric());
-        }
-        let f64 = |ty: Type<'db>| {
-            matches!(
-                ty.kind(self.db),
-                TypeKind::Primitive(Primitive::Float(Float::F64)) | TypeKind::Unknown
-            )
-        };
-        match (bound, ty.kind(self.db)) {
-            (_, TypeKind::Unknown) | (Trait::Float, TypeKind::Primitive(Primitive::Float(_))) => {
-                true
-            }
-            (Trait::Number, TypeKind::Primitive(primitive)) => *primitive != Primitive::Bool,
-            (
-                Trait::VectorSpace,
-                TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. },
-            ) => f64(*element),
-            (Trait::VectorSpace, _) => f64(ty),
-            (Trait::Copy, _) => is_copy(self.db, ty),
-            _ => false,
         }
     }
 
@@ -92,6 +56,15 @@ impl<'db> Body<'db> {
             })
             .collect();
         let mut bindings: Vec<Option<Type<'db>>> = vec![None; names.len()];
+        // `args: tuple[*Ts] = ()` left out makes `Ts` empty before anything else can fix it,
+        // so a callback that wants extra arguments is then the error (the decision 0026
+        // amendment).
+        let empty = Type::new(self.db, TypeKind::Tuple(Vec::new()));
+        for (index, parameter) in parameters.iter().enumerate() {
+            if arguments.iter().all(|&(_, given)| given != index) {
+                self.unify(parameter.ty, empty, &names, &mut bindings);
+            }
+        }
         let mut found: Vec<Option<Type<'db>>> = vec![None; arguments.len()];
         for literals in [false, true] {
             for (slot, &(argument, index)) in arguments.iter().enumerate() {
@@ -103,6 +76,16 @@ impl<'db> Body<'db> {
                 let ty = self.expression(argument, expected);
                 self.unify(declared, ty, &names, &mut bindings);
                 found[slot] = Some(ty);
+            }
+        }
+        // Only when nothing else fixes it does a `None` for a `T | None` make `T` the type
+        // `None`, as `maybe(None)` does; `pick(None, 3)` takes `T` from the `3`.
+        for (slot, &(_, index)) in arguments.iter().enumerate() {
+            if let (TypeKind::Optional(declared), Some(ty)) =
+                (parameters[index].ty.kind(self.db), found[slot])
+                && matches!(ty.kind(self.db), TypeKind::None)
+            {
+                self.unify(*declared, ty, &names, &mut bindings);
             }
         }
         for (slot, &(argument, index)) in arguments.iter().enumerate() {
@@ -136,7 +119,7 @@ impl<'db> Body<'db> {
             let (Some(bound), Some(ty)) = (bound(self.db, package, file, name), *binding) else {
                 continue;
             };
-            if !self.satisfies(bound, ty) {
+            if !traits::satisfies(self.db, package, bound, ty) {
                 let parameter = self
                     .db
                     .parse(file)
@@ -269,7 +252,9 @@ impl<'db> Body<'db> {
     ) {
         let db = self.db;
         match (declared.kind(db), found.kind(db)) {
-            (_, TypeKind::Unknown) => {}
+            // `None` fits any `T | None` and tells nothing of `T`: `pick(None, 3)` takes `T`
+            // from the `3`.
+            (_, TypeKind::Unknown) | (TypeKind::Optional(_), TypeKind::None) => {}
             (_, TypeKind::Function { callable, .. }) => {
                 self.unify(declared, *callable, names, bindings);
             }
@@ -287,11 +272,7 @@ impl<'db> Body<'db> {
                 self.unify(*a, *b, names, bindings);
             }
             (TypeKind::Optional(a), _) => self.unify(*a, found, names, bindings),
-            (TypeKind::Tuple(a), TypeKind::Tuple(b)) if a.len() == b.len() => {
-                for (&a, &b) in a.iter().zip(b) {
-                    self.unify(a, b, names, bindings);
-                }
-            }
+            (TypeKind::Tuple(a), TypeKind::Tuple(b)) => self.unify_lists(a, b, names, bindings),
             (TypeKind::Struct(a), TypeKind::Struct(b)) | (TypeKind::Enum(a), TypeKind::Enum(b))
                 if a.file == b.file && a.name == b.name =>
             {
@@ -308,13 +289,42 @@ impl<'db> Body<'db> {
                     parameters: b,
                     returns: s,
                 },
-            ) if a.len() == b.len() => {
-                for (&a, &b) in a.iter().zip(b) {
-                    self.unify(a, b, names, bindings);
-                }
+            ) => {
+                self.unify_lists(a, b, names, bindings);
                 self.unify(*r, *s, names, bindings);
             }
             _ => {}
+        }
+    }
+
+    /// Unifies the lists `declared` and `found` element by element: tuple elements or
+    /// `Callable` parameters. A `*Ts` ending `declared` takes every element of `found` left
+    /// after the others, as a tuple, zero included (the decision 0026 amendment). Lists of
+    /// different lengths otherwise tell nothing.
+    fn unify_lists(
+        &self,
+        declared: &[Type<'db>],
+        found: &[Type<'db>],
+        names: &[(File, NodeId)],
+        bindings: &mut [Option<Type<'db>>],
+    ) {
+        if let Some((last, fixed)) = declared.split_last()
+            && let TypeKind::Unpacked(pack) = last.kind(self.db)
+            && found.len() >= fixed.len()
+        {
+            let (head, rest) = found.split_at(fixed.len());
+            for (&a, &b) in fixed.iter().zip(head) {
+                self.unify(a, b, names, bindings);
+            }
+            // In a generic caller `rest` may be its own `*Us`, which splices back in.
+            let rest = Type::new(self.db, TypeKind::Tuple(rest.to_vec()));
+            self.unify(*pack, rest, names, bindings);
+            return;
+        }
+        if declared.len() == found.len() {
+            for (&a, &b) in declared.iter().zip(found) {
+                self.unify(a, b, names, bindings);
+            }
         }
     }
 

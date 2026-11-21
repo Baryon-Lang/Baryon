@@ -25,7 +25,7 @@ def _bessel_j_series(order: int, x: f64) -> f64:
 
 
 def _bessel_j_ladder(x: f64) -> Array[f64, 1]:
-    """J₀(x), J₁(x), … for `x` from 2 to 25, by Miller's backward recurrence
+    """J₀(x), J₁(x), … for `x` from 2 to 5, by Miller's backward recurrence
     Jₖ₋₁ = (2k/x) Jₖ − Jₖ₊₁, started far enough above `x` that the start's error has died
     away, and scaled so that J₀ + 2 Σ J₂ₖ = 1.
 
@@ -49,32 +49,110 @@ def _bessel_j_ladder(x: f64) -> Array[f64, 1]:
     return ladder
 
 
+def _hankel_p0(z: f64) -> f64:
+    """P of Hankel's expansion of J₀ and Y₀ at z = 1/x², x from 5 up, fitted with mpmath."""
+    top = 4206377.580044236
+    top = top * z + 20604774.56178375
+    top = top * z + 15189927.189747807
+    top = top * z + 3458933.2756562657
+    top = top * z + 309290.5655621448
+    top = top * z + 11820.316545118923
+    top = top * z + 188.34132551271043
+    top = top * z + 1.0
+    bottom = 4941235.9032213
+    bottom = bottom * z + 21421090.757963475
+    bottom = bottom * z + 15405542.04107145
+    bottom = bottom * z + 3479511.971228022
+    bottom = bottom * z + 310102.0469025809
+    bottom = bottom * z + 11833.452086317091
+    bottom = bottom * z + 188.41163801271043
+    bottom = bottom * z + 1.0
+    return top / bottom
+
+
+def _hankel_q0(z: f64) -> f64:
+    """x Q of Hankel's expansion of J₀ and Y₀ at z = 1/x², fitted as `_hankel_p0` is."""
+    top = -1356779.9339803623
+    top = top * z - 6169275.005520304
+    top = top * z - 3790667.036569122
+    top = top * z - 728320.9241640473
+    top = top * z - 55975.96812035948
+    top = top * z - 1868.347323729643
+    top = top * z - 26.336932794125346
+    top = top * z - 0.125
+    bottom = 23931240.15176483
+    bottom = bottom * z + 61947666.46786055
+    bottom = bottom * z + 33224046.35282348
+    bottom = bottom * z + 6069258.729913674
+    bottom = bottom * z + 456267.0484335255
+    bottom = bottom * z + 15068.759421050176
+    bottom = bottom * z + 211.28139985300268
+    bottom = bottom * z + 1.0
+    return top / bottom
+
+
+def _hankel_p1(z: f64) -> f64:
+    """P of Hankel's expansion of J₁ and Y₁ at z = 1/x², fitted as `_hankel_p0` is."""
+    top = 4081549.4238493256
+    top = top * z + 18124632.50742543
+    top = top * z + 13670757.34818872
+    top = top * z + 3204657.0454153847
+    top = top * z + 293787.78720482026
+    top = top * z + 11460.121573649225
+    top = top * z + 185.708435511422
+    top = top * z + 1.0
+    bottom = 2988052.2585857008
+    bottom = bottom * z + 16880945.20509651
+    bottom = bottom * z + 13334638.885653926
+    bottom = bottom * z + 3171913.5139477826
+    bottom = bottom * z + 292473.4208586638
+    bottom = bottom * z + 11438.516794829518
+    bottom = bottom * z + 185.591248011422
+    bottom = bottom * z + 1.0
+    return top / bottom
+
+
+def _hankel_q1(z: f64) -> f64:
+    """x Q of Hankel's expansion of J₁ and Y₁ at z = 1/x², fitted as `_hankel_p0` is."""
+    top = 4395714.042474209
+    top = top * z + 17264046.872343943
+    top = top * z + 10586293.31173112
+    top = top * z + 2063922.5702360424
+    top = top * z + 161260.55950964693
+    top = top * z + 5465.329605541083
+    top = top * z + 78.08716117536554
+    top = top * z + 0.375
+    bottom = 17228320.831322625
+    bottom = bottom * z + 51478155.372255325
+    bottom = bottom * z + 29507898.3023356
+    bottom = bottom * z + 5612638.7202212345
+    bottom = bottom * z + 433879.6612813072
+    bottom = bottom * z + 14630.485400675701
+    bottom = bottom * z + 208.50586730097473
+    bottom = bottom * z + 1.0
+    return top / bottom
+
+
 def _bessel_hankel(order: int, x: f64) -> tuple[f64, f64]:
-    """Jₙ(x) and Yₙ(x) for `n` 0 or 1 and `x` from 25 up, by Hankel's asymptotic expansion
+    """Jₙ(x) and Yₙ(x) for `n` 0 or 1 and `x` from 5 up, by Hankel's form
     √(2/(πx)) (P cos χ − Q sin χ) and √(2/(πx)) (P sin χ + Q cos χ), χ = x − (2n + 1)π/4.
 
-    The terms of P and Q fall below 1e-18 before they start to grow, since the smallest is
-    about exp(−2x). cos χ and sin χ are formed from `cos(x)` and `sin(x)`, whose argument is
-    exact, so χ is never rounded; near a zero the result is accurate to a few ULP of the
-    envelope √(2/(πx)) rather than of itself.
+    P and xQ are rational functions of 1/x² fitted with mpmath (roadmap 3.18.17; the script is in
+    `crates/driver/tests/fixtures/special/README.md`), each within 3 ULP: a dozen
+    multiplications, where summing the asymptotic series took up to sixty divisions and Miller's
+    recurrence below 25 a ladder of up to fifty terms. cos χ and sin χ are formed from `cos(x)`
+    and `sin(x)`, whose argument is exact, so χ is never rounded; near a zero the result is
+    accurate to a few ULP of the envelope √(2/(πx)) rather than of itself.
     """
-    mu = 4.0 * order * order
-    z = 8.0 * x
-    p = 1.0
+    z = 1.0 / (x * x)
+    p = 0.0
     q = 0.0
-    term = 1.0
-    for k in range(1, 60):
-        term *= (mu - (2.0 * k - 1.0) * (2.0 * k - 1.0)) / (k * z)
-        if k % 4 == 1:
-            q += term
-        elif k % 4 == 2:
-            p -= term
-        elif k % 4 == 3:
-            q -= term
-        else:
-            p += term
-        if abs(term) <= 1.0e-18:
-            break
+    if order == 0:
+        p = _hankel_p0(z)
+        q = _hankel_q0(z) / x
+    else:
+        p = _hankel_p1(z)
+        q = _hankel_q1(z) / x
     cosine = cos(x)
     sine = sin(x)
     if order == 0:
@@ -91,7 +169,7 @@ def j0(x: f64) -> f64:
     """The Bessel function of the first kind of order 0, J₀(x), as `scipy.special.j0`.
 
     An even function, 1 at 0, oscillating with an envelope √(2/(πx)) far out. The power series
-    below |x| = 2, Miller's backward recurrence to 25 and Hankel's expansion beyond; near a
+    below |x| = 2, Miller's backward recurrence to 5 and Hankel's form beyond; near a
     zero away from 0 the error is a few ULP of the envelope, not of the value itself.
 
     ```python
@@ -105,7 +183,7 @@ def j0(x: f64) -> f64:
     size = abs(x)
     if size <= 2.0:
         return _bessel_j_series(0, size)
-    if size < 25.0:
+    if size < 5.0:
         return _bessel_j_ladder(size)[0]
     if isinf(size):
         return 0.0
@@ -128,7 +206,7 @@ def j1(x: f64) -> f64:
     size = abs(x)
     if size <= 2.0:
         value = _bessel_j_series(1, size)
-    elif size < 25.0:
+    elif size < 5.0:
         value = _bessel_j_ladder(size)[1]
     elif isinf(size):
         value = 0.0
@@ -171,7 +249,7 @@ def _bessel_y_small(order: int, x: f64) -> f64:
 
 
 def _bessel_y_ladder(x: f64) -> tuple[f64, f64]:
-    """Y₀(x) and Y₁(x) for `x` from 2 to 25, by Neumann's series over the ladder of J that
+    """Y₀(x) and Y₁(x) for `x` from 2 to 5, by Neumann's series over the ladder of J that
     `_bessel_j_ladder` gives: Y₀ = (2/π)(log(x/2) + γ) J₀ − (4/π) Σ (−1)ᵏ J₂ₖ / k, and Y₁ its
     derivative's negative, (2/π)((log(x/2) + γ) J₁ − J₀/x) + (2/π) Σ (−1)ᵏ (J₂ₖ₋₁ − J₂ₖ₊₁) / k."""
     ladder = _bessel_j_ladder(x)
@@ -207,7 +285,7 @@ def y0(x: f64) -> f64:
         return -inf
     if x <= 2.0:
         return _bessel_y_small(0, x)
-    if x < 25.0:
+    if x < 5.0:
         zeroth, _ = _bessel_y_ladder(x)
         return zeroth
     if isinf(x):
@@ -232,7 +310,7 @@ def y1(x: f64) -> f64:
         return -inf
     if x <= 2.0:
         return _bessel_y_small(1, x)
-    if x < 25.0:
+    if x < 5.0:
         _, first = _bessel_y_ladder(x)
         return first
     if isinf(x):

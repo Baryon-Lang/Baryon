@@ -5,8 +5,8 @@
 
 use super::examples::prints;
 
-/// `fft` and `ifft` of a power-of-two length, 8, of lengths 6 and 7 through Bluestein's
-/// algorithm, and of length 1; `rfft` of 9 real samples and `irfft` back, with `n` given and
+/// `fft` and `ifft` of a power-of-two length, 8, of lengths 6 and 7 through the mixed-radix
+/// transform, and of length 1; `rfft` of 9 real samples and `irfft` back, with `n` given and
 /// left out; `fftfreq` and `rfftfreq`. `NumPy` prints the same lines for
 ///
 /// ```python
@@ -72,8 +72,120 @@ def main():
     .unwrap();
 }
 
-/// `fft2` and `ifft2` of a 4 × 8 array, all powers of two, of a 3 × 5 array through Bluestein's
-/// algorithm, and of a 1 × 1 array; `rfft2` of a 3 × 6 real array and `irfft2` back; and
+/// The two paths for a length that is not a power of two: `fft` and `ifft` of length 12, whose
+/// mixed-radix transform has a radix-4 and a radix-3 pass; `fft` of length 10, radix 2 and 5,
+/// and of length 9, two radix-3 passes; and `fft` of length 29, a prime above 23, through
+/// Bluestein's algorithm. One entry a line. `NumPy` prints the same lines for
+///
+/// ```python
+/// g = numpy.random.Generator(numpy.random.Philox(key=10))
+/// for n in [12, 10, 9, 29]:
+///     r = g.random(2 * n).reshape(n, 2) - 0.5
+///     z = r[:, 0] + 1j * r[:, 1]
+/// ```
+#[test]
+fn mixed_radix_and_bluestein_lengths_match_numpy() {
+    let program = r#"
+from fft import fft, ifft
+from random import Philox
+
+
+def show(x: Array[complex128, 1]):
+    for value in x:
+        print(f"{value.real:.12g},{value.imag:.12g}")
+
+
+def main():
+    generator = Philox(10)
+    for n in [12, 10, 9, 29]:
+        z = Array.zeros(n, complex128)
+        for j in range(n):
+            z[j] = complex(generator.uniform() - 0.5, generator.uniform() - 0.5)
+        show(fft(z))
+        if n == 12:
+            show(ifft(z))
+"#;
+    prints(
+        "fft-mixed-radix",
+        program.trim_start(),
+        "-0.277588187349,1.40167256044\n\
+         1.65542684251,1.67802841776\n\
+         0.0911896703799,1.09476450693\n\
+         0.591085162845,-1.99755145586\n\
+         -0.00318204293408,-0.684844392996\n\
+         0.232631860669,0.713497165984\n\
+         -0.423048995155,-1.82310636736\n\
+         0.649691834268,-0.215873991993\n\
+         -0.285097875846,-1.62163600642\n\
+         1.01720081409,-0.703964363578\n\
+         -0.0486325712976,-0.734413278951\n\
+         0.374318420053,-0.388561281107\n\
+         -0.0231323489457,0.116806046704\n\
+         0.0311932016711,-0.0323801067589\n\
+         -0.0040527142748,-0.0612011065792\n\
+         0.0847667345077,-0.0586636969648\n\
+         -0.0237581563205,-0.135136333868\n\
+         0.054140986189,-0.0179894993328\n\
+         -0.0352540829296,-0.151925530613\n\
+         0.019385988389,0.0594580971653\n\
+         -0.000265170244506,-0.057070366083\n\
+         0.0492570969037,-0.166462621322\n\
+         0.00759913919833,0.0912303755775\n\
+         0.137952236876,0.13983570148\n\
+         1.10014502022,-0.137568510727\n\
+         0.676382159942,0.738551078865\n\
+         -1.82001412094,-0.198085746779\n\
+         0.48991012342,0.116072055392\n\
+         0.814556341988,-0.641464816939\n\
+         0.30944888512,0.212774246758\n\
+         0.652021977543,-0.508368695418\n\
+         0.720138602325,1.02033576364\n\
+         0.314948793488,-1.58298090979\n\
+         -0.732895019413,-0.457093929132\n\
+         -0.411223701227,0.402136210807\n\
+         -0.98346335502,-1.16370725402\n\
+         0.647239981258,-0.415794281044\n\
+         -1.54839887982,0.884215763648\n\
+         -1.24391902236,1.24248934142\n\
+         1.24389369991,0.330170007414\n\
+         -0.926823119135,-0.502697729418\n\
+         0.0103444224416,0.0982122633406\n\
+         -0.868533084715,0.430132939488\n\
+         -0.0675848783523,-1.93071841588\n\
+         1.33513778603,1.22502441797\n\
+         -0.897916063189,-3.6223496938\n\
+         0.962753268393,0.507352289438\n\
+         0.195857846867,-3.46495071846\n\
+         0.356327525254,1.42506170181\n\
+         1.65186920098,1.91422905036\n\
+         -1.12676759991,-0.755295931419\n\
+         0.0443184630685,0.357881504824\n\
+         -1.27001270544,1.28250316076\n\
+         0.225146367419,0.934948975802\n\
+         1.07089936262,-1.6887841956\n\
+         -1.19067775085,-0.453130798034\n\
+         -0.498320373791,-2.4438125892\n\
+         -0.232704063329,-0.480200530942\n\
+         0.757630919058,0.540499816781\n\
+         -0.431832157073,0.944485131269\n\
+         -0.767420627546,3.73329850454\n\
+         1.05512644341,0.136379666287\n\
+         2.21776384178,1.04021477368\n\
+         -1.31466270154,1.07022085831\n\
+         -1.17963291028,-3.33642954488\n\
+         0.512894753452,0.928916892434\n\
+         -0.70226527302,2.08986438353\n\
+         1.75533470067,-0.325344072373\n\
+         0.303739646307,-3.24242339744\n\
+         -3.41837985281,-0.899369292145\n\
+         -1.03795621644,-1.26614318777\n\
+         1.2594345887,-1.82493082047\n",
+    )
+    .unwrap();
+}
+
+/// `fft2` and `ifft2` of a 4 × 8 array, all powers of two, of a 3 × 5 array through the mixed-radix
+/// transform, and of a 1 × 1 array; `rfft2` of a 3 × 6 real array and `irfft2` back; and
 /// `irfft2` of a 2 × 5 array, an odd number of columns, with the shape `s` given, then with
 /// `s=(3, 4)`, which pads the rows and cuts the columns. `NumPy` prints the same lines for
 ///

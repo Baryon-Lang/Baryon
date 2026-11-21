@@ -142,3 +142,37 @@ def raise_owned_field():
 def assert_temp():
     assert size(NEW1) >= 0
     assert size(make(2)) >= 0, f"bad{1}"
+
+
+# site: raise_in_arguments
+# A later argument raising after an earlier one is built for a struct, a tuple, a list and an
+# `Owned` parameter: the earlier value is dropped on the way out (roadmap 1.9.34).
+class RaiseInArgumentsPair[T](Struct):
+    item: T
+    count: int
+
+
+def raise_in_arguments_count(k: int) -> Raises[int, Oops]:
+    if k > 1:
+        raise Oops(f"bad{k}")
+    return k
+
+
+def raise_in_arguments_take(item: Owned[ITEM], count: int) -> int:
+    return size(item) + count
+
+
+def raise_in_arguments_risky(k: int) -> Raises[int, Oops]:
+    pair = RaiseInArgumentsPair(make(k), raise_in_arguments_count(k))
+    both = (make(k), raise_in_arguments_count(k))
+    items = [make(k), make(raise_in_arguments_count(k))]
+    taken = raise_in_arguments_take(make(k), raise_in_arguments_count(k))
+    return size(pair.item) + size(both[0]) + len(items) + taken
+
+
+def raise_in_arguments():
+    for k in range(3):
+        try:
+            print(raise_in_arguments_risky(k))
+        except Oops as e:
+            print(e.what)

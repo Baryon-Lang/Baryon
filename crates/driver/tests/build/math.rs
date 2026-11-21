@@ -4,6 +4,9 @@
 //! significant digits, so the test passes on macOS and Linux alike.
 
 use super::examples::prints;
+use super::{baryon_build, package, panic_report, stderr};
+use driver::{Profile, Session};
+use std::process::Command;
 
 /// Every function of `math` for real numbers: the trigonometric, inverse and hyperbolic
 /// functions, logarithms and exponentials, `erf` and `gamma`, `fma`, `fmod` beside `%`,
@@ -81,6 +84,64 @@ def main():
     .unwrap();
 }
 
+/// `math.fsum` gives the same bits whichever way it sums (roadmaps 1.13.16 and 3.13.21). It
+/// first keeps the sum exactly as two floats, which holds for numbers of like size, and adds
+/// the values again as Shewchuk's partials when that cannot stay exact. Lists made by a
+/// fixed rule cover both: numbers in 0 to 1, numbers spread over 2**-40 to 2**40 and over
+/// 2**-300 to 2**300, each with one sign and with both. The last three lines are sums that
+/// fall halfway between two floats, or just beside halfway. Every value is the one CPython
+/// 3 prints for `math.fsum` of the same list, and the sum of the list as an array equals it.
+#[test]
+fn fsum_gives_the_same_bits_either_way() {
+    let program = "\
+from math import fsum
+
+
+def values(seed: int, count: int, spread: int, signed: bool) -> list[f64]:
+    result: list[f64] = []
+    state = seed
+    for i in range(count):
+        first = (state * 1103515245 + 12345) % 2147483648
+        state = (first * 1103515245 + 12345) % 2147483648
+        x = f64(first) / 2147483648.0 + f64(state) / 4611686018427387904.0
+        if spread > 0:
+            x = x * 2.0 ** f64((state // 1024) % (2 * spread + 1) - spread)
+        if signed and (state // 7) % 2 == 0:
+            x = -x
+        result.append(x)
+    return result
+
+
+def main():
+    for seed in range(1, 7):
+        sums: list[str] = []
+        same = True
+        for spread in [0, 40, 300]:
+            for signed in [False, True]:
+                data = values(seed, 50 + 37 * seed, spread, signed)
+                sums.append(f\"{fsum(data)}\")
+                same = same and fsum(Array(data)) == fsum(data)
+        print(\" \".join(sums), same)
+    print(fsum([2.0 ** 53, 1.0, 1e-300]), fsum([2.0 ** 53, 1.0, -1e-300]), fsum([2.0 ** 53, 1.0]))
+    print(fsum([2.0 ** 53, 3.0]), fsum([1.0, 2.0 ** -53]), fsum([1.0, 2.0 ** -53, 2.0 ** -60]))
+    print(fsum([1e16, 1.0, 1.0]), fsum([1e16, 1.0, 1.0, 1.0]), fsum([0.5, 1e308, -1e308]))
+";
+    prints(
+        "math-fsum-ways",
+        program,
+        "45.196541500859865 13.749386452680907 877276251116.5616 -405785881067.38995 1.9931561957423254e+87 1.9930576595457234e+87 True\n\
+         55.00548980494712 -2.7726948300719885 578809821602.3109 -380313770493.20404 5.821239074762188e+89 -5.774641024892647e+89 True\n\
+         79.87502267271897 16.391988064380044 2039217946727.184 912149508591.5775 1.5026891126968659e+90 -1.5022713601186766e+90 True\n\
+         88.24007145175901 -14.825164704482862 1677334406725.9453 64292403455.69903 1.502772456689e+89 1.4939180063131487e+89 True\n\
+         128.28532959828638 15.687474462853746 6703079754283.763 2916200169804.842 2.7860315351122388e+88 4.376139358240553e+87 True\n\
+         130.05181697695187 -22.02329804522943 3259267079380.206 50112909708.898895 1.459775204695774e+89 1.457074759095205e+89 True\n\
+         9007199254740994.0 9007199254740992.0 9007199254740992.0\n\
+         9007199254740996.0 1.0 1.0000000000000002\n\
+         1.0000000000000002e+16 1.0000000000000004e+16 0.5\n",
+    )
+    .unwrap();
+}
+
 /// `math.f64x2`, the double-double float (decision 0051, roadmap 3.33): the four operations,
 /// `sqrt`, comparisons and conversions. The square root of 2, a third and `0.1` print the 31
 /// digits Python's `fractions` and `decimal` compute exactly; squaring the root back leaves a
@@ -120,4 +181,101 @@ def main():
          inf -inf\n",
     )
     .unwrap();
+}
+
+/// `f64x2.of(x)` builds an `f64x2` from an `f64` exactly, as `f64x2(x, 0.0)` does (roadmap
+/// 3.33.1, decision 0051 amended): `of(0.1)` keeps the `f64` nearest 0.1, while a quotient of
+/// two exact values gives 0.1 to 32 digits. The constructor still works.
+#[test]
+fn f64x2_of_builds_one_from_an_f64() {
+    let program = "\
+from math import f64x2
+
+
+def main():
+    tenth = f64x2.of(1.0).div(f64x2.of(10.0))
+    print(f64x2.of(0.1).to_str(), tenth.to_str())
+    negative = f64x2.of(-3.0)
+    print(f64x2.of(2.5).eq(f64x2(2.5, 0.0)), negative.lo)
+";
+    prints(
+        "math-f64x2-of",
+        program,
+        "1.000000000000000055511151231258e-01 1.000000000000000000000000000000e-01\n\
+         True 0.0\n",
+    )
+    .unwrap();
+}
+
+/// `math.trunc` is the checked float-to-integer conversion alone, with no separate rounding
+/// call (roadmap 1.14.4), so it must round toward zero and fit-check exactly as before: halves
+/// and negatives go toward zero as CPython's do, the largest `f64` below 2^63 and -2^63 itself
+/// fit, an `f32` truncates, and 2^63 stops the program naming `i64`.
+#[test]
+fn trunc_rounds_toward_zero_and_checks_the_range() {
+    let program = "\
+import math
+import sys
+
+
+def main():
+    big = 2.0 ** 63
+    values = [-0.5, 0.999, -2.7, 4503599627370495.5, big - 1024.0, -big, float(len(sys.argv)) - 1.5]
+    for value in values:
+        print(math.trunc(value), f64(math.trunc(value)))
+    small: f32 = -3.75
+    print(math.trunc(small))
+    print(math.trunc(big))
+";
+    let directory = package("math-trunc", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let run = Command::new(&executable).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "\
+0 0.0
+0 0.0
+-2 -2.0
+4503599627370495 4503599627370495.0
+9223372036854774784 9.223372036854775e+18
+-9223372036854775808 -9.223372036854776e+18
+0 0.0
+-3
+"
+    );
+    assert_eq!(run.status.code(), Some(101));
+    assert_eq!(
+        panic_report(&run),
+        "panic: the value does not fit in `i64`\n  --> main.byn:12:11\n"
+    );
+}
+
+/// `math.trunc` to `int` emits the checked conversion alone, never LLVM's `trunc`, which on
+/// x86-64 CPUs without SSE4.1 is a call into the C math library that spills every float
+/// register around it (roadmap 1.14.4). `math.floor` still rounds first, since the conversion
+/// rounds toward zero.
+#[test]
+fn trunc_is_the_conversion_alone() {
+    let mut session = Session::new();
+    let program = "\
+import math
+
+
+def whole(x: f64) -> int:
+    return math.trunc(x)
+
+
+def below(x: f64) -> int:
+    return math.floor(x)
+
+
+def main():
+    print(whole(2.5), below(2.5))
+";
+    session.add_file("main.byn", program.to_owned()).unwrap();
+    let modules = session.compile_parts(None, Profile::Release, 1).unwrap();
+    let text = modules.concat();
+    assert!(!text.contains("@llvm.trunc.f64("), "{text}");
+    assert!(text.contains("@llvm.floor.f64("), "{text}");
 }

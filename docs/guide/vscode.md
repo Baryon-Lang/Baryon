@@ -3,7 +3,7 @@
 This page sets up Visual Studio Code for Baryon and walks through a first program in it: build the
 compiler, install the extension, open a package, write code with errors underlined as you type,
 read types and documentation on hover, jump to definitions and complete names, then run it and
-test it. It is written for people trying release 0.2.0, and takes about fifteen
+test it. It is written for people trying release 0.3.0, and takes about fifteen
 minutes.
 
 Like the [beginner's guide](README.md), every program here is built and run in CI exactly as
@@ -359,6 +359,7 @@ line is but not where each variable lives. Print a value with `print` while that
 | `baryon run` says the runtime library `libruntime.a` is missing | The runtime was not built, or `baryon` was copied away from it. Run the `cargo build` command of step 2 again and use `baryon` from `target/debug/`, where it puts both |
 | `baryon run` reports an error that ends in `not lowered yet` or names the backend | The program is valid Baryon that the prototype compiler cannot build yet. [What builds today](../reference/status.md) lists what does |
 | You changed **Baryon: Path** and nothing happened | The server starts once per window; run **Developer: Reload Window** |
+| `.byn` files show a blank page or another icon, not the Baryon logo | A file icon theme draws its own icons and does not know `.byn`. Pick **Seti** or **None** with **File > Preferences > Theme > File Icon Theme**; the [extension's README](../../editors/vscode/README.md#icons) explains |
 
 ## Where to go next
 

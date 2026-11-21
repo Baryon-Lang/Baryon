@@ -35,7 +35,7 @@ The forces:
 
 ## Decision
 
-Collins accepted this on 2026-11-10, choosing the library written in Baryon over more built-in types.
+The chief designer accepted this on 2026-11-10, choosing the library written in Baryon over more built-in types.
 
 The compiler carries standard-library source files written in Baryon, embedded in the `driver`
 with `include_str!` and added to every package as ordinary files under the reserved root

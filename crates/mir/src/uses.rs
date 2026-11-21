@@ -64,6 +64,9 @@ pub(crate) struct Uses {
     pub(crate) elementwise: bool,
     /// Whether a view is used as a whole value.
     pub(crate) whole_view: bool,
+    /// Whether a [`BinaryOperator::Power`](crate::BinaryOperator::Power) appears outside an
+    /// [`Rvalue::Elementwise`].
+    pub(crate) scalar_power: bool,
 }
 
 impl Uses {
@@ -169,7 +172,9 @@ impl Uses {
     fn arguments(&mut self, arguments: &[Argument<'_>]) {
         for argument in arguments {
             match argument {
-                Argument::Borrow(place) | Argument::InOut(place) => self.place(place),
+                Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
+                    self.place(place);
+                }
                 Argument::Owned(operand) => self.operand(operand),
             }
         }
@@ -214,7 +219,9 @@ impl Uses {
             Rvalue::Use(operand) | Rvalue::Unary(_, operand) | Rvalue::Convert(operand, _) => {
                 self.operand(operand);
             }
-            Rvalue::Binary(_, left, right) | Rvalue::CheckedBinary(_, left, right) => {
+            Rvalue::Binary(operator, left, right)
+            | Rvalue::CheckedBinary(operator, left, right) => {
+                self.scalar_power |= *operator == crate::BinaryOperator::Power;
                 self.operand(left);
                 self.operand(right);
             }

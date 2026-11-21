@@ -158,6 +158,9 @@ impl<'db> Function<'_, '_, 'db> {
                     }
                 }
                 Argument::InOut(place) => ("ptr".to_owned(), self.place(place)?.0),
+                Argument::Spread(_) => {
+                    return Err(Unsupported::new("a `*args` left by monomorphization"));
+                }
                 Argument::Owned(operand) => {
                     let Some((value, ty)) = self.operand(operand)? else {
                         continue;
@@ -189,6 +192,9 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Append => self.list_append(arguments, target),
             Builtin::Pop => self.list_pop(arguments, destination, target),
             Builtin::Sum => self.sum(arguments, destination, target),
+            Builtin::SumAlong => Err(Unsupported::new(
+                "a sum along an axis left by array expansion",
+            )),
             Builtin::Dot => self.dot(arguments, destination, target),
             Builtin::PairwiseLeaves | Builtin::PairwiseLeafEnd => {
                 self.pairwise_leaf(arguments, destination, target)
@@ -213,6 +219,7 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::Exit => self.system_exit(arguments),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
+            Builtin::MatrixProduct => self.matrix_product(arguments, target),
             // `File`, `ArrayFile`, `Path`, `Run` and `Input` can fail, so `call` sends them to
             // `raising_builtin` with their error edge.
             Builtin::File(_)

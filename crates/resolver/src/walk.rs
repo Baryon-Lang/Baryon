@@ -119,12 +119,23 @@ impl<'a> Walker<'a> {
     }
 
     /// Resolves each child of a statement or clause by the part it plays.
+    ///
+    /// The name an `except ... as` binds gets a scope of its own around the clause, as Python
+    /// deletes the name when the clause ends: two clauses can each bind `error` to their own
+    /// error type, and the name is not visible after the clause (roadmap 1.9.32).
     fn parts(&mut self, node: NodeId) {
         let handler = self.tree.kind(node) == SyntaxKind::ExceptHandler;
+        let mut scoped = false;
         for child in self.tree.children(node).collect::<Vec<_>>() {
             let role = self.tree.node(child).role();
             let kind = self.tree.kind(child);
-            if role == Role::Target || (handler && role == Role::Name) {
+            if handler && role == Role::Name {
+                let mut scope = Scope::new(ScopeKind::Handler);
+                scope.bind(self.name(child), Some(Definition::Local(child)));
+                self.scopes.push(scope);
+                scoped = true;
+                self.bind(child, self.name(child));
+            } else if role == Role::Target {
                 self.target(child);
             } else if role == Role::Pattern {
                 self.pattern(child);
@@ -133,6 +144,9 @@ impl<'a> Walker<'a> {
             } else {
                 self.statement(child);
             }
+        }
+        if scoped {
+            self.scopes.pop();
         }
     }
 
@@ -257,10 +271,11 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// Records the binding `name` at `node`: the definition the innermost scope gives the name,
-    /// or a new local when the scope does not bind it yet.
+    /// Records the binding `name` at `node`: the definition the scope that binds the name gives
+    /// it, or a new local when that scope does not bind it yet. The scope is the innermost one,
+    /// passing over the scope of an `except ... as` clause that binds another name.
     fn bind(&mut self, node: NodeId, name: &str) {
-        let Some(scope) = self.scopes.innermost() else {
+        let Some(scope) = self.scopes.binding(name) else {
             return;
         };
         if scope.get(name).is_none() {
@@ -438,10 +453,7 @@ impl<'a> Walker<'a> {
         for child in self.tree.children(node).collect::<Vec<_>>() {
             let role = self.tree.node(child).role();
             let child_kind = self.tree.kind(child);
-            if role == Role::Target
-                || role == Role::Name
-                    && matches!(kind, SyntaxKind::ExceptHandler | SyntaxKind::TypeAlias)
-            {
+            if role == Role::Target || role == Role::Name && kind == SyntaxKind::TypeAlias {
                 self.collect_target(child, scope);
             } else if role == Role::Pattern {
                 self.collect_pattern(child, scope);

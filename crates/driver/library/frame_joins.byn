@@ -18,20 +18,26 @@ The file also holds `text_masked` and `text_taken`, which choose rows of a colum
 `masked` and `taken` of `<std>/frames.byn` do for a column of numbers, `text_joined`, which
 is `joined` for a column of `str`, and `text_codes`, which turns a column of `str` into
 integers in the same order, so that a sort by text is a sort by integers. `counted_values`
-counts for an array's `nunique`, and `valued_rows` and `id_counts` for a frame's
-`value_counts`. `group_rows` picks the row of each group whose text `agg` gives, and
+counts for an array's `nunique`, and `valued_rows`, `id_counts` and `proportions` for a
+frame's `value_counts`. `last_rows` and `single_rows` pick the rows `drop_duplicates` keeps
+when `keep=` asks. `group_rows` picks the row of each group whose text `agg` gives, and
 `statistic_names` and `described` make the columns of a frame's `describe`.
 """
 
-from math import fsum, isnan, nan, sqrt
+from math import floor, fsum, isnan, log10, nan, sqrt
 
 
 def joined[T: Number](left: Array[T, 1], right: Array[T, 1]) -> Array[T, 1]:
     """The elements of `left`, then those of `right`, as a new array."""
     count = len(left)
-    return Array([
-        left[at] if at < count else right[at - count] for at in range(count + len(right))
-    ])
+    if count == 0:
+        return right.copy()
+    both = Array.fill((count + len(right),), left[0])
+    for at in range(count):
+        both[at] = left[at]
+    for at in range(len(right)):
+        both[count + at] = right[at]
+    return both
 
 
 def key_marks[T: Number](
@@ -40,29 +46,29 @@ def key_marks[T: Number](
     """`marks` with one more key column taken in: element `i` is true where row `order[i]`
     has another key than the row before it in `order`, or is the first row. Two NaN are one
     key here, as pandas joins them, though NaN is not equal to NaN."""
-    result = [flag for flag in marks]
-    for at in range(len(order)):
-        if at == 0:
-            result[at] = True
-        else:
+    result = marks.copy()
+    if len(order) > 0:
+        result[0] = True
+        before = column[order[0]]
+        for at in range(1, len(order)):
             value = column[order[at]]
-            before = column[order[at - 1]]
             if value != before and (value == value or before == before):
                 result[at] = True
-    return Array(result)
+            before = value
+    return result
 
 
 def group_ids(order: Array[i64, 1], marks: Array[bool, 1]) -> Array[i64, 1]:
     """A number for each row, the same for two rows exactly when their keys are equal:
     element `r` is the number of the group that row `r` is in, counting from 0 in the order
     of the keys."""
-    ids = [0 for at in order]
+    ids = Array.fill((len(order),), 0)
     group = -1
     for at in range(len(order)):
         if marks[at]:
             group += 1
         ids[order[at]] = group
-    return Array(ids)
+    return ids
 
 
 def join_pairs(ids: Array[i64, 1], left_count: int) -> Array[i64, 1]:
@@ -75,30 +81,38 @@ def join_pairs(ids: Array[i64, 1], left_count: int) -> Array[i64, 1]:
     for at in range(total):
         groups = max(groups, ids[at] + 1)
     # Where each group's right rows start among the right rows sorted by group.
-    starts = [0 for group in range(groups + 1)]
+    starts = Array.fill((groups + 1,), 0)
     for at in range(left_count, total):
         starts[ids[at] + 1] += 1
     for group in range(groups):
         starts[group + 1] += starts[group]
-    filled = [start for start in starts]
-    rows = [0 for at in range(left_count, total)]
+    filled = starts.copy()
+    rows = Array.fill((total - left_count,), 0)
     for at in range(left_count, total):
         group = ids[at]
         rows[filled[group]] = at - left_count
         filled[group] += 1
-    pairs: list[int] = []
+    count = 0
+    for at in range(left_count):
+        count += starts[ids[at] + 1] - starts[ids[at]]
+    pairs = Array.fill((2 * count,), 0)
+    next = 0
     for at in range(left_count):
         group = ids[at]
         for slot in range(starts[group], starts[group + 1]):
-            pairs.append(at)
-            pairs.append(rows[slot])
-    return Array(pairs)
+            pairs[next] = at
+            pairs[next + 1] = rows[slot]
+            next += 2
+    return pairs
 
 
 def pair_side(pairs: Array[i64, 1], side: int) -> Array[i64, 1]:
     """The rows of one frame in the pairs `join_pairs` gives: the left frame's when `side`
     is 0, the right frame's when it is 1."""
-    return Array([pairs[2 * at + side] for at in range(len(pairs) // 2)])
+    rows = Array.fill((len(pairs) // 2,), 0)
+    for at in range(len(rows)):
+        rows[at] = pairs[2 * at + side]
+    return rows
 
 
 def first_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
@@ -114,6 +128,30 @@ def first_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
             seen[ids[at]] = True
             rows.append(at)
     return Array(rows)
+
+
+def last_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
+    """The rows that `drop_duplicates(keep="last")` keeps, in order: each row whose number in
+    `ids` no row after it has. Cost: two passes over the rows."""
+    groups = 0
+    for at in range(len(ids)):
+        groups = max(groups, ids[at] + 1)
+    last = [0 for group in range(groups)]
+    for at in range(len(ids)):
+        last[ids[at]] = at
+    return Array([at for at in range(len(ids)) if last[ids[at]] == at])
+
+
+def single_rows(ids: Array[i64, 1]) -> Array[i64, 1]:
+    """The rows that `drop_duplicates(keep=False)` keeps, in order: each row whose number in
+    `ids` no other row has. Cost: two passes over the rows."""
+    groups = 0
+    for at in range(len(ids)):
+        groups = max(groups, ids[at] + 1)
+    counts = [0 for group in range(groups)]
+    for at in range(len(ids)):
+        counts[ids[at]] += 1
+    return Array([at for at in range(len(ids)) if counts[ids[at]] == 1])
 
 
 def text_masked(column: Array[str, 1], mask: Array[bool, 1]) -> Array[str, 1]:
@@ -213,6 +251,15 @@ def id_counts(ids: Array[i64, 1], rows: Array[i64, 1]) -> Array[i64, 1]:
     return Array([counts[ids[rows[at]]] for at in range(len(rows))])
 
 
+def proportions(counts: Array[i64, 1]) -> Array[f64, 1]:
+    """Each of `counts` divided by their sum: the column `proportion` of
+    `value_counts(normalize=True)`. One pass."""
+    total = 0
+    for count in counts:
+        total += count
+    return Array([f64(count) / f64(total) for count in counts])
+
+
 def group_rows(
     values: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1], how: int
 ) -> Array[i64, 1]:
@@ -221,11 +268,14 @@ def group_rows(
     2 the largest, 3 the group's first row and 4 its last. `values` are the numbers
     `text_codes` gives the column, so the smallest is the text that comes first by `<`; of
     equal ones the first row is given. `order` and `starts` are the groups as `frames.byn`
-    finds them. One pass over the rows."""
+    finds them. A group with no rows, which a column that may hold `None` can leave, is
+    given row 0, and the caller marks its text as `None`. One pass over the rows."""
     result = [0 for group in range(len(starts) - 1)]
     for group in range(len(starts) - 1):
         low = starts[group]
         high = starts[group + 1]
+        if high <= low:
+            continue
         row = order[low]
         if how == 4:
             row = order[high - 1]
@@ -239,22 +289,58 @@ def group_rows(
     return Array(result)
 
 
-def statistic_names() -> Array[str, 1]:
+def quartiles() -> list[f64]:
+    """The percentiles `describe` shows when it is given none: the three quartiles."""
+    return [0.25, 0.5, 0.75]
+
+
+def _places(percents: list[f64]) -> int:
+    """How many decimal places tell the sorted `percents`, numbers from 0 to 100, apart, as
+    pandas counts them: enough for the smallest step between two of them, or from 0 to the
+    first, or from the last to 100, and at least one."""
+    step = 100.0
+    for at in range(len(percents)):
+        if at > 0:
+            step = min(step, percents[at] - percents[at - 1])
+    if percents[0] > 0.0:
+        step = min(step, percents[0])
+    if percents[len(percents) - 1] < 100.0:
+        step = min(step, 100.0 - percents[len(percents) - 1])
+    if not (step > 0.0):
+        return 1
+    return max(1, -int(floor(log10(step))))
+
+
+def statistic_names(percentiles: list[f64]) -> Array[str, 1]:
     """The column `statistic` of `describe`: the name of each number `described` gives, in
-    order, as pandas names them."""
-    return Array(["count", "mean", "std", "min", "25%", "50%", "75%", "max"])
+    order, as pandas names them. A percentile is named by its percent: `25%` for 0.25, and
+    `12.5%` for 0.125, with the decimal places `_places` counts when it is not whole."""
+    names = ["count", "mean", "std", "min"]
+    percents = sorted([100.0 * part for part in percentiles])
+    places = 1
+    if len(percents) > 0:
+        places = _places(percents)
+    for percent in percents:
+        whole = int(round(percent, places))
+        if abs(f64(whole) - percent) <= 1.0e-8 + 1.0e-5 * abs(percent):
+            names.append(f"{whole}%")
+        else:
+            names.append(f"{round(percent, places)}%")
+    names.append("max")
+    return Array(names)
 
 
-def described(column: Array[f64, 1]) -> Array[f64, 1]:
-    """The eight numbers `describe` gives for one column, a NaN left out as in pandas: how
-    many values there are, their mean, their sample standard deviation, which divides by one
-    less than the count and is NaN for one value, the smallest, the quartiles and the
-    largest. A quartile that falls between two values is taken on the line between them, as
-    NumPy's `percentile` takes it. With no values the count is 0 and the rest are NaN.
-    Cost: one copy of the values and a sort of it."""
+def described(column: Array[f64, 1], percentiles: list[f64]) -> Array[f64, 1]:
+    """The numbers `describe` gives for one column, a NaN left out as in pandas: how many
+    values there are, their mean, their sample standard deviation, which divides by one less
+    than the count and is NaN for one value, the smallest, the `percentiles`, parts from 0
+    to 1, in rising order, and the largest. A percentile that falls between two values is
+    taken on the line between them, as NumPy's `percentile` takes it. With no values the
+    count is 0 and the rest are NaN. Cost: one copy of the values and a sort of it."""
     values = sorted([value for value in column if not isnan(value)])
+    parts = sorted(percentiles)
     count = len(values)
-    result = [nan for at in range(8)]
+    result = [nan for at in range(5 + len(parts))]
     result[0] = f64(count)
     if count == 0:
         return Array(result)
@@ -264,17 +350,17 @@ def described(column: Array[f64, 1]) -> Array[f64, 1]:
         squares = fsum([(value - mean) * (value - mean) for value in values])
         result[2] = sqrt(squares / f64(count - 1))
     result[3] = values[0]
-    for quarter in range(1, 4):
-        at = 0.25 * f64(quarter) * f64(count - 1)
-        low = int(at)
+    for index in range(len(parts)):
+        at = parts[index] * f64(count - 1)
+        low = min(int(at), count - 1)
         high = min(low + 1, count - 1)
         part = at - f64(low)
         gap = values[high] - values[low]
         if part < 0.5:
-            result[3 + quarter] = values[low] + gap * part
+            result[4 + index] = values[low] + gap * part
         else:
-            result[3 + quarter] = values[high] - gap * (1.0 - part)
-    result[7] = values[count - 1]
+            result[4 + index] = values[high] - gap * (1.0 - part)
+    result[4 + len(parts)] = values[count - 1]
     return Array(result)
 
 
@@ -344,6 +430,31 @@ def text_shown(column: Array[str, 1]) -> str:
             words.append("...")
         else:
             words.append(_quoted(column[at]))
+    return _wrapped(words)
+
+
+def text_optional_shown(values: Array[str, 1], bits: Array[u8, 1]) -> str:
+    """A text array with missing values as `print` shows it: as `text_shown` shows a text
+    array, with `None` for each element whose bit in the validity bitmap `bits` is 0, so
+    `['a' None 'c']`. Cost: one copy of each element shown."""
+    count = len(values)
+    shown = [at for at in range(count)]
+    if count > 1000:
+        shown = [0, 1, 2, -1, count - 3, count - 2, count - 1]
+    words: list[str] = []
+    for at in shown:
+        if at < 0:
+            words.append("...")
+        elif ((bits[at // 8] >> u8(at % 8)) & u8(1)) == u8(1):
+            words.append(_quoted(values[at]))
+        else:
+            words.append("None")
+    return _wrapped(words)
+
+
+def _wrapped(words: list[str]) -> str:
+    """`words` with a space between two, the whole in brackets. A line holds at most 75
+    characters and the next starts under the first word."""
     text = ""
     line = " "
     for at in range(len(words)):

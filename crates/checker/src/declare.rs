@@ -1,5 +1,6 @@
 //! Declarations: what each kind of definition declares, from its annotations.
 
+use crate::callables::Place;
 use crate::constant::to_float;
 use crate::lower::Lowerer;
 use crate::outline::{Base, Entry, Kind};
@@ -14,10 +15,22 @@ use types::{
 impl<'db> Lowerer<'db> {
     /// What the definition `entry` declares, with the errors found.
     pub(crate) fn declare(mut self, entry: &Entry) -> Checked<'db> {
+        let declaration = self.declaration(entry);
+        Checked {
+            declaration,
+            diagnostics: self.diagnostics,
+        }
+    }
+
+    /// What `entry` declares, with the errors found added to the lowerer's. [`Self::declare`]
+    /// keeps both; the `written_bounds` module reads the definition's annotations again
+    /// through it, for the written type arguments.
+    pub(crate) fn declaration(&mut self, entry: &Entry) -> Declaration<'db> {
         if matches!(entry.kind, Kind::Function | Kind::Class(_)) {
             self.bounds(entry.statement);
+            self.variadic(entry.statement, entry.kind == Kind::Function);
         }
-        let declaration = match &entry.kind {
+        match &entry.kind {
             Kind::Function => Declaration::Function(self.signature(entry)),
             Kind::Class(class) if class.base == Base::Enum => self.enumeration(entry.statement),
             Kind::Class(class) if class.base == Base::Protocol => {
@@ -33,10 +46,6 @@ impl<'db> Lowerer<'db> {
             }
             Kind::Constant => self.constant_declaration(entry.statement),
             Kind::Unsupported => Declaration::Alias(self.unknown()),
-        };
-        Checked {
-            declaration,
-            diagnostics: self.diagnostics,
         }
     }
 
@@ -85,6 +94,33 @@ impl<'db> Lowerer<'db> {
         }
     }
 
+    /// Reports a `*Ts` a definition may not declare (the decision 0026 amendment): one on a
+    /// class, or a second one on a function, whose types could not be told apart at a call.
+    fn variadic(&mut self, definition: NodeId, function: bool) {
+        let packs = crate::packs::packs(self.db, self.file, definition);
+        let extra = if function {
+            packs.get(1..)
+        } else {
+            Some(packs.as_slice())
+        };
+        for &pack in extra.unwrap_or_default() {
+            let (message, label, hint) = if function {
+                (
+                    "a function has at most one variadic type parameter",
+                    "a second `*Ts`",
+                    "one `*Ts` takes every type left; pass the rest in one tuple",
+                )
+            } else {
+                (
+                    "a class cannot have a variadic type parameter",
+                    "`*Ts` on a class",
+                    "only a function takes `*Ts`, for a callback's extra arguments",
+                )
+            };
+            self.error(pack, message, label, Some(hint));
+        }
+    }
+
     /// A function's signature. A method's first parameter may leave out its type: `self` is a
     /// read-only borrow of the class.
     fn signature(&mut self, entry: &Entry) -> Signature<'db> {
@@ -104,7 +140,10 @@ impl<'db> Lowerer<'db> {
             };
             let name = self.tree.text(name, self.text).to_owned();
             let (ty, mode) = match self.tree.child(node, Role::Annotation) {
-                Some(annotation) => self.parameter(annotation),
+                Some(annotation) => {
+                    let (ty, mode) = self.parameter(annotation);
+                    (self.kept_callable(annotation, ty, Place::Parameter), mode)
+                }
                 None if position == 0 && entry.class.is_some() => (self.self_type(), Mode::Borrow),
                 None => {
                     let message = format!("parameter `{name}` needs a type");
@@ -122,7 +161,10 @@ impl<'db> Lowerer<'db> {
             });
         }
         let returns = match self.tree.child(statement, Role::Returns) {
-            Some(returns) => self.lower(returns),
+            Some(returns) => {
+                let ty = self.lower(returns);
+                self.kept_callable(returns, ty, Place::Return)
+            }
             None => Type::new(self.db, TypeKind::None),
         };
         Signature {
@@ -154,7 +196,10 @@ impl<'db> Lowerer<'db> {
                         None => (self.unknown(), false),
                     };
                     let ty = match self.tree.child(statement, Role::Annotation) {
-                        Some(annotation) => self.without_frame(annotation, ty),
+                        Some(annotation) => {
+                            let ty = self.without_frame(annotation, ty);
+                            self.kept_callable(annotation, ty, Place::Field)
+                        }
                         None => ty,
                     };
                     if let Some(value) = self.tree.child(statement, Role::Value) {

@@ -7,10 +7,20 @@
 //! then one of two columns of integers. Lowering calls the generic functions once for each
 //! key column and copies each column of the result with `taken`. Both frames are borrowed.
 //! A key of `str` is joined on the integers the library's `text_codes` gives for the text of
-//! the two columns end to end, and a column of `str` is copied with `text_taken`.
+//! the two columns end to end, and a column of `str` is copied with `text_taken`. A key that
+//! may hold `None` is joined as two columns ([`Builder::optional_keys`]), and a column that
+//! may hold `None` is copied with its validity bitmap. A key that `left_on=` and `right_on=`
+//! give two names (roadmap 3.13.15) is matched the same way, and its two columns are then
+//! copied like any column that is no key.
+//!
+//! `how="left"`, `"right"` and `"outer"` keep the rows that have no partner: the library's
+//! `outer_pairs` lists the pairs, and the [`frame_outer`](crate::frame_outer) module builds
+//! the columns that then may hold `None`.
 
 use crate::builder::Builder;
+use crate::frame_outer::Join;
 use crate::frames::erase;
+use crate::optional_arrays::VALUES;
 use mir::{Constant, ConstantValue, Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, SyntaxKind};
 use types::{Primitive, Type, TypeKind};
@@ -26,13 +36,13 @@ impl<'db> Builder<'db> {
         node: NodeId,
     ) {
         let ty = self.ty(node);
-        let on = self
-            .written(node)
-            .into_iter()
-            .filter(|&argument| self.tree.kind(argument) == SyntaxKind::Keyword)
-            .find(|&argument| self.keyword_name(argument) == Some("on"))
-            .map(|argument| self.keyword_value(argument));
-        let (Some(&right), Some(on)) = (rest.first(), on) else {
+        // `on=` names each key once; `left_on=` and `right_on=` name it in each frame.
+        let on = self.keyword_of(node, "on");
+        let sides = (
+            on.or_else(|| self.keyword_of(node, "left_on")),
+            on.or_else(|| self.keyword_of(node, "right_on")),
+        );
+        let (Some(&right), (Some(left_on), Some(right_on))) = (rest.first(), sides) else {
             return self.unsupported(node, "this `merge`");
         };
         let (Some(left_columns), Some(right_columns)) =
@@ -47,56 +57,125 @@ impl<'db> Builder<'db> {
         // Each key column of the two frames end to end, a `bool` key as the integers 0 and 1.
         let mut keys: Vec<(Place, Type<'db>)> = Vec::new();
         let mut names = Vec::new();
-        for key in self.listed(on) {
-            let (Some((left_at, column)), Some((right_at, _))) = (
+        for (key, other) in self.listed(left_on).into_iter().zip(self.listed(right_on)) {
+            let (Some((left_at, column)), Some((right_at, found))) = (
                 self.named_column(left_columns, key),
-                self.named_column(right_columns, key),
+                self.named_column(right_columns, other),
             ) else {
                 return self.unsupported(key, "this column to join on");
             };
-            names.push(column.name.as_str());
+            // A key with one name in both frames is one column of the result.
+            if column.name == found.name {
+                names.push(column.name.as_str());
+            }
             let sides = [
                 left_source.clone().project(Projection::Field(left_at)),
                 right_source.clone().project(Projection::Field(right_at)),
             ];
-            let Some(both) = self.joined_key(sides, column.element, key) else {
+            let Some(joined) = self.joined_keys(sides, column.element, key) else {
                 return;
             };
-            keys.push(both);
+            keys.extend(joined);
         }
+        let kind = self.join_kind(node);
         let count = self.counted_rows(left, &left_source, node);
-        let Some(pairs) = self.join_pairs(&keys, count, node) else {
+        let Some(pairs) = self.join_pairs(&keys, count, kind, node) else {
             return;
         };
-        let call = |builder: &mut Self, arguments: Vec<Place>| {
-            let rows = builder.frame_call("pair_side", Vec::new(), arguments, positions, node)?;
-            builder.drop_later(rows);
-            Some(rows)
-        };
-        let mut made = Vec::new();
-        for (side, source, columns) in [
-            (0, &left_source, left_columns),
-            (1, &right_source, right_columns),
-        ] {
+        let mut rows = Vec::with_capacity(2);
+        for side in 0..2 {
             let which = Operand::Constant(Constant::integer(int, side));
             let which = self.held(int, which, node);
             let arguments = vec![Place::from(pairs), Place::from(which)];
-            let Some(rows) = call(self, arguments) else {
+            let Some(side_rows) =
+                self.frame_call("pair_side", Vec::new(), arguments, positions, node)
+            else {
                 return;
             };
-            for (position, column) in (0_u32..).zip(columns) {
-                // The keys come from the left frame; the right frame's would repeat them.
-                if side == 1 && names.contains(&column.name.as_str()) {
-                    continue;
+            self.drop_later(side_rows);
+            rows.push(Place::from(side_rows));
+        }
+        let [left_rows, right_rows] = [rows[0].clone(), rows[1].clone()];
+        let mut made = Vec::new();
+        for (position, column) in (0_u32..).zip(left_columns) {
+            let from = left_source.clone().project(Projection::Field(position));
+            let other = right_columns
+                .iter()
+                .position(|other| other.name == column.name)
+                .and_then(|at| u32::try_from(at).ok())
+                .filter(|_| names.contains(&column.name.as_str()));
+            let taken = match other {
+                // A key comes from whichever frame has the row.
+                Some(other) => {
+                    let sides = [from, right_source.clone().project(Projection::Field(other))];
+                    let rows = [left_rows.clone(), right_rows.clone()];
+                    self.key_column(kind, sides, column, &rows, node)
                 }
-                let from = source.clone().project(Projection::Field(position));
-                let Some(taken) = self.taken_column(from, column, Place::from(rows), node) else {
-                    return;
-                };
-                made.push(Operand::Move(Place::from(taken)));
+                None if kind.leaves_gaps(0) => self.gap_column(from, column, &left_rows, node),
+                None => self.chosen_column(from, column, ("taken", &left_rows), node),
+            };
+            let Some(taken) = taken else {
+                return;
+            };
+            made.push(taken);
+        }
+        for (position, column) in (0_u32..).zip(right_columns) {
+            // The keys are already there; the right frame's would repeat them.
+            if names.contains(&column.name.as_str()) {
+                continue;
             }
+            let from = right_source.clone().project(Projection::Field(position));
+            let taken = if kind.leaves_gaps(1) {
+                self.gap_column(from, column, &right_rows, node)
+            } else {
+                self.chosen_column(from, column, ("taken", &right_rows), node)
+            };
+            let Some(taken) = taken else {
+                return;
+            };
+            made.push(taken);
         }
         self.assign(place, Rvalue::Aggregate(ty, made), node);
+    }
+
+    /// The key columns that stand for one key of `merge` whose elements are `element`, from
+    /// the key's column in each frame, `sides` with the left frame's first: one column for a
+    /// key that holds no `None` ([`Builder::joined_key`]), and two for a key that may. Those
+    /// two are whether each element is there, and its value with the filler under each
+    /// `None`, so a `None` joins a `None` and no value, as a NaN joins a NaN. `None` after an
+    /// error is reported.
+    fn joined_keys(
+        &mut self,
+        sides: [Place; 2],
+        element: Type<'db>,
+        key: NodeId,
+    ) -> Option<Vec<(Place, Type<'db>)>> {
+        let &TypeKind::Optional(inner) = element.kind(self.db) else {
+            return Some(vec![self.joined_key(sides, element, key)?]);
+        };
+        if matches!(inner.kind(self.db), TypeKind::Str) {
+            // Text is numbered over both frames at once, so the flags are made apart from
+            // the values, which hold an empty text under each `None`.
+            let [left, right] = sides;
+            let flags = [
+                Place::from(self.absence(&left, inner, key)?),
+                Place::from(self.absence(&right, inner, key)?),
+            ];
+            let values = [left, right].map(|side| side.project(Projection::Field(VALUES)));
+            let int = self.int_type();
+            return Some(vec![
+                self.joined_key(flags, int, key)?,
+                self.joined_key(values, inner, key)?,
+            ]);
+        }
+        let [left, right] = sides;
+        let left = self.optional_keys(&left, inner, key)?;
+        let right = self.optional_keys(&right, inner, key)?;
+        let mut keys = Vec::with_capacity(2);
+        for ((left_key, compared), (right_key, _)) in left.into_iter().zip(right) {
+            keys.push(self.joined_key([left_key, right_key], compared, key)?);
+        }
+        Some(keys)
     }
 
     /// The key column of the two frames end to end, `sides` with the left frame's first,
@@ -127,19 +206,30 @@ impl<'db> Builder<'db> {
         Some((Place::from(both), compared))
     }
 
-    /// The pairs of rows an inner join on `keys` gives, as the library's `join_pairs` lists
-    /// them: each of `keys` is a key column of the two frames end to end, the left frame's
-    /// `left_count` rows first, and its element type. `None` after an error is reported.
+    /// The pairs of rows a join of kind `kind` on `keys` gives, as the library's `join_pairs`
+    /// lists them for an inner join and its `outer_pairs` for the others, with -1 for the
+    /// frame that has no row: each of `keys` is a key column of the two frames end to end,
+    /// the left frame's `left_count` rows first, and its element type. `None` after an error
+    /// is reported.
     fn join_pairs(
         &mut self,
         keys: &[(Place, Type<'db>)],
         left_count: Local,
+        kind: Join,
         node: NodeId,
     ) -> Option<Local> {
         let positions = self.positions_type();
         let ids = self.key_ids(keys, node)?;
-        let arguments = vec![Place::from(ids), Place::from(left_count)];
-        let pairs = self.frame_call("join_pairs", Vec::new(), arguments, positions, node)?;
+        let mut arguments = vec![Place::from(ids), Place::from(left_count)];
+        let function = if kind == Join::Inner {
+            "join_pairs"
+        } else {
+            let int = self.int_type();
+            let how = Operand::Constant(Constant::integer(int, kind as i128));
+            arguments.push(Place::from(self.held(int, how, node)));
+            "outer_pairs"
+        };
+        let pairs = self.frame_call(function, Vec::new(), arguments, positions, node)?;
         self.drop_later(pairs);
         Some(pairs)
     }
@@ -188,8 +278,17 @@ impl<'db> Builder<'db> {
         call(self, "group_ids", None, arguments, positions)
     }
 
+    /// The value the call `node` gives its keyword argument `name`, if it writes one.
+    pub(crate) fn keyword_of(&self, node: NodeId, name: &str) -> Option<NodeId> {
+        self.written(node)
+            .into_iter()
+            .filter(|&argument| self.tree.kind(argument) == SyntaxKind::Keyword)
+            .find(|&argument| self.keyword_name(argument) == Some(name))
+            .map(|argument| self.keyword_value(argument))
+    }
+
     /// The name of the keyword argument `argument`, `on` in `on="symbol"`.
-    fn keyword_name(&self, argument: NodeId) -> Option<&'db str> {
+    pub(crate) fn keyword_name(&self, argument: NodeId) -> Option<&'db str> {
         self.tree
             .child(argument, syntax::Role::Name)
             .map(|name| self.text_of(name))

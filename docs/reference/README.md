@@ -31,7 +31,10 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Arrays](arrays.md) | `Array` and `Fixed`: construction, layout, indexing, slicing, whole-array arithmetic |
 | [Arrays of text](text-arrays.md) | `Array[str, 1]`: an array of strings stored end to end as Arrow stores text, built from a list, read by borrowing, looped over and copied |
 | [Missing values](missing-values.md) | `Array[f64 \| None, 1]`: an array whose elements may be `None`, stored as its values and one validity bit each as Arrow stores a nullable column, built from a list, read as `T \| None`, copied, with `isna` and `notna` |
-| [Special functions](special-functions.md) | The `special` module: SciPy's special functions written in Baryon, the gamma family, the error functions and the Bessel functions of whole order first, with the accuracy of each against mpmath |
+| [Missing values in a DataFrame](missing-values-in-frames.md) | A column whose field is a `T \| None`: how it is built and read, what `sort_values`, `groupby` and `merge` do with its gaps, and `dropna` and `fillna` of a frame |
+| [Comparing missing values](missing-comparisons.md) | `bids > 2.0` on an array with missing values: an `Array[bool \| None, 1]` that is `None` where the array is, as pandas compares, such masks combined with `&`, `\|` and `~`, and such a mask choosing rows of a frame and elements of an array |
+| [Special functions](special-functions.md) | The `special` module: SciPy's special functions written in Baryon: the gamma family, error functions, Bessel functions of whole order, incomplete gamma and beta functions, distribution functions, exponential integrals, zeta and everyday helpers, with the accuracy of each against mpmath |
+| [Numerical integration](integration.md) | The `integrate` module: SciPy's `quad` on finite intervals and the fixed rules `trapezoid`, `cumulative_trapezoid`, `simpson` and `romb`, with SciPy's bits |
 | [Statistics](statistics.md) | The `stats` module: `median`, `quantile`, `percentile`, `average`, `histogram`, `cov` and `corrcoef`, with NumPy's bits |
 | [DataFrames](dataframes.md) | `DataFrame[S]`: a table whose columns are arrays and whose column names the compiler checks, with pandas's names |
 | [Sorting, grouping and joining DataFrames](dataframe-operations.md) | `sort_values`, `groupby(...).agg(...)`, the inner `merge`, `drop_duplicates` and `concat`, with what each costs and where it differs from pandas |
@@ -40,6 +43,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Linear algebra and FFT](linear-algebra.md) | `linalg` and `fft`: solving systems, factoring matrices and Fourier transforms, with NumPy's names, and `LinAlgError` |
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
+| [CSV files](csv-files.md) | `DataFrame.read_csv(path)` and `df.to_csv(path)`: a CSV file read into a `DataFrame` whose type the program names, how each type of column reads its cells, empty cells as `None`, a frame written as pandas writes it, the errors, and the differences from pandas |
 | [Data files](data-files.md) | Text tables, NumPy's `.npy` files, FITS, NetCDF and HDF5, each with its Python library's names: `Array.loadtxt`, `Array.save`, `fits.getdata`, `netCDF4.Dataset` and `h5by.File` |
 | [Plotting](plotting.md) | The `byplot` and `ticker` modules: line, scatter, bar, histogram, image and contour plots with matplotlib's names and look, saved as SVG, PNG or PDF |
 | [Compression](compression.md) | `zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`, with Python's names, on byte arrays |

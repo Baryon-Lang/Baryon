@@ -4,6 +4,8 @@
 //! The result has the frame's type: the same columns, with the rows in another order. The
 //! columns to sort by are string literals, checked against the frame's columns when
 //! compiling, and `ascending` is one `bool` for every column or a list with one for each.
+//! `na_position` is `"first"` or `"last"`, written out (roadmap 3.13.16): where the rows with
+//! a missing value in a column sorted by go.
 
 use super::calls::Arguments;
 use super::{Body, relations};
@@ -12,7 +14,8 @@ use types::{Primitive, Type, TypeKind};
 
 impl<'db> Body<'db> {
     /// The call `node` of `sort_values` on a frame of type `base`, with `callee` the method's
-    /// name: the frame's own type, after checking the columns named and `ascending`. `None`,
+    /// name: the frame's own type, after checking the columns named, `ascending` and
+    /// `na_position`. `None`,
     /// with nothing checked, for any other method.
     pub(super) fn sort_method(
         &mut self,
@@ -24,34 +27,41 @@ impl<'db> Body<'db> {
         if callee != "sort_values" {
             return None;
         }
-        let name = |body: &Self, keyword: NodeId| body.tree.text(keyword, body.text).to_owned();
-        let (by, ascending) = match (
-            arguments.positional.as_slice(),
-            arguments.keywords.as_slice(),
-        ) {
-            (&[by], []) => (by, None),
-            (&[by], &[(keyword, ascending)]) if name(self, keyword) == "ascending" => {
-                (by, Some(ascending))
+        let (mut by, mut ascending, mut missing) = (None, None, None);
+        let mut wrong = match arguments.positional.as_slice() {
+            [] => false,
+            &[first] => {
+                by = Some(first);
+                false
             }
-            ([], &[(keyword, by)]) if name(self, keyword) == "by" => (by, None),
-            ([], &[(first, by), (second, ascending)])
-                if name(self, first) == "by" && name(self, second) == "ascending" =>
-            {
-                (by, Some(ascending))
-            }
-            _ => {
-                self.untyped(arguments);
-                return Some(self.lowerer.error(
-                    node,
-                    "`sort_values` takes the columns to sort by, then `ascending=`",
-                    "wrong arguments",
-                    Some(
-                        "for example `df.sort_values(\"price\")` or \
-                         `df.sort_values([\"symbol\", \"price\"], ascending=[True, False])`; \
-                         the sort is always stable and missing values always come last",
-                    ),
-                ));
-            }
+            _ => true,
+        };
+        for &(keyword, value) in &arguments.keywords {
+            let slot = match self.tree.text(keyword, self.text) {
+                "by" => &mut by,
+                "ascending" => &mut ascending,
+                "na_position" => &mut missing,
+                _ => {
+                    wrong = true;
+                    continue;
+                }
+            };
+            wrong |= slot.replace(value).is_some();
+        }
+        let Some(by) = by.filter(|_| !wrong) else {
+            self.untyped(arguments);
+            return Some(self.lowerer.error(
+                node,
+                "`sort_values` takes the columns to sort by, then `ascending=` and \
+                 `na_position=`",
+                "wrong arguments",
+                Some(
+                    "for example `df.sort_values(\"price\")` or \
+                     `df.sort_values([\"symbol\", \"price\"], ascending=[True, False])`; \
+                     the sort is always stable, and missing values come last unless \
+                     `na_position=\"first\"`",
+                ),
+            ));
         };
         let keys = if self.tree.kind(by) == SyntaxKind::List {
             self.column_names(by, base)
@@ -72,6 +82,18 @@ impl<'db> Body<'db> {
         complete &= self.sortable(by, base, &keys);
         if let Some(ascending) = ascending {
             complete &= self.sort_directions(ascending, keys.len(), complete);
+        }
+        if let Some(missing) = missing
+            && !matches!(self.literal_text(missing), Some("first" | "last"))
+        {
+            self.expression(missing, None);
+            self.lowerer.error(
+                missing,
+                "`na_position` is `\"first\"` or `\"last\"`, written out",
+                "not a place for missing values",
+                Some("missing values come last when it is left out"),
+            );
+            complete = false;
         }
         Some(if complete {
             base

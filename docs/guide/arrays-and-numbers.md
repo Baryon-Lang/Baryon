@@ -2,6 +2,8 @@
 
 Numeric code in Baryon is built on `Array`, an n-dimensional array with NumPy's names and
 NumPy's results, and on the libraries around it: `math`, `random`, `stats`, `linalg` and `fft`.
+Together they are called [NumBaryon](../reference/arrays.md#numbaryon). The name is not a
+package: arrays are built in, and each library is imported under its own name.
 This page shows each in a program that builds and runs today, as CI checks. It assumes you have
 read the [tour of the language](language-tour.md).
 
@@ -145,7 +147,7 @@ def main():
     # fsum adds without losing a digit; f64x2 carries about 32 significant digits.
     tiny = Array([1.0, 1e-16, 1e-16, 1e-16])
     print(tiny.sum(), fsum(tiny))
-    print(f64x2(2.0, 0.0).sqrt().to_str())
+    print(f64x2.of(2.0).sqrt().to_str())
 
     # Reproducible random numbers: a seed and a stream fix every number drawn.
     generator = Philox(42, stream=0)

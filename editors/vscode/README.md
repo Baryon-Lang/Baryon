@@ -113,6 +113,26 @@ those depend on `minimatch` 10, which has a published denial-of-service advisory
 crates, so run `npm audit --omit=dev` here after any change to `package-lock.json`. Version 9
 also keeps the oldest supported VS Code at 1.82, from August 2023.
 
+## Icons
+
+The extension gives `.byn` files Baryon's logo, the Kanizsa B
+([decision 0070](../../docs/decisions/0070-baryon-logo.md)), in two places:
+
+| File | Where it shows |
+| --- | --- |
+| [`icons/baryon-file.svg`](icons/baryon-file.svg) | Beside every `.byn` file on editor tabs, in the Explorer and in Quick Open. `package.json` names it as the `baryon` language's `icon`, for light and dark themes alike: its dark tile and brass frame stand out on both |
+| [`icons/baryon.png`](icons/baryon.png) | The extension's own icon, 128 by 128 pixels, in the Extensions view. VS Code asks for a PNG here, not an SVG |
+
+The file icon is the logo without its inner hairline frame, which blurs at 16 pixels. The PNG is
+the full logo, [`docs/brand/baryon-logo.svg`](../../docs/brand/baryon-logo.svg), drawn at 128
+pixels.
+
+A file icon theme takes over. VS Code shows a language's own icon only under a theme that leaves
+the language alone, such as the default **Seti**, or **None**. A full icon theme, such as
+Material Icon Theme or vscode-icons, draws every file itself, so `.byn` files get that theme's
+icon, usually a blank page, until the theme learns `.byn`. To see the Baryon icon, pick **Seti**
+or **None** with **File > Preferences > Theme > File Icon Theme**.
+
 ## Editing behavior
 
 [`language-configuration.json`](language-configuration.json) follows VS Code's Python

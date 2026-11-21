@@ -22,9 +22,10 @@ use std::fmt::Write as _;
 /// A complex number as its real and imaginary parts.
 pub(crate) type Parts = (f64, f64);
 
-/// The text Python's `repr` writes for the complex number whose parts, written by Rust's `{:e}`
-/// with the fewest digits that read back as the same value at their own width, are `real` and
-/// `imaginary`; `positive_zero` says whether the real part is `+0.0`.
+/// The text Python's `repr` writes for the complex number whose parts, written in `{:e}` form
+/// by [`shortest`](crate::shortest::shortest) with the fewest digits that read back as the same
+/// value at their own width, are `real` and `imaginary`; `positive_zero` says whether the real
+/// part is `+0.0`.
 pub(crate) fn repr(real: &str, imaginary: &str, positive_zero: bool) -> String {
     let imaginary = part(imaginary);
     if positive_zero {

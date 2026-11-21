@@ -55,6 +55,43 @@ def main():
     );
 }
 
+/// The parts of a path are new values, so a loop that borrows its paths can keep them: the
+/// checker once reported `name = entry.name` as moving the borrowed `entry` (roadmap 1.9.31).
+#[test]
+fn parts_of_borrowed_paths_are_kept() {
+    let program = "\
+from pathlib import Path
+
+
+def names(paths: list[Path]) -> list[str]:
+    out: list[str] = []
+    for entry in paths:
+        out.append(entry.name)
+    return out
+
+
+def main():
+    paths = [Path(\"runs/a.csv\"), Path(\"runs/b.npy\")]
+    for entry in paths:
+        name = entry.name
+        parent = entry.parent
+        print(name, entry.stem, parent, entry)
+    first = paths[0].suffix
+    print(names(paths), first)
+";
+    let directory = package("borrowed_path_parts", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let run = Command::new(&executable).output().unwrap();
+    assert!(run.status.success(), "{run:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "a.csv a runs runs/a.csv\n\
+         b.npy b runs runs/b.npy\n\
+         ['a.csv', 'b.npy'] .csv\n"
+    );
+}
+
 /// A program makes directories, writes and reads a file through a `Path`, renames and removes
 /// it, and lists what is there; then each call that cannot work raises the `OSError` Python
 /// raises, with the same `errno`, text and file name.

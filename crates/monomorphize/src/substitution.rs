@@ -65,13 +65,19 @@ impl<'db> Substitution<'_, 'db> {
             | TypeKind::Unknown => {
                 return ty;
             }
-            TypeKind::Tuple(items) => TypeKind::Tuple(list(items)),
+            // A bound `*Ts` becomes its types in place (the 0026 amendment).
+            TypeKind::Tuple(items) => TypeKind::Tuple(types::spliced(self.db, list(items))),
+            TypeKind::Unpacked(pack) => TypeKind::Unpacked(self.ty(*pack)),
             TypeKind::List(item) => TypeKind::List(self.ty(*item)),
             TypeKind::Dict { key, value } => TypeKind::Dict {
                 key: self.ty(*key),
                 value: self.ty(*value),
             },
-            TypeKind::Optional(value) => TypeKind::Optional(self.ty(*value)),
+            // `T | None` with `T` the type `None` is `None`: a union's repeats do not matter.
+            TypeKind::Optional(value) => match self.ty(*value) {
+                none if matches!(none.kind(self.db), TypeKind::None) => return none,
+                value => TypeKind::Optional(value),
+            },
             TypeKind::Array { element, rank } => TypeKind::Array {
                 element: self.ty(*element),
                 rank: *rank,
@@ -93,7 +99,7 @@ impl<'db> Substitution<'_, 'db> {
                 parameters,
                 returns,
             } => TypeKind::Callable {
-                parameters: list(parameters),
+                parameters: types::spliced(self.db, list(parameters)),
                 returns: self.ty(*returns),
             },
             TypeKind::Fallible { value, errors } => TypeKind::Fallible {

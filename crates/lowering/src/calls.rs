@@ -6,7 +6,7 @@ use crate::builder::Builder;
 use crate::frames::erase;
 use mir::{Argument, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Declaration, Item, Mode, TypeKind};
+use types::{Declaration, Item, Mode, Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// The call `node`, its result written into `place`.
@@ -61,7 +61,7 @@ impl<'db> Builder<'db> {
         match &call.callee {
             types::Callee::Function(_) | types::Callee::Method(_) => {}
             types::Callee::Constructor(item) => {
-                let fields = self.field_types(*item);
+                let fields = self.field_types(*item, ty);
                 let operands = arguments
                     .into_iter()
                     .enumerate()
@@ -72,41 +72,59 @@ impl<'db> Builder<'db> {
                     .collect();
                 self.assign(place, Rvalue::Aggregate(ty, operands), node);
             }
-            types::Callee::Conversion(to) => match (to.kind(self.db), arguments.as_slice()) {
-                (TypeKind::Primitive(_), [argument])
-                    if matches!(self.ty(*argument).kind(self.db), TypeKind::Str) =>
-                {
-                    self.parse_number(place, *to, *argument, node);
-                }
-                (TypeKind::Primitive(_), [argument])
-                    if !matches!(self.ty(*argument).kind(self.db), TypeKind::Primitive(_)) =>
-                {
-                    let from = self.ty(*argument).display(self.db);
-                    let to = to.display(self.db);
-                    self.unsupported(node, &format!("converting a `{from}` to `{to}`"));
-                }
-                (TypeKind::Primitive(_), [real, imaginary]) if self.is_complex(*to) => {
-                    self.complex_from_parts(&place, *to, (*real, *imaginary), node);
-                }
-                (TypeKind::Primitive(_), [argument]) => {
-                    let operand = self.operand_as(*argument, *to);
-                    self.assign(place, Rvalue::Use(operand), node);
-                }
-                (&TypeKind::Fixed { element, .. }, _) => {
-                    let mut elements = Vec::new();
-                    for argument in arguments {
-                        self.elements(argument, &mut elements);
-                    }
-                    let operands = elements
-                        .into_iter()
-                        .map(|node| self.operand_as(node, element))
-                        .collect();
-                    self.assign(place, Rvalue::Aggregate(*to, operands), node);
-                }
-                _ => self.unsupported(node, "this conversion"),
-            },
+            types::Callee::Conversion(to) => self.conversion(place, *to, &arguments, node),
             types::Callee::Builtin(name) => self.named_builtin(place, name, &arguments, node),
             types::Callee::Value => self.value_call(place, &arguments, node),
+        }
+    }
+
+    /// The conversion `node` to the type `to` of `arguments`, its result written into `place`:
+    /// a number from a number or from text, a complex number from its parts, a `Fixed` array
+    /// from its elements, or a type parameter from a number (decision 0066).
+    fn conversion(&mut self, place: Place, to: Type<'db>, arguments: &[NodeId], node: NodeId) {
+        match (to.kind(self.db), arguments) {
+            (TypeKind::Primitive(_), [argument])
+                if matches!(self.ty(*argument).kind(self.db), TypeKind::Str) =>
+            {
+                self.parse_number(place, to, *argument, node);
+            }
+            (TypeKind::Primitive(_), [argument])
+                if !matches!(self.ty(*argument).kind(self.db), TypeKind::Primitive(_)) =>
+            {
+                let from = self.ty(*argument).display(self.db);
+                let to = to.display(self.db);
+                self.unsupported(node, &format!("converting a `{from}` to `{to}`"));
+            }
+            (TypeKind::Primitive(_), [real, imaginary]) if self.is_complex(to) => {
+                self.complex_from_parts(&place, to, (*real, *imaginary), node);
+            }
+            (TypeKind::Primitive(_), [argument]) => {
+                let operand = self.operand_as(*argument, to);
+                self.assign(place, Rvalue::Use(operand), node);
+            }
+            // `T(x)` under `Number` or `Float` (decision 0066): monomorphization makes it the
+            // concrete conversion for each type argument, which the backend checks.
+            (TypeKind::Parameter { .. }, [argument]) => {
+                let operand = self.operand(*argument);
+                let rvalue = if self.ty(*argument) == to {
+                    Rvalue::Use(operand)
+                } else {
+                    Rvalue::Convert(operand, to)
+                };
+                self.assign(place, rvalue, node);
+            }
+            (&TypeKind::Fixed { element, .. }, _) => {
+                let mut elements = Vec::new();
+                for argument in arguments {
+                    self.elements(*argument, &mut elements);
+                }
+                let operands = elements
+                    .into_iter()
+                    .map(|node| self.operand_as(node, element))
+                    .collect();
+                self.assign(place, Rvalue::Aggregate(to, operands), node);
+            }
+            _ => self.unsupported(node, "this conversion"),
         }
     }
 
@@ -139,6 +157,9 @@ impl<'db> Builder<'db> {
             }
             (None, [rows]) if name == "DataFrame" => self.frame_from_rows(place, *rows, node),
             (None, [list]) if name == "concat" => self.frame_concat(place, *list, node),
+            (Some(("DataFrame", "read_csv")), [path]) => {
+                self.frame_read_csv(place, *path, node);
+            }
             (Some(("DataFrame", method)), [frame, rest @ ..]) => {
                 self.frame_method(place, method, (*frame, rest), node);
             }
@@ -180,9 +201,14 @@ impl<'db> Builder<'db> {
             (Some(("Array", method @ ("isna" | "notna"))), [array]) => {
                 self.optional_array_missing(place, *array, method == "isna", node);
             }
-            (Some(("Array", method @ ("count" | "sum" | "min" | "max" | "mean"))), [array])
-                if self.optional_array_element(*array).is_some() =>
-            {
+            (
+                Some((
+                    "Array",
+                    method @ ("count" | "sum" | "min" | "max" | "mean" | "var" | "std" | "any"
+                    | "all"),
+                )),
+                [array, ..],
+            ) if self.optional_array_element(*array).is_some() => {
                 self.optional_array_reduced(place, method, *array, node);
             }
             (Some(("Array", "dropna")), [array]) => {
@@ -212,14 +238,14 @@ impl<'db> Builder<'db> {
         &mut self,
         place: Place,
         item: Item<'db>,
-        type_arguments: Vec<types::Type<'db>>,
+        type_arguments: Vec<Type<'db>>,
         arguments: &[Option<NodeId>],
         node: NodeId,
     ) {
         let Declaration::Function(signature) = &self.db.declaration(item).declaration else {
             return self.unsupported(node, "this call");
         };
-        let parameters: Vec<(Mode, types::Type<'db>)> = signature
+        let parameters: Vec<(Mode, Type<'db>)> = signature
             .parameters
             .iter()
             .map(|parameter| (parameter.mode, erase(self.db, parameter.ty)))
@@ -238,7 +264,7 @@ impl<'db> Builder<'db> {
         // call's type arguments in place; in a generic caller they may be its own type
         // parameters (the `generics` module).
         let generic = self.type_parameters(item, signature);
-        let parameters: Vec<(Mode, types::Type<'db>)> = parameters
+        let parameters: Vec<(Mode, Type<'db>)> = parameters
             .into_iter()
             .map(|(mode, ty)| match ty.kind(self.db) {
                 TypeKind::Callable { .. } => (mode, ty),
@@ -333,7 +359,7 @@ impl<'db> Builder<'db> {
         item: Item<'db>,
         arguments: &[Option<NodeId>],
         node: NodeId,
-    ) -> Option<Vec<types::Type<'db>>> {
+    ) -> Option<Vec<Type<'db>>> {
         let tree = self.db.parse(item.file(self.db)).tree();
         let Some((_, Some(class))) = crate::definition(tree, item.name(self.db)) else {
             return Some(Vec::new());
@@ -395,37 +421,20 @@ impl<'db> Builder<'db> {
     /// A call of a `Callable` value, such as the parameter `derivative` in
     /// `derivative(t, state)`, into `place`. Each argument is borrowed, the mode a `Callable`
     /// gives every parameter. Monomorphization turns it into a direct call of the function the
-    /// instance received (decision 0026).
+    /// instance received (decision 0026), or the function a local holds (roadmap 1.9.43). A
+    /// function that can raise gets the call's error edge, as a direct call of it does. A
+    /// `*args` argument is an [`Argument::Spread`] of its tuple.
     fn value_call(&mut self, place: Place, arguments: &[NodeId], node: NodeId) {
         let Some(function) = self.tree.child(node, Role::Function) else {
             return self.unsupported(node, "this call");
         };
         let callee = self.operand(function);
-        let passed = arguments
-            .iter()
-            .map(|&argument| Argument::Borrow(self.borrow(argument)))
-            .collect();
-        let next = self.new_block();
-        self.terminate(
-            TerminatorKind::Call {
-                callee: Callee::Value(callee),
-                arguments: passed,
-                destination: place,
-                target: next,
-                error: None,
-            },
-            node,
-        );
-        self.start(next);
-    }
-
-    /// The declared types of the fields of the struct `item`, in declaration order; empty when
-    /// `item` is not a struct. A generic struct's fields keep their type parameters.
-    fn field_types(&self, item: Item<'db>) -> Vec<types::Type<'db>> {
-        match &self.db.declaration(item).declaration {
-            Declaration::Struct { fields, .. } => fields.iter().map(|field| field.ty).collect(),
-            _ => Vec::new(),
+        let mut passed = Vec::with_capacity(arguments.len());
+        for &argument in arguments {
+            self.pass_to_value(argument, &mut passed);
         }
+        // A function that raises raises through the call, as any call of it does.
+        self.raising_callee(Callee::Value(callee), passed, place, node);
     }
 
     /// A place holding `argument` as the parameter type `ty`, to borrow. An argument that
@@ -439,7 +448,7 @@ impl<'db> Builder<'db> {
     /// caller's value is freed once, by its owner, as a loop variable that borrows a tuple's
     /// item is (the `collections` module). Cost: a copy of the value's header, never of its
     /// elements.
-    fn borrow_as(&mut self, argument: NodeId, ty: types::Type<'db>) -> Place {
+    fn borrow_as(&mut self, argument: NodeId, ty: Type<'db>) -> Place {
         let from = self.ty(argument);
         if !self.converts(from, ty) {
             return self.borrow(argument);

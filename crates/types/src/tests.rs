@@ -391,3 +391,39 @@ fn a_union_keeps_one_of_each_member_even_when_two_display_alike() {
     assert_eq!(members.len(), 2);
     assert_eq!(union, crate::union(&database, [twin, periodic, twin]));
 }
+
+/// `*Ts` shows as written, inside a tuple and a `Callable`, has no layout, and splices away once
+/// `Ts` is bound to a tuple (the decision 0026 amendment).
+#[test]
+fn an_unpacked_type_parameter_shows_and_splices() {
+    let database = Database::default();
+    let file = File::new(
+        &database,
+        FileId::from_index(0),
+        SourceFile::new("a.byn", "Ts").unwrap(),
+    );
+    let name = name_node(&database, file);
+    let pack = Type::new(&database, TypeKind::Parameter { file, name });
+    let unpacked = Type::new(&database, TypeKind::Unpacked(pack));
+    let float = primitive(&database, "f64");
+    let tuple = Type::new(&database, TypeKind::Tuple(vec![unpacked]));
+    let callable = Type::new(
+        &database,
+        TypeKind::Callable {
+            parameters: vec![float, unpacked],
+            returns: float,
+        },
+    );
+    assert_eq!(tuple.display(&database).to_string(), "tuple[*Ts]");
+    assert_eq!(
+        callable.display(&database).to_string(),
+        "Callable[[f64, *Ts], f64]"
+    );
+    assert_eq!(layout_of(&database, tuple), Err(LayoutError::Generic));
+    // Still a parameter: nothing to splice.
+    assert_eq!(crate::spliced(&database, vec![unpacked]), vec![unpacked]);
+    // Bound to the empty tuple, `*Ts` leaves nothing.
+    let empty = Type::new(&database, TypeKind::Tuple(Vec::new()));
+    let bound = Type::new(&database, TypeKind::Unpacked(empty));
+    assert_eq!(crate::spliced(&database, vec![float, bound]), vec![float]);
+}

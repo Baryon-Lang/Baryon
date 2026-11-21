@@ -1,7 +1,7 @@
 # 0063. A class's `__del__` runs when its value is dropped
 
-Status: Proposed
-Date: 2026-11-14
+Status: Accepted
+Date: 2026-11-21
 Roadmap: 1.7.15
 
 ## Context
@@ -29,11 +29,16 @@ Python's answer is `__del__`, which CPython calls when an object's reference cou
 Rust's is the `Drop` trait, whose `drop(&mut self)` runs when a value goes out of scope. Baryon's
 drops come at the points Rust's do, so the two agree on when; they differ on what is allowed.
 
-Collins chose on 2026-11-14 at 05:35 UTC (card 36, "Add `__del__`, user classes too"): the
+The chief designer chose on 2026-11-14 at 05:35 UTC (card 36, "Add `__del__`, user classes too"): the
 compiler calls `__del__(self: InOut[Self])` when a value is dropped, for a program's own classes
 as well as the library's, and an error that escapes it panics, as a `File` that cannot be written
 out when it is dropped panics. The card is silent on the rest. This record follows Rust's `Drop`
 where it is silent, and lists each such choice in part 9.
+
+The chief designer accepted the record on 2026-11-21: at 17:23 UTC the ten rules it settles beyond
+card 36 (card 38, "OK all ten"; they are parts 1 to 6 and the `Embed` rule of part 7), and at
+20:03 UTC the rest of part 7, enums and unions, and part 8, `GzipFile.__del__` (card 68, "Accept
+both as written").
 
 ## Decision
 
@@ -104,7 +109,7 @@ where it is silent, and lists each such choice in part 9.
 - **Write out on every `write`.** The library could rewrite the gzip file after each member, so
   a dropped file is never empty. Data since the last member is still lost, and each member
   costs a rewrite of the whole file. It hides the gap without closing it.
-- **A library-only hook.** Collins chose to give it to user classes too: a program's own buffer
+- **A library-only hook.** The chief designer chose to give it to user classes too: a program's own buffer
   or writer has the same need.
 - **CPython's rules.** CPython ignores an error in `__del__` after printing it, may run `__del__`
   at exit, and may not run it at all for objects in a reference cycle. Ignoring the error turns

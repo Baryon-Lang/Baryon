@@ -88,6 +88,7 @@ pub fn check(tree: &SyntaxTree, source: &str) -> Vec<Diagnostic> {
     let context = Context {
         scope: Scope::Module,
         in_target: false,
+        in_index: false,
     };
     checker.children(tree.root(), context);
     // The walk is in preorder, so diagnostics are almost sorted already; a few, such as an
@@ -117,6 +118,9 @@ struct Context {
     /// Whether the node is, or is inside, the target of an assignment or `for` loop, where `*`
     /// means a star target rather than unpacking.
     in_target: bool,
+    /// Whether the node is, or is inside a tuple or list that is, the index of a subscript,
+    /// where `*Ts` in a type, `tuple[*Ts]`, is left to the type checker.
+    in_index: bool,
 }
 
 /// One run of the check over one tree.
@@ -150,7 +154,16 @@ impl<'a> Checker<'a> {
                 SyntaxKind::Tuple | SyntaxKind::List | SyntaxKind::Starred => context.in_target,
                 _ => false,
             };
-            let child_context = Context { scope, in_target };
+            let in_index = match parent_kind {
+                SyntaxKind::Subscript => role == Role::Index,
+                SyntaxKind::Tuple | SyntaxKind::List => context.in_index,
+                _ => false,
+            };
+            let child_context = Context {
+                scope,
+                in_target,
+                in_index,
+            };
             self.visit(child, parent, previous, child_context);
             if self.tree.kind(child).is_statement() {
                 previous = Some(child);

@@ -6,7 +6,8 @@
 //! the same function. When two did not, as in `both(square, cube)` with
 //! `def both(f: Callable[[f64], f64], g: Callable[[f64], f64])`, the type alone cannot say
 //! which function `f` holds, so these passes follow the values instead: each parameter's local
-//! already has its own function's type, and a copy gives the copy's local the same type.
+//! already has its own function's type, and a copy gives the copy's local the same type, and
+//! a `prange` loop gives its outlined body's parameter the type of the local it passes.
 
 use mir::{Argument, Body, Callee, Operand, Place, Rvalue, StatementKind, TerminatorKind};
 use types::{Item, Type, TypeKind};
@@ -65,6 +66,58 @@ pub(crate) fn copied<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     }
 }
 
+/// Gives each parameter of an outlined `prange` body that a [`ParallelFor`] passes a function
+/// value, such as `f` in `for i in prange(n): out[i] = f(x[i])`, the own type of the function
+/// the passed local holds, then resolves the outlined body's own copies. Substitution leaves a
+/// `Callable` type alone when two parameters of that signature received different functions,
+/// so the outlined body only learns which function each one holds from the loop's arguments.
+///
+/// Run after the enclosing body's locals are resolved by [`copied`]. The outlined body's
+/// parameters are its return value's local, the iteration number, then one per argument in
+/// order (the [`ParallelFor`] documentation).
+///
+/// Cost: one visit of the body's terminators, and of each outlined body it resolves.
+///
+/// [`ParallelFor`]: TerminatorKind::ParallelFor
+pub(crate) fn shared<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
+    let mut resolved = Vec::new();
+    for block in &body.blocks {
+        let TerminatorKind::ParallelFor {
+            body: outlined,
+            arguments,
+            ..
+        } = &block.terminator.kind
+        else {
+            continue;
+        };
+        for (position, argument) in arguments.iter().enumerate() {
+            let (Argument::Borrow(place)
+            | Argument::InOut(place)
+            | Argument::Spread(place)
+            | Argument::Owned(Operand::Copy(place) | Operand::Move(place))) = argument
+            else {
+                continue;
+            };
+            if let Some(function) = function_of(db, body, place) {
+                resolved.push((*outlined as usize, position + 2, function));
+            }
+        }
+    }
+    for (outlined, local, function) in resolved {
+        if let Some(local) = body
+            .outlined
+            .get_mut(outlined)
+            .and_then(|outlined| outlined.locals.get_mut(local))
+            && matches!(local.ty.kind(db), TypeKind::Callable { .. })
+        {
+            local.ty = function;
+        }
+    }
+    for outlined in &mut body.outlined {
+        copied(db, outlined);
+    }
+}
+
 /// Replaces each type argument of a call in `body` that stands for a `Callable` parameter of
 /// the callee by the own type of the function the call passes, so the callee's instance is the
 /// one for that function. `callables(item)` lists the positions of `item`'s `Callable`
@@ -107,6 +160,7 @@ pub fn forward_callables<'db>(
                 Some(
                     Argument::Borrow(place)
                     | Argument::InOut(place)
+                    | Argument::Spread(place)
                     | Argument::Owned(Operand::Copy(place) | Operand::Move(place)),
                 ) => function_of(db, body, place),
                 Some(Argument::Owned(Operand::Constant(constant))) => {

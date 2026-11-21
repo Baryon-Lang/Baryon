@@ -1,24 +1,31 @@
 //! Choosing elements of an array with another array (language reference, "Arrays", "Choosing
 //! elements"; roadmap 3.13.1): `a[mask]` keeps the elements where a `bool` array is `True`, and
 //! `a[positions]` takes the elements at the positions an `i64` array lists. Each is a new
-//! array, built by plain loops: a mask is counted first, so the result is allocated once.
+//! array, built by plain loops: a mask is counted first, so the result is allocated once. A
+//! mask that may hold `None`, as a comparison with an array with missing values gives,
+//! chooses where it is `True`, as in pandas.
 
 use crate::builder::Builder;
 use mir::{BinaryOperator, Check, Constant, Local, Operand, Place, Projection, Rvalue};
 use mir::{StatementKind, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
+use types::{Type, TypeKind};
 
 impl<'db> Builder<'db> {
     /// Whether the subscript `node` chooses elements with an array, `a[mask]` or
     /// `a[positions]`, which gives a new array rather than naming an element or a view. A
     /// mask on a frame, `df[mask]`, chooses rows instead (the `frame_rows` module). A slice
-    /// of a text array, `names[1:3]`, is a new array too ([`Builder::text_selection`]).
+    /// of a text array, `names[1:3]`, is a new array too ([`Builder::text_selection`]), and
+    /// so is one of an array with missing values ([`Builder::optional_selection`]).
     pub(crate) fn is_selection(&self, node: NodeId) -> bool {
         self.tree.kind(node) == SyntaxKind::Subscript
-            && self
-                .tree
-                .child(node, Role::Index)
-                .is_some_and(|index| self.is_array(self.ty(index)) || self.is_text_slice(node))
+            && self.tree.child(node, Role::Index).is_some_and(|index| {
+                self.is_array(self.ty(index))
+                    || self.is_chooser_list(index)
+                    || self.optional_array_element(index).is_some()
+                    || self.is_text_slice(node)
+                    || self.is_optional_slice(node)
+            })
             && self
                 .tree
                 .child(node, Role::Value)
@@ -39,9 +46,22 @@ impl<'db> Builder<'db> {
         if self.is_text_array(value) {
             return self.text_selection(place, value, index, node);
         }
-        let (ty, by_type) = (self.ty(node), self.ty(index));
+        if self.optional_array_element(value).is_some() {
+            return self.optional_selection(place, value, index, node);
+        }
+        let ty = self.ty(node);
         let source = self.borrow(value);
-        let by = self.borrow(index);
+        if self.optional_array_element(index).is_some() {
+            // A mask that may hold `None` chooses where it is `True`, as a plain mask.
+            let length = self.length(&source, self.ty(value), 0, node);
+            let result = self.temporary(ty, node);
+            if let Some(mask) = self.chosen_mask(length.clone(), index) {
+                self.masked(result, &source, &Place::from(mask), &length, node);
+                self.assign(place, Rvalue::Use(Operand::Move(Place::from(result))), node);
+            }
+            return;
+        }
+        let (by, by_type) = self.chooser(index);
         let length = self.length(&source, self.ty(value), 0, node);
         let chosen = self.length(&by, by_type, 0, index);
         let result = self.temporary(ty, node);
@@ -73,19 +93,29 @@ impl<'db> Builder<'db> {
         ) else {
             return;
         };
-        let (array_type, by_type) = (self.ty(array), self.ty(index));
+        let array_type = self.ty(array);
         let element = self.element(array_type);
         let stored = self.temporary(element, value);
         let operand = self.operand_as(value, element);
         self.assign(Place::from(stored), Rvalue::Use(operand), value);
-        let by = self.borrow(index);
         let destination = self.borrow(array);
         let length = self.length(&destination, array_type, 0, target);
-        let chosen = self.length(&by, by_type, 0, index);
-        let masked = self.element(by_type) == self.boolean_type();
-        if masked {
-            self.same_length(0, length.clone(), chosen.clone(), index);
-        }
+        let optional = self.optional_array_element(index).is_some();
+        let (by, chosen, masked) = if optional {
+            // A mask that may hold `None` sets where it is `True`, as a plain mask.
+            let Some(mask) = self.chosen_mask(length.clone(), index) else {
+                return;
+            };
+            (Place::from(mask), length.clone(), true)
+        } else {
+            let (by, by_type) = self.chooser(index);
+            let chosen = self.length(&by, by_type, 0, index);
+            let masked = self.element(by_type) == self.boolean_type();
+            if masked {
+                self.same_length(0, length.clone(), chosen.clone(), index);
+            }
+            (by, chosen, masked)
+        };
         self.loop_nest(
             &[chosen],
             &mut Vec::new(),
@@ -108,6 +138,45 @@ impl<'db> Builder<'db> {
                 }
             },
         );
+    }
+
+    /// Whether the index `index` is a `list`, which chooses elements as the array of its
+    /// items does: `a[[0, 2]]`, as in `NumPy`.
+    fn is_chooser_list(&self, index: NodeId) -> bool {
+        matches!(self.ty(index).kind(self.db), TypeKind::List(_))
+    }
+
+    /// The array that chooses elements in `a[index]`, with its type: the mask or the
+    /// positions `index` is, borrowed, or, when `index` is a `list` of `bool`s or of `i64`s,
+    /// a new array of its items that is dropped when the statement ends. Cost for a list:
+    /// one allocation and one pass over its items.
+    pub(crate) fn chooser(&mut self, index: NodeId) -> (Place, Type<'db>) {
+        let listed = self.ty(index);
+        let source = self.borrow(index);
+        let &TypeKind::List(element) = listed.kind(self.db) else {
+            return (source, listed);
+        };
+        let ty = Type::new(self.db, TypeKind::Array { element, rank: 1 });
+        let length = self.length(&source, listed, 0, index);
+        let array = self.temporary(ty, index);
+        self.assign(
+            Place::from(array),
+            Rvalue::NewArray(ty, vec![length.clone()]),
+            index,
+        );
+        self.drop_later(array);
+        // Each index is below the length the loop runs to, so neither step needs a check.
+        self.loop_nest(
+            &[length],
+            &mut Vec::new(),
+            index,
+            &mut |builder, indices| {
+                let from = source.clone().project(Projection::Index(indices.to_vec()));
+                let to = Place::from(array).project(Projection::Index(indices.to_vec()));
+                builder.assign(to, Rvalue::Use(Operand::Copy(from)), index);
+            },
+        );
+        (Place::from(array), ty)
     }
 
     /// The position `by[indices]` names, as an `i64` local, checked to lie within `length` as an

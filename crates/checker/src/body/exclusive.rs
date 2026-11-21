@@ -186,7 +186,7 @@ impl<'db> Body<'db> {
         let Some(root) = self.place_root(node) else {
             return;
         };
-        if self.borrowed_by_loop(node, "changed") {
+        if self.borrowed_by_loop(node, "changed") || self.borrowed_by_capture(node, "changed") {
             return;
         }
         let Some(&Definition::Local(binding)) = self.lowerer.definition(root) else {

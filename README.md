@@ -1,3 +1,5 @@
+<img src="docs/brand/baryon-logo.svg" alt="The Baryon logo" width="96" align="right">
+
 # Baryon: A new language for math and physics
 
 A compiled language that reads like Python and runs like Rust, C and Fortran, built so that
@@ -27,6 +29,8 @@ def heat_step(u: Array[f64, 2], alpha: f64) -> Array[f64, 2]:
   code.
 - **Built for science.** N-dimensional arrays, complex numbers, parallel loops, reproducible
   random numbers and per-block floating-point control are part of the language, not add-ons.
+  Together with the `math`, `random`, `stats`, `linalg` and `fft` modules they are
+  [NumBaryon](docs/reference/arrays.md#numbaryon), Baryon's native answer to NumPy.
 - **Documented to learn from.** Every feature, crate and function is documented with tested
   examples, so the language can be learned and integrated from its documentation alone.
 
@@ -48,10 +52,9 @@ package's documentation strings as Markdown pages.
 [What builds today](docs/reference/status.md) lists, feature by feature, what `baryon build`
 compiles so far, and [The `baryon` command](docs/reference/commands.md) documents every command.
 
-Release 0.2.0 is the first with prebuilt downloads for Linux and macOS and the first standard
-libraries. Releases are time-based: a new one every two weeks, cut from `main`.
-[`CHANGELOG.md`](CHANGELOG.md) says what each holds, and the [roadmap](ROADMAP.md#releases) says
-how releases are made.
+Release 0.3.0 is the latest, with prebuilt downloads for Linux and macOS. Releases are
+time-based: a new one every two weeks, cut from `main`. [`CHANGELOG.md`](CHANGELOG.md) says what
+each holds, and the [roadmap](ROADMAP.md#releases) says how releases are made.
 
 [`ROADMAP.md`](ROADMAP.md) is the source of truth for what is planned, in progress and done, and the
 place to add new ideas. The reasoning behind it is in the
@@ -78,12 +81,19 @@ dependencies:
 cargo install --locked cargo-deny@0.20.2
 ```
 
+On Linux, the test of [`--blas`](docs/reference/commands.md#matrix-products-through-blas) needs
+OpenBLAS (`sudo apt install libopenblas-dev`) and Valgrind runs the ownership sweep. Without
+either, the check still passes: the `--blas` test prints why it skipped, and the sweep runs its
+programs without Valgrind. CI has both, and there a missing OpenBLAS fails the test.
+
 ## Documentation
 
-New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of four pages
+New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of six pages
 on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
-[arrays and numbers](docs/guide/arrays-and-numbers.md), and
-[data, files and plots](docs/guide/data-files-and-plots.md). To try it in an editor,
+[arrays and numbers](docs/guide/arrays-and-numbers.md),
+[data, files and plots](docs/guide/data-files-and-plots.md),
+[a worked analysis with DataFrame](docs/guide/dataframes.md), and
+[special functions](docs/guide/special-functions.md). To try it in an editor,
 [Coding Baryon in VS Code](docs/guide/vscode.md) sets up VS Code, from building `baryon` to
 running and testing a first program. [`CHANGELOG.md`](CHANGELOG.md) says what each release
 holds.
@@ -105,6 +115,7 @@ contributing to the compiler, or integrating one of its crates.
 | `bench/` | Baseline physics kernels in C++ and Fortran, and `cargo kernels`, which times them |
 | `docs/README.md` | Map of all documentation |
 | `docs/architecture.md` | Crate kinds and dependency rules |
+| `docs/brand/` | Baryon's logo |
 | `docs/decisions/` | Decision records |
 | `docs/design/` | The language design plan and the AstroBaryon roadmap |
 | `docs/guide/` | How to code in Baryon, from installing it to data and plots, and the VS Code setup guide, all run in CI as written |

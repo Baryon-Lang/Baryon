@@ -7,7 +7,7 @@
 //! bytes. Every sort is stable, as Python's is: equal elements keep their order, also when
 //! `reverse` is set, which compares the other way round rather than reversing the result.
 //!
-//! Floats sort with every NaN last, in either direction, as `numpy.sort` puts them (Collins,
+//! Floats sort with every NaN last, in either direction, as `numpy.sort` puts them (chief designer,
 //! 2026-11-10). Python's order with a NaN depends on where the NaN starts. `-0.0` and `0.0` are
 //! equal, so they keep their order.
 

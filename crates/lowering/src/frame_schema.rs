@@ -12,6 +12,7 @@ use crate::builder::Builder;
 use crate::frames::erase;
 use mir::{Local, Operand, Place, Projection, Rvalue};
 use syntax::{NodeId, Role, SyntaxKind};
+use types::TypeKind;
 
 impl Builder<'_> {
     /// `df[["a", "b"]]`, the subscript `node` of the frame `value`, into `place`: a new frame
@@ -67,7 +68,10 @@ impl Builder<'_> {
     /// `frame`, into `place`: the frame's columns that the result keeps move into it, and
     /// each column `assign` gives moves in after a check that it has the frame's number of
     /// rows, so the columns keep one length. A column of another length panics at its
-    /// argument. The one argument of `drop` names columns and computes nothing.
+    /// argument. One value in place of a column, `df.assign(fee=0.5)`, is computed where it
+    /// is written and then made a column of the frame's length by the library's `repeated`,
+    /// or `text_repeated` for a `str` (roadmap 3.13.18): one array of `n` elements. The one
+    /// argument of `drop` names columns and computes nothing.
     fn frame_rebuilt(&mut self, place: &Place, frame: NodeId, assigns: bool, node: NodeId) {
         let ty = self.ty(node);
         let (Some(columns), Some(kept)) = (self.frame_columns(frame), self.frame_columns(node))
@@ -98,10 +102,30 @@ impl Builder<'_> {
         self.assign(Place::from(held), Rvalue::Use(moved), frame);
         self.drop_later(held);
         let rows = self.counted_rows(frame, &Place::from(held), node);
-        for &(_, value, new) in &given {
-            let length = self.column_length(Place::from(new), Some(self.ty(value)), value);
+        for (name, value, new) in &mut given {
+            // One value for every row becomes a column of the frame's length.
+            if self.is_scalar(*value) {
+                let Some(column) = kept.iter().find(|column| column.name == *name) else {
+                    return self.unsupported(*value, "this column of a `DataFrame`");
+                };
+                let stored = erase(self.db, column.array(self.db));
+                let scalar = self.ty(*value);
+                self.drop_later(*new);
+                let arguments = vec![Place::from(rows), Place::from(*new)];
+                let filled = if matches!(scalar.kind(self.db), TypeKind::Str) {
+                    self.frame_call("text_repeated", Vec::new(), arguments, stored, *value)
+                } else {
+                    self.frame_call("repeated", vec![scalar], arguments, stored, *value)
+                };
+                let Some(filled) = filled else {
+                    return;
+                };
+                *new = filled;
+                continue;
+            }
+            let length = self.column_length(Place::from(*new), Some(self.ty(*value)), *value);
             let expected = Operand::Copy(Place::from(rows));
-            self.same_length(0, expected, length, value);
+            self.same_length(0, expected, length, *value);
         }
         let mut result = Vec::with_capacity(kept.len());
         for column in kept {
@@ -119,6 +143,16 @@ impl Builder<'_> {
             result.push(Operand::Move(from));
         }
         self.assign(place.clone(), Rvalue::Aggregate(ty, result), node);
+    }
+}
+
+impl Builder<'_> {
+    /// Whether the argument `value` of `assign` is one value for every row, a number, a
+    /// `bool` or a `str`, and not a column.
+    fn is_scalar(&self, value: NodeId) -> bool {
+        self.typed
+            .expression(value)
+            .is_some_and(|ty| matches!(ty.kind(self.db), TypeKind::Primitive(_) | TypeKind::Str))
     }
 }
 

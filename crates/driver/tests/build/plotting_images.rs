@@ -130,8 +130,8 @@ def main() -> Raises[None, OSError | ValueError]:
 }
 
 /// A two-cell image is embedded as a valid PNG: the signature, the header of an 8-bit RGBA
-/// image, stored deflate blocks with a correct Adler-32, a correct CRC-32 on every chunk, and
-/// the end; `gray` from `vmin` to `vmax` makes its cells black and white.
+/// image, a compressed zlib stream with a correct Adler-32, a correct CRC-32 on every chunk,
+/// and the end; `gray` from `vmin` to `vmax` makes its cells black and white.
 #[test]
 fn images_are_embedded_as_png() {
     let program = "\
@@ -156,8 +156,8 @@ def main() -> Raises[None, OSError | ValueError]:
 
 /// The width, height and RGBA pixels of the first PNG embedded in `svg` as a `data:` URL,
 /// checking every CRC-32 and the Adler-32 on the way, or `None` when `svg` holds no PNG. The
-/// encoder writes one row filter of 0 a row and stored deflate blocks only, which is all this
-/// reads.
+/// encoder writes one row filter of 0 a row, which is all this reads, and compresses the rows
+/// with `zlib`, which [`super::inflate`] decodes.
 fn embedded_png(svg: &str) -> Option<(u32, u32, Vec<u8>)> {
     let start = svg.find("base64,")? + 7;
     let end = start + svg[start..].find('"')?;
@@ -187,22 +187,10 @@ fn embedded_png(svg: &str) -> Option<(u32, u32, Vec<u8>)> {
         }
         at += 12 + length;
     }
-    assert_eq!(stream[0] & 0x0f, 8, "deflate");
-    let mut raw = Vec::new();
-    let mut block = 2;
-    loop {
-        let last = stream[block] & 1;
-        assert_eq!(stream[block] >> 1, 0, "a stored block");
-        let length = usize::from(u16::from_le_bytes([stream[block + 1], stream[block + 2]]));
-        raw.extend_from_slice(&stream[block + 5..block + 5 + length]);
-        block += 5 + length;
-        if last == 1 {
-            break;
-        }
-    }
+    let (raw, check) = super::inflate::zlib(&stream)?;
     assert_eq!(
         adler32(&raw),
-        be32(&stream, block),
+        be32(&stream, check),
         "Adler-32 of the image data"
     );
     let row = 1 + 4 * usize::try_from(width).ok()?;

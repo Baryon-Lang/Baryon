@@ -1,0 +1,500 @@
+"""The Gauss hypergeometric function for `special` (roadmap 3.18.8): `hyp2f1`,
+F(a, b; c; x) = ₂F₁(a, b; c; x) = Σ (a)ₖ (b)ₖ xᵏ / ((c)ₖ k!), for real a, b, c and x.
+
+The series converges for |x| < 1, slowly near 1 and with cancellation for large or negative
+parameters, so each value is the series of whichever of four equal forms cancels least: F itself,
+Euler's (1 − x)^(c−a−b) F(c − a, c − b; c; x) and Pfaff's (1 − x)^(−a) F(a, c − b; c; x/(x − 1))
+and (1 − x)^(−b) F(b, c − a; c; x/(x − 1)) (DLMF 15.8.1), each in `f64` or, where it cancels,
+double-double. Near x = 1, and far below 0 by way of Pfaff's form, the series becomes one in
+1 − x (DLMF 15.8.4, or 15.8.10 where c − a − b is whole, with the two parts that grow as
+1/(c − a − b − m) joined by hand where it is near a whole m), and below −1 one in 1/x
+(DLMF 15.8.2). A polynomial, a or b a whole number at most 0, is summed in x, 1 − x or 1/x
+(DLMF 15.8.6 and 15.8.7), or by Euler's form, whichever cancels least.
+
+Each new parameter, such as a − b + 1, is carried as an exact sum of two `f64`s (`math.f64x2`),
+and each factor (p + k) of a series and each gamma function of one is formed from that sum: a
+parameter rounded near a negative whole number −k would lose its digits in p + k, which can
+cost 10,000 ULP.
+
+The compiler reads this file for `<std>/special.byn`; a program cannot import it.
+"""
+
+from math import exp, expm1, f64x2, fabs, floor, inf, isinf, isnan, log, log1p, nan, pi, pow, sin
+from special_beta import poch
+from special_common import is_odd
+from special_gamma import factorial, gamma, polygamma, psi, rgamma
+
+_EPSILON: Final = 1.0e-17  # where an `f64` series stops
+_WIDE_EPSILON: Final = 1.0e-33  # where a double-double series stops
+_CLEAN: Final = 2.0  # an `f64` series whose terms sum to at most this over its value is kept
+_WIDE: Final = 1.0e14  # a double-double series whose terms sum to less than this is kept
+_TERMS: Final = 20000  # the most terms a series takes: enough for x up to about 0.998
+_NEAR: Final = 0.9  # past this, x goes to 1 − x
+_CLEAR: Final = 0.05  # how far c − a − b must be from a whole number for DLMF 15.8.4 as it is
+
+
+def _whole(value: f64) -> bool:
+    """Whether `value` is a whole number."""
+    return value == floor(value)
+
+
+def _exact(value: f64) -> f64x2:
+    """`value` as a parameter."""
+    return f64x2.of(value)
+
+
+def _sum(first: f64x2, second: f64x2, whole: f64) -> f64x2:
+    """first + second + whole, exact to about 32 digits."""
+    return first.add(second).add(f64x2.of(whole))
+
+
+def _step(p: f64x2, k: f64) -> f64:
+    """p + k as an `f64`, rounded once: `p.hi + k` is exact wherever the sum is near 0."""
+    return (p.hi + k) + p.lo
+
+
+def _gamma(p: f64x2) -> f64:
+    """Γ(p) to first order in `p.lo`: Γ(hi) (1 + ψ(hi) lo)."""
+    return gamma(p.hi) * (1.0 + psi(p.hi) * p.lo)
+
+
+def _rgamma(p: f64x2) -> f64:
+    """1/Γ(p) to first order in `p.lo`; at a pole of Γ, hi = −n, it is (−1)ⁿ n! lo."""
+    if p.hi <= 0.0 and _whole(p.hi):
+        value = factorial(-p.hi) * p.lo
+        if is_odd(p.hi):
+            return -value
+        return value
+    return rgamma(p.hi) * (1.0 - psi(p.hi) * p.lo)
+
+
+def _settled(a: f64x2, b: f64x2, c: f64x2, x: f64, k: int) -> bool:
+    """Whether the series' terms only fall after term k + 1: a + k, b + k and c + k are past 0,
+    so no factor changes sign again, and the next ratio is below 1 in size."""
+    if _step(a, k + 0.0) <= 0.0 or _step(b, k + 0.0) <= 0.0 or _step(c, k + 0.0) <= 0.0:
+        return False
+    upper = _step(a, k + 1.0) * _step(b, k + 1.0) * x
+    return fabs(upper) < fabs(_step(c, k + 1.0) * (k + 2.0))
+
+
+def _series(a: f64x2, b: f64x2, c: f64x2, x: f64) -> tuple[f64, f64]:
+    """F(a, b; c; x) by its series, and the sum of its terms' sizes; NaN, with an infinite size,
+    where it has not converged after `_TERMS` terms. A polynomial stops at its last term."""
+    term = 1.0
+    total = 1.0
+    size = 1.0
+    for k in range(_TERMS):
+        first = _step(a, k + 0.0)
+        second = _step(b, k + 0.0)
+        if first == 0.0 or second == 0.0:
+            return total, size
+        term *= first * second * x / (_step(c, k + 0.0) * (k + 1.0))
+        total += term
+        size += fabs(term)
+        if fabs(term) <= _EPSILON * fabs(total) and _settled(a, b, c, x, k):
+            return total, size
+    return nan, inf
+
+
+def _series_wide(a: f64x2, b: f64x2, c: f64x2, x: f64) -> f64:
+    """F(a, b; c; x) by its series in double-double arithmetic, rounded to `f64`, or NaN where
+    it has not converged. About 150 operations a term."""
+    point = f64x2.of(x)
+    term = f64x2.of(1.0)
+    total = f64x2.of(1.0)
+    for k in range(_TERMS):
+        count = f64x2.of(k + 0.0)
+        first = a.add(count)
+        second = b.add(count)
+        if first.hi == 0.0 or second.hi == 0.0:
+            return total.hi
+        lower = c.add(count).mul(f64x2.of(k + 1.0))
+        term = term.mul(first.mul(second).mul(point)).div(lower)
+        total = total.add(term)
+        if fabs(term.hi) <= _WIDE_EPSILON * fabs(total.hi) and _settled(a, b, c, x, k):
+            return total.hi
+    return nan
+
+
+def _cancellation(total: f64, size: f64) -> f64:
+    """How much a sum's terms cancel: their sizes' sum over its value, or ∞ where the sum is
+    not finite or is 0."""
+    if isnan(total) or isinf(total) or isinf(size) or total == 0.0:
+        return inf
+    return size / fabs(total)
+
+
+def _finish(a: f64x2, b: f64x2, c: f64x2, x: f64, total: f64, cancelled: f64) -> f64:
+    """The `f64` series' value `total` where it barely cancels, the double-double series where
+    it cancels by less than `_WIDE`, and NaN beyond."""
+    if cancelled <= _CLEAN:
+        return total
+    if cancelled < _WIDE:
+        return _series_wide(a, b, c, x)
+    return nan
+
+
+def _summed(a: f64x2, b: f64x2, c: f64x2, x: f64) -> f64:
+    """F(a, b; c; x) by its series in `f64` or double-double, or NaN where neither holds."""
+    total, size = _series(a, b, c, x)
+    return _finish(a, b, c, x, total, _cancellation(total, size))
+
+
+def _near_one(a: f64x2, b: f64x2, c: f64x2, w: f64) -> f64:
+    """F at x = 1 − w by the series in w (DLMF 15.8.4), for s = c − a − b not whole:
+    Γ(c)Γ(s)/(Γ(c−a)Γ(c−b)) F(a, b; 1 − s; w) + w^s Γ(c)Γ(−s)/(Γ(a)Γ(b)) F(c−a, c−b; 1 + s; w).
+    Its two parts grow as 1/|s − m| near a whole m, where `_near_whole` joins them."""
+    s = _sum(c, a.neg().sub(b), 0.0)
+    left = _sum(c, a.neg(), 0.0)
+    right = _sum(c, b.neg(), 0.0)
+    first = _gamma(c) * _gamma(s) * _rgamma(left) * _rgamma(right)
+    first *= _summed(a, b, _sum(s.neg(), _exact(0.0), 1.0), w)
+    second = pow(w, s.hi) * _gamma(c) * _gamma(s.neg()) * _rgamma(a) * _rgamma(b)
+    second *= _summed(left, right, _sum(s, _exact(0.0), 1.0), w)
+    return first + second
+
+
+def _near_one_whole(a: f64x2, b: f64x2, c: f64x2, w: f64, m: int) -> f64:
+    """F at x = 1 − w for c = a + b + m, m a whole number from 0, by the series in w with a
+    logarithm (DLMF 15.8.10): Γ(m)Γ(c)/(Γ(a+m)Γ(b+m)) Σₖ₍ₖ₌₀..ₘ₋₁₎ (a)ₖ(b)ₖ/(k!(1−m)ₖ) wᵏ
+    − (−w)ᵐ Γ(c)/(Γ(a)Γ(b)) Σₖ (a+m)ₖ(b+m)ₖ/(k!(k+m)!) wᵏ
+    (ln w − ψ(k+1) − ψ(k+m+1) + ψ(a+k+m) + ψ(b+k+m))."""
+    first = _sum(a, _exact(0.0), m + 0.0)
+    second = _sum(b, _exact(0.0), m + 0.0)
+    finite = 0.0
+    if m > 0:
+        term = gamma(m + 0.0) * _gamma(c) * _rgamma(first) * _rgamma(second)
+        finite = term
+        for k in range(1, m):
+            term *= _step(a, k - 1.0) * _step(b, k - 1.0) * w / (k * (k - m + 0.0))
+            finite += term
+    lead = _gamma(c) * _rgamma(a) * _rgamma(b) * rgamma(m + 1.0)
+    total = 0.0
+    term = 1.0
+    logarithm = log(w)
+    for k in range(_TERMS):
+        if k > 0:
+            term *= _step(first, k - 1.0) * _step(second, k - 1.0) * w / (k * (k + m + 0.0))
+        bracket = logarithm - psi(k + 1.0) - psi(k + m + 1.0)
+        bracket += psi(_step(first, k + 0.0)) + psi(_step(second, k + 0.0))
+        piece = term * bracket
+        total += piece
+        if fabs(piece) <= _EPSILON * fabs(total) and k > 2:
+            break
+    value = lead * pow(w, m + 0.0) * total
+    if m % 2 == 1:
+        return finite + value
+    return finite - value
+
+
+def _log_gamma_step(x: f64, e: f64) -> f64:
+    """ln |Γ(x + e)/Γ(x)| for small e with no pole of Γ between: Σ ψ⁽ᵏ⁻¹⁾(y) eᵏ/k! at
+    y = x + N, the first at least 10, less log1p(e/(x + i)) for each step up; NaN where a pole
+    lies between."""
+    total = 0.0
+    y = x
+    while y < 10.0:
+        if e / y <= -1.0:
+            return nan
+        total -= log1p(e / y)
+        y += 1.0
+    power = e
+    for k in range(1, 30):
+        piece = polygamma(k - 1, y) * power
+        total += piece
+        if fabs(piece) <= 0.1 * _EPSILON * fabs(total):
+            break
+        power *= e / (k + 1.0)
+    return total
+
+
+def _near_whole(a: f64x2, b: f64x2, c: f64x2, w: f64, m: int, e: f64) -> f64:
+    """F at x = 1 − w for c = a + b + m + e, m a whole number from 0 and e small but not 0:
+    DLMF 15.8.4 with the terms of its two parts, which grow as 1/e, joined in pairs. Past the
+    first m, the k-th pair is −P Q wᵐ⁺ᵏ Γ(a+m)Γ(b+m)/(Γ(a+m+e)Γ(b+m+e)) hₖ expm1(Dₖ)/e, with
+    P = (−1)ᵐ Γ(c)/(Γ(a)Γ(b)), Q = πe/sin(πe), hₖ = (a+m)ₖ (b+m)ₖ/(Γ(m+k+1)Γ(k+1−e)) and
+    Dₖ = e ln w + Δ(a+m+k) + Δ(b+m+k) − Δ(m+k+1) − Δ(k+1−e), Δ(y) = ln Γ(y+e) − ln Γ(y),
+    each carried from k to k + 1 by log1p. NaN where a Δ would cross a pole."""
+    s = m + e
+    shift = _exact(m + e)
+    finite = 0.0
+    if m > 0:
+        upper = _sum(b, shift, 0.0)
+        lower = _sum(a, shift, 0.0)
+        term = _gamma(c) * gamma(s) * _rgamma(upper) * _rgamma(lower)
+        finite = term
+        for k in range(m - 1):
+            term *= _step(a, k + 0.0) * _step(b, k + 0.0) * w / ((1.0 - s + k) * (k + 1.0))
+            finite += term
+    first = _step(a, m + 0.0)
+    second = _step(b, m + 0.0)
+    step_first = _log_gamma_step(first, e)
+    step_second = _log_gamma_step(second, e)
+    step_count = _log_gamma_step(m + 1.0, e)
+    step_rest = _log_gamma_step(1.0 - e, e)
+    lead = _gamma(c) * _rgamma(a) * _rgamma(b) * (pi * e / sin(pi * e))
+    lead *= exp(-step_first - step_second) * pow(w, m + 0.0)
+    if m % 2 == 1:
+        lead = -lead
+    logarithm = log(w)
+    h = rgamma(m + 1.0) * rgamma(1.0 - e)
+    total = 0.0
+    for k in range(_TERMS):
+        if k > 0:
+            h *= (first + k - 1.0) * (second + k - 1.0) * w / ((m + k + 0.0) * (k - e))
+            step_first += log1p(e / (first + k - 1.0))
+            step_second += log1p(e / (second + k - 1.0))
+            step_count += log1p(e / (m + k + 0.0))
+            step_rest += log1p(e / (k - e))
+        exponent = e * logarithm + step_first + step_second - step_count - step_rest
+        piece = h * expm1(exponent) / e
+        total += piece
+        if fabs(piece) <= _EPSILON * fabs(total) and k > 2:
+            break
+    return finite - lead * total
+
+
+def _transformed(a: f64x2, b: f64x2, c: f64x2, w: f64) -> f64:
+    """F at x = 1 − w by its series in w: DLMF 15.8.10 for a whole s = c − a − b, 15.8.4 for s
+    `_CLEAR` from a whole number, and `_near_whole` between, after Euler's transformation
+    (1 − x)^s F(c − a, c − b; c; x) where s is below 0."""
+    s = _sum(c, a.neg().sub(b), 0.0)
+    left = _sum(c, a.neg(), 0.0)
+    right = _sum(c, b.neg(), 0.0)
+    m = floor(s.hi + 0.5)
+    e = _step(s, 0.0 - m)
+    if e == 0.0:
+        if m >= 0.0:
+            return _near_one_whole(a, b, c, w, int(m))
+        return pow(w, m) * _near_one_whole(left, right, c, w, int(-m))
+    if fabs(e) >= _CLEAR:
+        return _near_one(a, b, c, w)
+    value = nan
+    if m >= 0.0:
+        value = _near_whole(a, b, c, w, int(m), e)
+    else:
+        value = pow(w, s.hi) * _near_whole(left, right, c, w, int(-m), -e)
+    if isnan(value) or isinf(value):
+        return _near_one(a, b, c, w)
+    return value
+
+
+def _reflected(a: f64x2, b: f64x2, c: f64x2, x: f64) -> f64:
+    """F for x below −1 by the series in 1/x (DLMF 15.8.2), for b − a not whole:
+    Γ(c)Γ(b−a)/(Γ(b)Γ(c−a)) (−x)⁻ᵃ F(a, a−c+1; a−b+1; 1/x) and the same with a and b swapped,
+    or NaN where a series or the two parts cancel too far."""
+    t = 1.0 / x
+    first_upper = _sum(a, c.neg(), 1.0)
+    first_lower = _sum(a, b.neg(), 1.0)
+    second_upper = _sum(b, c.neg(), 1.0)
+    second_lower = _sum(b, a.neg(), 1.0)
+    first, first_size = _series(a, first_upper, first_lower, t)
+    second, second_size = _series(b, second_upper, second_lower, t)
+    first_cancelled = _cancellation(first, first_size)
+    second_cancelled = _cancellation(second, second_size)
+    if first_cancelled >= _WIDE or second_cancelled >= _WIDE:
+        return nan
+    first = _finish(a, first_upper, first_lower, t, first, first_cancelled)
+    second = _finish(b, second_upper, second_lower, t, second, second_cancelled)
+    difference = _sum(b, a.neg(), 0.0)
+    one = _gamma(c) * _gamma(difference) * _rgamma(b) * _rgamma(_sum(c, a.neg(), 0.0))
+    one *= pow(-x, -a.hi) * first
+    two = _gamma(c) * _gamma(difference.neg()) * _rgamma(a) * _rgamma(_sum(c, b.neg(), 0.0))
+    two *= pow(-x, -b.hi) * second
+    total = one + two
+    if isnan(total) or isinf(total) or total == 0.0:
+        return nan
+    if fabs(one) + fabs(two) > 4.0 * fabs(total):
+        return nan
+    return total
+
+
+def _polynomial(n: f64, b: f64, c: f64, x: f64) -> f64:
+    """F(n, b; c; x) for n a whole number below 0: the sum in x, in 1 − x (DLMF 15.8.7), in
+    1/x (DLMF 15.8.6) or by Euler's form, whichever cancels least; at x = 1, (c − b)₋ₙ/(c)₋ₙ
+    (DLMF 15.4.24)."""
+    if x == 1.0:
+        return poch(c - b, -n) / poch(c, -n)
+    whole = _exact(n)
+    other = _exact(b)
+    base = _exact(c)
+    total, size = _series(whole, other, base, x)
+    best = _cancellation(total, size)
+    if best <= _CLEAN:
+        return total
+    near = _sum(other, base.neg(), 1.0 + n)
+    euler = _sum(base, whole.neg(), 0.0)
+    right = _sum(base, other.neg(), 0.0)
+    inverse_upper = _sum(base.neg(), _exact(0.0), 1.0 + n)
+    inverse_lower = _sum(other.neg(), _exact(0.0), 1.0 + n)
+    choice = 0
+    kept = total
+    if x > 0.0:
+        here, here_size = _series(whole, other, near, 1.0 - x)
+        cancelled = _cancellation(here, here_size)
+        if cancelled < best:
+            best = cancelled
+            kept = here
+            choice = 1
+    if fabs(x) < 1.0:
+        here, here_size = _series(euler, right, base, x)
+        cancelled = _cancellation(here, here_size)
+        if cancelled < best:
+            best = cancelled
+            kept = here
+            choice = 2
+    if x < -1.0:
+        here, here_size = _series(whole, inverse_upper, inverse_lower, 1.0 / x)
+        cancelled = _cancellation(here, here_size)
+        if cancelled < best:
+            best = cancelled
+            kept = here
+            choice = 3
+    value = nan
+    if choice == 1:
+        lead = poch(c - b, -n) / poch(c, -n)
+        value = lead * _finish(whole, other, near, 1.0 - x, kept, best)
+    elif choice == 2:
+        value = pow(1.0 - x, c - n - b) * _finish(euler, right, base, x, kept, best)
+    elif choice == 3:
+        lead = poch(b, -n) / poch(c, -n) * pow(-x, -n)
+        value = lead * _finish(whole, inverse_upper, inverse_lower, 1.0 / x, kept, best)
+    else:
+        value = _finish(whole, other, base, x, total, best)
+    if isnan(value):
+        return total
+    return value
+
+
+def _general(a: f64, b: f64, c: f64, x: f64) -> f64:
+    """F for x below 1, neither a nor b a whole number at most 0, by the first that holds:
+    the series in 1 − x near 1 or, after Pfaff's form, far below 0; the series in 1/x below
+    −1; the least cancelling of the four series in x and x/(x − 1); and the series in 1 − x
+    or 1/(1 − x) again."""
+    first = _exact(a)
+    second = _exact(b)
+    base = _exact(c)
+    left = _sum(base, first.neg(), 0.0)
+    right = _sum(base, second.neg(), 0.0)
+    if x > _NEAR:
+        value = _transformed(first, second, base, 1.0 - x)
+        if not isnan(value):
+            return value
+    if x < 1.0 - 1.0 / (1.0 - _NEAR):
+        value = pow(1.0 - x, -a) * _transformed(first, right, base, 1.0 / (1.0 - x))
+        if not isnan(value):
+            return value
+    if x < -1.0 and not _whole(b - a):
+        value = _reflected(first, second, base, x)
+        if not isnan(value):
+            return value
+    # The least cancelling of the four series, stopping at the first that barely cancels.
+    # Below 0, Pfaff's forms go first: their x/(x − 1) is positive and nearer 0 than x, so
+    # their terms often all have one sign where those in x alternate, and they end sooner.
+    z = x / (x - 1.0)
+    start = 0
+    if x < 0.0:
+        start = 2
+    best = inf
+    choice = -1
+    total = nan
+    for k in range(4):
+        if best <= _CLEAN:
+            break
+        candidate = (start + k) % 4
+        here = nan
+        size = inf
+        if candidate == 0 and fabs(x) < 1.0:
+            here, size = _series(first, second, base, x)
+        elif candidate == 1 and fabs(x) < 1.0:
+            here, size = _series(left, right, base, x)
+        elif candidate == 2 and fabs(z) < 1.0:
+            here, size = _series(first, right, base, z)
+        elif candidate == 3 and fabs(z) < 1.0:
+            here, size = _series(second, left, base, z)
+        cancelled = _cancellation(here, size)
+        if cancelled < best:
+            best = cancelled
+            total = here
+            choice = candidate
+    value = nan
+    if choice == 0:
+        value = _finish(first, second, base, x, total, best)
+    elif choice == 1:
+        value = pow(1.0 - x, c - a - b) * _finish(left, right, base, x, total, best)
+    elif choice == 2:
+        value = pow(1.0 - x, -a) * _finish(first, right, base, z, total, best)
+    elif choice == 3:
+        value = pow(1.0 - x, -b) * _finish(second, left, base, z, total, best)
+    if not isnan(value):
+        return value
+    if x > 0.0:
+        return _transformed(first, second, base, 1.0 - x)
+    return pow(1.0 - x, -a) * _transformed(first, right, base, 1.0 / (1.0 - x))
+
+
+def _stops(a: f64, c: f64) -> bool:
+    """Whether a is a whole number at most 0 that ends the series before c's pole, if any."""
+    return a <= 0.0 and _whole(a) and (c > 0.0 or not _whole(c) or a >= c)
+
+
+def _infinite(a: f64, b: f64, c: f64, x: f64) -> f64:
+    """F at x = ±∞: for a polynomial, ∞ with the sign of its last term (a)ₙ(b)ₙxⁿ/((c)ₙ n!),
+    n = −a; else 0 at −∞ for a and b above 0, where F falls as |x|^(−min(a, b)), and NaN."""
+    n = 0.0
+    other = b
+    if _stops(a, c) and (not _stops(b, c) or a >= b):
+        n = -a
+    elif _stops(b, c):
+        n = -b
+        other = a
+    else:
+        if x < 0.0 and a > 0.0 and b > 0.0:
+            return 0.0
+        return nan
+    sign = poch(other, n) / poch(c, n)
+    if is_odd(n) and x > 0.0:
+        sign = -sign
+    if sign < 0.0:
+        return -inf
+    return inf
+
+
+def hyp2f1(a: f64, b: f64, c: f64, x: f64) -> f64:
+    """The Gauss hypergeometric function F(a, b; c; x) = ₂F₁(a, b; c; x), as
+    `scipy.special.hyp2f1` for real arguments: the solution of
+    x(1 − x) w″ + (c − (a + b + 1)x) w′ − ab w = 0 that is 1 at x = 0.
+
+    Past x = 1 the function is complex unless a or b is a whole number at most 0, where it is a
+    polynomial: there this gives its value, and elsewhere NaN, where `SciPy` gives ∞. At x = 1
+    it is Γ(c)Γ(c − a − b)/(Γ(c − a)Γ(c − b)) where c − a − b is above 0 and ∞ otherwise, as
+    `SciPy` gives. A c of 0 or a negative whole number is a pole, ∞, unless a or b ends the
+    series first. An infinite c gives 1 and an infinite a or b NaN. At x = ±∞ a polynomial
+    gives ∞ with its sign, and the function 0 at −∞ for a and b above 0, where `SciPy` gives
+    NaN; otherwise NaN.
+
+    ```python
+    from special import hyp2f1
+
+    print(hyp2f1(1.0, 1.0, 2.0, -3.0))  # 0.4620981203732966, log(4)/3
+    ```
+    """
+    if isnan(a) or isnan(b) or isnan(c) or isnan(x) or isinf(a) or isinf(b):
+        return nan
+    if a == 0.0 or b == 0.0 or x == 0.0 or isinf(c):
+        return 1.0
+    if c <= 0.0 and _whole(c) and not _stops(a, c) and not _stops(b, c):
+        return inf
+    if isinf(x):
+        return _infinite(a, b, c, x)
+    if _stops(a, c) and (not _stops(b, c) or a >= b):
+        return _polynomial(a, b, c, x)
+    if _stops(b, c):
+        return _polynomial(b, a, c, x)
+    if x > 1.0:
+        return nan
+    if x == 1.0:
+        if c - a - b > 0.0:
+            return gamma(c) * gamma(c - a - b) * rgamma(c - a) * rgamma(c - b)
+        return inf
+    return _general(a, b, c, x)

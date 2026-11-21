@@ -143,7 +143,9 @@ fn indexed(body: &Body<'_>, counted: &CountedLoop<'_>) -> Vec<Place> {
             TerminatorKind::Call { arguments, .. } => {
                 for argument in arguments {
                     places.extend(match argument {
-                        Argument::Borrow(place) | Argument::InOut(place) => Some(place),
+                        Argument::Borrow(place)
+                        | Argument::InOut(place)
+                        | Argument::Spread(place) => Some(place),
                         Argument::Owned(operand) => read(operand),
                     });
                 }

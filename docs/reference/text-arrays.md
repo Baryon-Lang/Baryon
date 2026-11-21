@@ -95,6 +95,8 @@ This prints `alpha`, then `delta`.
   the array it came from changes. An element cannot be assigned through one.
 - **A mask has the array's length**, and a position lies inside the array. Another length, or
   a position outside, stops the program.
+- **A mask may hold `None`**, as [a comparison](missing-comparisons.md) of an array with
+  missing values does: it chooses where it is `True`, as pandas does.
 - **Cost:** one copy of each element chosen, and for a slice 8 bytes for each as well.
 
 ## Comparisons and `in`

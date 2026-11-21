@@ -65,7 +65,12 @@ impl<'db> Body<'db> {
             return;
         }
         match self.tree.kind(node) {
-            SyntaxKind::Name | SyntaxKind::Attribute if self.borrowed_by_loop(node, "moved") => {}
+            // `path.name` and the other parts of a `Path` are new values each time, so reading
+            // one moves nothing, even from a path a loop borrows (roadmap 1.9.31).
+            SyntaxKind::Attribute if self.is_path_part(node) => {}
+            SyntaxKind::Name | SyntaxKind::Attribute
+                if self.borrowed_by_loop(node, "moved")
+                    || self.borrowed_by_capture(node, "moved") => {}
             SyntaxKind::Name | SyntaxKind::Attribute
                 if !self.inside_element(node) && self.held_by_with(node, "moved") => {}
             SyntaxKind::Name => self.move_variable(node, node),
@@ -75,8 +80,6 @@ impl<'db> Body<'db> {
             SyntaxKind::Attribute | SyntaxKind::Subscript if self.is_column_read(node) => {
                 self.moved_out_of_frame(node);
             }
-            // `path.name` and the other parts of a `Path` are new values each time.
-            SyntaxKind::Attribute if self.is_path_part(node) => {}
             // A field of an element, `people[0].name`, is part of the element: moving it out
             // is moving out of an element, the error below.
             SyntaxKind::Attribute if self.inside_element(node) => self.moved_out_of_element(node),
@@ -106,6 +109,14 @@ impl<'db> Body<'db> {
                     .tree
                     .child(node, Role::Value)
                     .is_some_and(|value| self.is_environ(value)) => {}
+            // An element of an array of text with missing values is read as a copy, a new
+            // `str | None` each time.
+            SyntaxKind::Subscript
+                if self.tree.child(node, Role::Value).is_some_and(|value| {
+                    self.typed.expression(value).is_some_and(|array| {
+                        matches!(array.kind(self.db), TypeKind::OptionalArray(_))
+                    })
+                }) => {}
             // `header["OBJECT"]` is a call of a library function, which gives a new value.
             SyntaxKind::Subscript if self.typed.calls.contains_key(&Key(node)) => {}
             // A slice of a list is a new list, and a slice of a `str` a new `str`, as in

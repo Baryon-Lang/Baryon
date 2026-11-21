@@ -81,6 +81,48 @@ pub extern "C" fn baryon_rt_text_new() -> *mut TextBuilder {
     }))
 }
 
+/// Appends the text this thread printed to stream 3 since it was last taken, formatted with
+/// `spec` as a `str` is: a value of a type with no runtime function of its own, such as a list,
+/// a struct or `None`, in an f-string (roadmap 1.9.57). Compiled code prints the value to
+/// stream 3 first, with the calls `print` makes for it, so the f-string writes what `print`
+/// writes. The held text is taken, so stream 3 holds nothing afterwards.
+///
+/// # Example
+///
+/// ```
+/// use runtime::{
+///     baryon_rt_deallocate, baryon_rt_print_i64, baryon_rt_text_captured,
+///     baryon_rt_text_finish, baryon_rt_text_new,
+/// };
+///
+/// // SAFETY: the builder is used once, with no specification, and the text is freed with its
+/// // length.
+/// unsafe {
+///     let builder = baryon_rt_text_new();
+///     baryon_rt_print_i64(3, 42);
+///     baryon_rt_text_captured(builder, std::ptr::null());
+///     let text = baryon_rt_text_finish(builder);
+///     let written = std::slice::from_raw_parts(text.bytes, text.length as usize);
+///     assert_eq!(written, b"42");
+///     baryon_rt_deallocate(text.bytes, text.length as usize, 1);
+/// }
+/// ```
+///
+/// # Safety
+///
+/// `builder` came from [`baryon_rt_text_new`] and has not been finished, and `spec` is null or
+/// points to a valid [`FormatSpec`].
+#[allow(unsafe_code, reason = "exported to compiled code")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn baryon_rt_text_captured(
+    builder: *mut TextBuilder,
+    spec: *const FormatSpec,
+) {
+    let text = crate::print::captured();
+    // SAFETY: the caller's promises, passed on.
+    unsafe { push(builder, spec, |spec| format::text(&text, spec)) };
+}
+
 /// Appends the `length` bytes of UTF-8 text at `text`, formatted with `spec`: a `str` value, or
 /// a literal piece of an f-string with a null `spec`.
 ///

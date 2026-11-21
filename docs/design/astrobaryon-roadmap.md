@@ -4,7 +4,7 @@ AstroBaryon is Baryon's astronomy library: AstroPy's capability, written nativel
 Python runs underneath it and no AstroPy code is wrapped. It is designed from the astronomy
 standards (IAU SOFA and ERFA, the FITS and WCS papers, the IVOA formats) and checked against
 results recorded from AstroPy, so that an astronomer who knows AstroPy can move to it with a
-guide in hand (Collins, 2026-11-10).
+guide in hand (chief designer, 2026-11-10).
 
 This file is the plan: what AstroBaryon covers, the order it is built in, every Baryon library it
 needs first, and the documentation each piece must ship with. The work items themselves, with
@@ -43,13 +43,13 @@ also the first outline of the [transition guide](#the-transition-guide-from-astr
 
 AstroBaryon keeps AstroPy's module, class, function and argument names wherever the behavior is
 the same, and differs only where Baryon's types force it, with every difference in the transition
-guide ([decision 0039](../decisions/0039-astrobaryon-keeps-astropy-names.md), Collins,
+guide ([decision 0039](../decisions/0039-astrobaryon-keeps-astropy-names.md), chief designer,
 2026-11-11).
 
 ## Documentation is a deliverable
 
-Collins set documentation as the top priority for AstroBaryon: an astronomer must be able to move
-from AstroPy without reading AstroBaryon's source. So documentation is part of every row's
+The chief designer set documentation as the top priority for AstroBaryon: an astronomer must be able
+to move from AstroPy without reading AstroBaryon's source. So documentation is part of every row's
 definition of done, not a follow-up. No AstroBaryon row is marked `Done` until its pull requests
 ship all five of these:
 
@@ -149,7 +149,7 @@ In the order AstroBaryon's milestones need them.
 ## Building AstroBaryon
 
 AstroBaryon comes before any interop with other languages: Python interop (3.17) and C++
-interop (4.1) both wait for it (Collins, 2026-11-12).
+interop (4.1) both wait for it (chief designer, 2026-11-12).
 
 Five milestones, each a usable library on its own. A milestone is done when its rows are `Done`
 in `ROADMAP.md`, which includes their documentation.

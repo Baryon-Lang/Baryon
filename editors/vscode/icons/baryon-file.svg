@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="baryon-file-title">
+  <title id="baryon-file-title">Baryon</title>
+  <mask id="baryon-file-quarks">
+    <rect width="64" height="64" fill="#fff"/>
+    <g transform="translate(32 32) scale(.92) translate(-32 -32)">
+      <circle cx="22" cy="32" r="4.2" fill="#000"/>
+      <circle cx="36" cy="21.5" r="4.8" fill="#000"/>
+      <circle cx="36.5" cy="42.5" r="4.8" fill="#000"/>
+      <path d="M22 32 36 21.5 36.5 42.5z" fill="#fff"/>
+    </g>
+  </mask>
+  <rect width="64" height="64" rx="14" fill="#1E2B22"/>
+  <rect x="1.2" y="1.2" width="61.6" height="61.6" rx="12.8" fill="none" stroke="#8A6E3E" stroke-width="1.6"/>
+  <path transform="translate(32 32) scale(.92) translate(-32 -32)" d="M16 11H37A10.5 10.5 0 0 1 37 32H37.5A10.5 10.5 0 0 1 37.5 53H16Z" fill="#C4A15E" stroke="#C4A15E" stroke-width="2" stroke-linejoin="round" mask="url(#baryon-file-quarks)"/>
+</svg>

@@ -2,9 +2,10 @@
 
 This page continues [DataFrames](dataframes.md), which describes the type, its columns and
 its rows. The operations here read every row of a frame and build a new frame:
-`sort_values` puts the rows in order, `groupby(...).agg(...)` reduces the rows that share a
-key to one row, `merge` pairs the rows of two frames, `drop_duplicates` leaves out the
-rows that repeat, `value_counts` counts them, `describe` sums up each column of numbers,
+`sort_values` puts the rows in order, `groupby(...)` with `agg(...)` or a reduction such as
+`sum()` reduces the rows that share a key to one row, `merge` pairs the rows of two frames,
+`drop_duplicates` leaves out the rows that repeat, `value_counts` counts them, `describe`
+sums up each column of numbers,
 and `concat` stacks frames. Each keeps
 pandas's name and arguments ([decision 0045](../decisions/0045-dataframe.md)), and the
 compiler works out the columns of each result.
@@ -51,6 +52,10 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
   before `True`.
 - **`None` goes after everything**, rising or falling, in a
   [column that may hold `None`](missing-values.md#in-a-dataframe).
+- **`na_position="first"` puts missing values first** instead, in every column sorted by
+  and in both directions, as in pandas: `df.sort_values("price", na_position="first")`. The
+  rows that hold `None` come before those that hold NaN, which pandas does not tell
+  apart. It is `"first"` or `"last"`, written out.
 - **A column of `str` is sorted by code point**, the order of Python's `<` on `str`, as in
   pandas: `"Zed"` comes before `"apple"`, and the empty text comes first. The text is
   turned into whole numbers in that order first, which costs one more sort of that column
@@ -62,8 +67,11 @@ print(trades.sort_values(["price", "volume"], ascending=[False, True]))
 - **`ascending` is a `bool`**, which need not be known when compiling, or a list written
   out with one `bool` for each column. The columns are string literals, checked when
   compiling.
-- **Cost:** for `n` rows, about `n log n` comparisons for each column sorted by, two arrays
-  of `n` integers while sorting, and one copy of every column.
+- **Cost:** for `n` rows, one sort for each column sorted by, four arrays of `n` numbers while
+  sorting, and one copy of every column. A sort takes about `n` steps for a column of `f64`
+  whose values are spread evenly between the smallest and the largest, and for a column of
+  `i64`, `str` or `bool` whose values lie in a range not much wider than `n`. Any other
+  column takes about `n log n` comparisons.
 - **A complex column has no order**, so sorting by one is a compile error. pandas's other
   arguments, such as `na_position=`, `key=` and `inplace=`, are not built.
 
@@ -101,6 +109,8 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
 | `"min"`, `"max"` | The least and the greatest value | The column's type |
 | `"first"`, `"last"` | The first and the last value, in the frame's order | The column's type |
 | `"count"` | How many values there are | `i64` |
+| `"size"` | How many rows the group has, a row whose value is NaN or `None` too | `i64` |
+| `"nunique"` | How many different values there are | `i64` |
 | `"mean"` | The mean | `f64`; `f32` for an `f32` column |
 | `"var"`, `"std"` | The sample variance and standard deviation, dividing by one less than the count | The same |
 | `"median"` | The middle value, or the mean of the two middle values | The same |
@@ -109,17 +119,29 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   new columns, in the order given to `agg`. The keys are ordinary columns, since a frame has
   no row index; pandas makes them the index, and shows this frame after `reset_index()`.
 - **The groups come out sorted by their keys**, rising, and rows keep their order inside a
-  group, which is what `first` and `last` see. A key of `str` is in the order of Python's
-  `<`, by code point, and texts are one group only when exactly equal.
-- **A column of `str` has five of the reductions**: `count`, an `i64`, and `first`,
-  `last`, `min` and `max`, which give a `str`, the smallest and largest by `<`. The
+  group, which is what `first` and `last` see. `df.groupby("symbol", sort=False)` gives the
+  groups in the order their keys first appear in the frame instead, as in pandas; it still
+  sorts the rows to find the groups, and then puts the result's rows in that order, which
+  costs one more sort of a number for each group and a copy of the reduced columns. A key
+  of `str` is in the order of Python's `<`, by code point, and texts are one group only
+  when exactly equal.
+- **A column of `str` has seven of the reductions**: `count`, `size` and `nunique`, each
+  an `i64`, and `first`, `last`, `min` and `max`, which give a `str`, the smallest and
+  largest by `<`. The
   others are compile errors. pandas's `sum` of text, which joins the texts of a group, is
   not built. `min` and `max` cost one sort of the column, comparing text.
 - **NaN is left out, as in pandas.** A row whose key is NaN belongs to no group. A NaN
-  value is skipped by every reduction, so `count` counts the values that are numbers. A
+  value is skipped by every reduction but `size`, so `count` counts the values that are
+  numbers and `nunique` the different numbers. A
   group with no numbers has the sum 0, the count 0, and NaN for the rest; `var` and `std`
   of one value are NaN.
-- **`groupby` and `agg` are written together.** The groups are not a value: `g =
+- **`None` is left out too**, in a [column that may hold `None`](missing-values.md#in-a-dataframe):
+  a row whose key is `None` belongs to no group, and `agg` reduces the values that are there.
+- **`as_index=False` is accepted and changes nothing**, since the keys are always columns
+  here. `as_index=True` is a compile error: a frame has no index. Both flags are `True` or
+  `False` written out. `dropna=False`, a group for the rows whose key is missing, is not
+  built yet.
+- **`groupby` and its reduction are written together.** The groups are not a value: `g =
   df.groupby("symbol")` is a compile error. Group by several columns with a list,
   `df.groupby(["symbol", "day"])`.
 - **Every name is a string literal**, checked when compiling: the keys, the columns read
@@ -127,13 +149,75 @@ With five trades of the symbols 7, 3, 7, 3 and 9, this prints:
   already, and a complex column can be neither a key nor a value.
 - **The result is a new frame**, with no struct for its rows until it meets one, as for
   [`assign`](dataframes.md#choosing-and-changing-columns).
-- **Cost:** for `n` rows, a sort by the keys, about `n log n` comparisons for each key
-  column, then one pass over a column for each argument of `agg`. A column that is not
-  `f64` or `i64` is converted to one of them first, which copies it.
+- **Cost:** for `n` rows, a sort for each key column, which costs what it does in
+  [`sort_values`](#sorting), then one pass over a column for each argument of `agg`. A
+  column that is not `f64` or `i64` is converted to one of them first, which copies it.
+  A `sum` or a `mean` of floats by one key that is not a float reads the rows once in the
+  order they are stored when the keys lie close together, which whole numbers counted from
+  a small base, `bool`s and text do.
 - **Sums of floats are correctly rounded**: they use `math.fsum`, which loses nothing to
   the order of the values. pandas's sums are compensated but not exact, so a last digit can
   differ; so can that of `var` and `std` of an `f32` column, which are worked out in `f64`
   here and then rounded.
+
+### Reductions as methods
+
+Each reduction of the table is a method of the grouping too, as in pandas. It reduces every
+column that is not a key, or the columns chosen first with `["price"]`, with
+`[["price", "volume"]]` or with `.volume`, and each new column keeps the name of the column
+it reduces. `size()` gives the key columns and a column `size`. Each line is another way to
+write an `agg`, with the same types, order and cost
+([decision 0045](../decisions/0045-dataframe.md), amended 2026-11-19).
+
+```python
+print(trades.groupby("symbol").sum(numeric_only=True))
+print(trades.groupby("symbol")["price"].mean())
+print(trades.groupby(["venue", "symbol"])[["price", "volume"]].max())
+print(trades.groupby("venue").volume.median())
+print(trades.groupby("symbol").size())
+```
+
+With five trades of the symbols 7, 3, 7, 3 and 9, at the venues east, west, west, west and
+east, this prints:
+
+```text
+   symbol  price  volume
+0       3  815.5     300
+1       7  380.5     400
+2       9  171.0      75
+   symbol   price
+0       3  407.75
+1       7  190.25
+2       9  171.00
+  venue  symbol  price  volume
+0  east       7  189.5     100
+1  east       9  171.0      75
+2  west       3  410.0     250
+3  west       7  191.0     300
+  venue  volume
+0  east    87.5
+1  west   250.0
+   symbol  size
+0       3     2
+1       7     2
+2       9     1
+```
+
+- **The result is always a frame**, with the keys as columns. pandas gives this with
+  `as_index=False`; without it pandas makes the keys the index, and
+  `df.groupby("symbol")["price"].mean()` a Series.
+- **A column of `str` has no sum, mean, spread or median**, so `trades.groupby("symbol").sum()`
+  is a compile error here that names `venue`. Write `numeric_only=True`, with `True` written
+  out, to leave the columns of `str` out, as in pandas, or choose the columns. `min`, `max`,
+  `first`, `last`, `count` and `nunique` reduce text as they do in `agg`. pandas joins the
+  texts for `sum`, and raises for `mean` when the line runs.
+- **`numeric_only=`** is taken by `sum`, `mean`, `min`, `max`, `first`, `last`, `std`, `var`
+  and `median`, the methods that take it in pandas. `count`, `nunique` and `size` take no
+  arguments, and no method takes any other.
+- **A key cannot be chosen yet.** `trades.groupby("symbol")["symbol"].max()` is a compile
+  error for now, where pandas reduces the key as any column: the result already holds the
+  key, and a frame has one column of each name. For the same reason `size()` of a frame
+  with a key named `size` is a compile error.
 
 ## Joining
 
@@ -162,31 +246,91 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
 2       7  191.0     300  100
 ```
 
-- **The keys have one name and one type in both frames.** Join on several columns with a
-  list, `on=["symbol", "day"]`. A key of two types is a compile error; to join columns of
-  two names, `rename` one first.
-- **The result's columns** are those of `left`, in order, then those of `right` that are
-  no keys. A column the two frames share that is no key appears twice, as `price_x` from
-  the left and `price_y` from the right, as in pandas.
+- **`on=` names keys that have one name in both frames.** Join on several columns with a
+  list, `on=["symbol", "day"]`. A key has one type in both frames; two types are a compile
+  error.
+- **`left_on=` and `right_on=` name a key that has two names**, the column in `left` and
+  the column in `right`: `trades.merge(listings, left_on="symbol", right_on="ticker")`, or
+  two lists of one length for several keys. They are given together and in place of
+  `on=`. Both columns are kept, as in pandas, each among its own frame's columns, so the
+  result here has `symbol` and `ticker`. A key written with the same name on both sides is
+  one column, as with `on=`.
+- **The result's columns** are those of `left`, in order, then those of `right`, without
+  the keys that have one name. A column name the two frames share otherwise appears twice,
+  as `price_x` from the left and `price_y` from the right, as in pandas.
+- **`suffixes=("_bought", "_listed")` replaces `_x` and `_y`.** It is a tuple or a list of
+  two string literals; `""` or `None` leaves that frame's name as it is. Two columns left
+  with one name are a compile error, where pandas raises when the line runs.
+- **The keys and the suffixes are literals**, since the result's type lists its columns.
 - **The rows follow `left`**: its rows in order, and for one row of `left` its partners in
   the order of `right`. pandas documents the same order but does not always give it when
   rows have several partners; sort both results to compare them.
 - **NaN joins NaN**, as in pandas, though the two are not equal.
+- **`None` joins `None`** in a key that
+  [may hold `None`](missing-values.md#in-a-dataframe), and no number.
 - **A key of `str` joins texts that are exactly equal**: `"IBM"` and `"ibm"` are no
   partners. It costs one copy of the key's text from both frames and a sort of it.
 - **Both frames are read, not taken**, and the result is a new frame, with no struct for
   its rows until it meets one.
-- **Only the inner join is built.** `how="inner"` can be written out; `"left"`, `"right"`
-  and `"outer"` give rows with missing values, which come with roadmap item 3.13.6.
-  pandas's other arguments, such as `left_on=`, `right_on=` and `suffixes=`, are not built.
+- **This is the inner join**, which `how="inner"` also names: a row with no partner is
+  left out. [The other joins](#left-right-and-outer-joins) keep such rows.
+- **pandas's other arguments**, such as `sort=`, `indicator=` and `validate=`, are not
+  built.
 - **Cost:** for `n` rows in the two frames together and `k` pairs, a sort of `n` rows for
   each key column, then `n + k` steps and one copy of each column of the result.
+
+### Left, right and outer joins
+
+`how="left"` keeps every row of `left`, `how="right"` every row of `right`, and
+`how="outer"` every row of both. A row with no partner holds `None` in the other frame's
+columns, so those columns [may hold `None`](missing-values.md#in-a-dataframe) in the
+result's type:
+
+```python
+print(trades.merge(listings, on="symbol", how="left"))
+print(trades.merge(listings, on="symbol", how="outer"))
+```
+
+With trades of the symbols 7, 3 and 5 and the listings above, this prints:
+
+```text
+   symbol   price   lot
+0       7  189.50   100
+1       3  410.00    10
+2       5   12.25  <NA>
+   symbol  price   lot
+0       3  410.0    10
+1       5  12.25  <NA>
+2       7  189.5   100
+3       8   <NA>     1
+```
+
+- **Which columns may hold `None`** is known when compiling, from `how`, which is why it
+  is a string literal: the columns of `right` that are no keys in a left join, those of
+  `left` in a right join, and both in an outer join. A left join's `lot` above is an
+  `Array[i64 | None, 1]`, so the program checks an element, or calls
+  [`fillna` or `dropna`](missing-values-in-frames.md#dropna-and-fillna-of-a-frame), before it uses
+  the numbers. A key keeps its type: every row has one, from the frame that has the row.
+- **The rows** of a left join follow `left`, as the inner join's do. Those of a right join
+  follow `right`, and for one row of `right` its partners in the order of `left`. Those of
+  an outer join follow the keys in sorted order, a `None` or a NaN key last, and for one key
+  the rows of `left`, each with its partners in the order of `right`. This is pandas's
+  order.
+- **A column that already may hold `None`** keeps its type, and a `None` it held looks the
+  same as one the join put there.
+- **Cost:** as the inner join, and one validity bitmap for each column that may hold `None`.
 
 ## Rows that repeat
 
 `df.drop_duplicates()` gives a new frame without the rows that repeat: of the rows that
 hold the same value in every column, the first is kept. `subset` names the columns to
-compare, one or a list.
+compare, one or a list, and `keep` says which of the rows that repeat stays:
+
+| `keep` | The rows kept |
+| --- | --- |
+| `"first"`, or left out | The first of each set of rows that repeat |
+| `"last"` | The last of each set |
+| `False` | Only the rows that do not repeat at all |
 
 ```python
 print(trades.drop_duplicates(subset="symbol"))
@@ -208,8 +352,9 @@ With four trades of the symbols 7, 3, 7 and 5, this prints the first trade of ea
   one more sort of that column, comparing text.
 - **The frame is read, not taken.**
 - **A complex column cannot be compared yet**: leave it out with `subset`.
-- **Only the first of the rows that repeat can be kept.** pandas's `keep="last"` and
-  `keep=False`, and its `inplace=` and `ignore_index=`, are not built.
+- **`keep` is written out**, as `"first"`, `"last"` or `False`; anything else is a compile
+  error, where pandas raises `ValueError`. pandas's `inplace=` and `ignore_index=` are not
+  built.
 - **Cost:** for `n` rows, a sort of `n` row positions for each column compared, then one
   pass and one copy of the rows kept.
 
@@ -242,8 +387,20 @@ With four trades of the symbols 7, 3, 7 and 5, this prints:
 - **No column counted by may be named `count`**, since the result would have two columns
   of that name. This is a compile error; `rename` the column first.
 - **The frame is read, not taken.** A complex column cannot be counted by yet.
-- **pandas's other arguments are not built**: `sort=`, `ascending=`, `normalize=` and
-  `dropna=`. Sort the result with `sort_values` for another order.
+- **Four arguments change the count**, with pandas's names and meanings, each written out
+  as `True` or `False`:
+
+  | Argument | What it does |
+  | --- | --- |
+  | `ascending=True` | The smallest count comes first |
+  | `sort=False` | No sort: the values stay in the order they first appear |
+  | `normalize=True` | The last column is `proportion`, an `f64`: each count divided by the number of rows counted |
+  | `dropna=False` | A NaN or a `None` is counted as a value like any other |
+
+  With `normalize=True` no column counted by may be named `proportion`. With
+  `dropna=False` a column that may hold `None` and holds a NaN too has a row for each,
+  where pandas, which has one missing value, has one row
+  ([Missing values in a DataFrame](missing-values-in-frames.md)).
 - **Cost:** for `n` rows, a sort of `n` row positions for each column counted by, one more
   sort for a column of `str`, then one pass and a sort of the distinct values by count.
 
@@ -279,12 +436,18 @@ With the prices 189.5, 410.0, 191.0 and 20.0 and the volumes 100, 250, 50 and 10
   not a number. A frame with no column of numbers is a compile error, and so is a column
   of numbers named `statistic`.
 - **NaN is left out**, as in pandas. `std` divides by one less than the count, so one value
-  has none and gives NaN. A column with no values has the count 0 and NaN for the rest.
+  has none and gives NaN. A column's own `std()` divides by the count unless given `ddof=1`
+  ([Columns](dataframes.md#columns)). A column with no values has the count 0 and NaN for the rest.
 - **A quartile between two values is taken on the line between them**, as pandas and
   NumPy's `percentile` take it.
 - **The frame is read, not taken.**
-- **pandas's arguments are not built**: `percentiles=`, `include=` and `exclude=`. Choose
-  columns first, `df[["price"]].describe()`.
+- **`percentiles=` chooses the percentiles shown** in place of the three quartiles:
+  `df.describe(percentiles=[0.1, 0.9])` has the rows `10%` and `90%`, and no `50%` unless
+  it is listed. They are shown in rising order and named as pandas names them, `12.5%` for
+  `0.125`; an empty list shows none. The list is written out, of numbers from 0 to 1, none
+  twice: a mistake is a compile error, where pandas raises `ValueError`.
+- **pandas's `include=` and `exclude=` are not built.** Choose columns first,
+  `df[["price"]].describe()`.
 - **Cost:** for `n` rows, one copy and one sort of each column of numbers.
 
 ## Stacking frames

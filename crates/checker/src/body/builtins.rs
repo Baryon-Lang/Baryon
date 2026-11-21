@@ -44,6 +44,9 @@ impl<'db> Body<'db> {
             if matches!(types[0].kind(self.db), TypeKind::Str) {
                 return self.number_from_text(node, name, target);
             }
+            if let Some(ty) = self.conversion_of_parameter(all[0], name, types[0]) {
+                return ty;
+            }
             return primitive(self.db, target);
         }
         if let Some(ty) = self.complex_builtin(name, &all, &types) {
@@ -64,7 +67,6 @@ impl<'db> Body<'db> {
                 for (&argument, &ty) in all.iter().zip(&types) {
                     self.shows_no_path(argument, ty);
                     self.shows_no_text_array(argument, ty);
-                    self.shows_no_optional_array(argument, ty);
                 }
                 let keywords = &types[arguments.positional.len()..];
                 self.print_keywords(arguments, keywords);

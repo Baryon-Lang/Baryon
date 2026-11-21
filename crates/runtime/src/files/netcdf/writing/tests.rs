@@ -312,3 +312,97 @@ fn huge_record_positions_are_refused_before_anything_is_made() {
     }
     assert_eq!(fs::read(&path).unwrap(), before);
 }
+
+#[test]
+fn a_definition_streams_records_past_one_buffer() {
+    // 200,000 records of three `i2`s, 1.2 MB, more than one buffer of the copy, then a second
+    // record variable, which pads every slot of the first from 6 bytes to 8.
+    let path = file("stream");
+    apply(&path, &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x"]);
+    let count: usize = 200_000;
+    let values: Vec<i64> = (0..i64::try_from(count * 3).unwrap())
+        .map(|value| value % 30_000)
+        .collect();
+    write(&path, ("a", &[]), Pixel::I64, &[count, 3], &longs(&values)).unwrap();
+    let before = fs::read(&path).unwrap();
+    let old = read_header(&path).unwrap();
+    let start = usize::try_from(old.variables[0].begin).unwrap();
+    apply(&path, &["A\ta\tstr\tunits\tm", "V\tb\ti1\tt"]);
+    let after = fs::read(&path).unwrap();
+    let new = read_header(&path).unwrap();
+    // Each record now holds `a`'s 8 bytes, read from where its record began, the first two
+    // bytes of the next record and zeros past the end, then `b`'s byte of fill and padding.
+    let mut records = Vec::new();
+    for record in 0..count {
+        let from = start + record * 6;
+        let mut slot = before[from..(from + 8).min(before.len())].to_vec();
+        slot.resize(8, 0);
+        records.extend(slot);
+        records.extend([0x81, 0x81, 0x81, 0x81]);
+    }
+    let begin = usize::try_from(new.variables[0].begin).unwrap();
+    assert_eq!(after.len(), begin + records.len());
+    assert!(after[begin..] == records[..], "the records moved wrongly");
+    fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn a_write_of_values_changes_only_its_bytes_in_place() {
+    // Two record variables, so each record holds `a`'s 6 bytes and 2 of padding, then `b`'s
+    // byte and 3 of padding: 12 bytes.
+    let path = file("in-place");
+    apply(
+        &path,
+        &["C\t1", "D\tt\t0", "D\tx\t3", "V\ta\ti2\tt,x", "V\tb\ti1\tt"],
+    );
+    write(
+        &path,
+        ("a", &[]),
+        Pixel::I64,
+        &[2, 3],
+        &longs(&[1, 2, 3, 4, 5, 6]),
+    )
+    .unwrap();
+    // A second name for the same file sees every later write: the file is changed, not
+    // replaced by a new one.
+    let link = format!("{path}.link");
+    let _ = fs::remove_file(&link);
+    fs::hard_link(&path, &link).unwrap();
+    let before = fs::read(&path).unwrap();
+    let begin = usize::try_from(read_header(&path).unwrap().variables[0].begin).unwrap();
+    // `a[1, 2] = 9` changes the two bytes of one value.
+    write(
+        &path,
+        ("a", &[Item::Index(1), Item::Index(2)]),
+        Pixel::I64,
+        &[],
+        &longs(&[9]),
+    )
+    .unwrap();
+    let after = fs::read(&link).unwrap();
+    let mut expected = before.clone();
+    expected[begin + 12 + 4..begin + 12 + 6].copy_from_slice(&9_i16.to_be_bytes());
+    assert_eq!(after, expected);
+    // `b[3] = 7` adds records 2 and 3, filled, then writes the value and the count.
+    write(
+        &path,
+        ("b", &[Item::Index(3)]),
+        Pixel::I64,
+        &[],
+        &longs(&[7]),
+    )
+    .unwrap();
+    let after = fs::read(&link).unwrap();
+    expected[4..8].copy_from_slice(&4_u32.to_be_bytes());
+    // `b`'s values in the first two records were filled when `a`'s were written.
+    let mut fill = [
+        0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x81, 0x81, 0x81, 0x81,
+    ];
+    expected.extend(fill);
+    fill[8] = 7;
+    expected.extend(fill);
+    assert_eq!(after, expected);
+    assert_eq!(read_header(&path).unwrap().records, 4);
+    fs::remove_file(&link).unwrap();
+    fs::remove_file(&path).unwrap();
+}

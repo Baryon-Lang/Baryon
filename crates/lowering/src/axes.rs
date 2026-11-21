@@ -3,7 +3,7 @@
 //!
 //! The result has the array's lengths without axis `k`, and each element reduces the line of
 //! elements along `k` that passes through it. The order of the additions is `NumPy`'s, so a float
-//! sum has the same bits as `numpy.sum(a, axis=k)` (Collins, 2026-11-11):
+//! sum has the same bits as `numpy.sum(a, axis=k)` (chief designer, 2026-11-11):
 //!
 //! - Along the last axis, each line is one row in memory, and each is added in the pairwise tree
 //!   of `a.sum()` by a call of [`Builtin::Sum`] on a view of the row.
@@ -17,6 +17,10 @@
 //! `a.min()`: a NaN anywhere in a line gives NaN. A `min` or `max` along an axis of length 0
 //! panics, as `NumPy`'s does, even when the result would be empty. An array of rank 1 reduces to
 //! one number, as `a.sum()` does.
+//!
+//! A sum along an axis of a whole-array expression, `((u - v) * (u - v)).sum(axis=0)`, is a call
+//! of [`Builtin::SumAlong`] instead, which array expansion turns into these loops over the
+//! expression without storing it (decision 0041, amended).
 //!
 //! Cost: one pass over the array, plus one call per row for a float sum along the last axis.
 
@@ -60,6 +64,9 @@ impl<'db> Builder<'db> {
         }
         let source = self.borrow(array);
         let result_type = self.ty(node);
+        if method == "sum" && self.just_assigned_expression(&source) {
+            return self.sum_along_expression(place, (&source, result_type), axis, node);
+        }
         self.reduce_along(place, method, (&source, ty, result_type), axis, node);
     }
 
@@ -135,6 +142,37 @@ impl<'db> Builder<'db> {
         self.assign(place, Rvalue::Use(moved), node);
     }
 
+    /// `e.sum(axis)` of a whole-array expression `e` that has just been computed into the
+    /// temporary `source`, into `place` as `result_type`: a call of [`Builtin::SumAlong`], which
+    /// array expansion turns into the loops [`reduce_along`](Self::reduce_along) would write,
+    /// in the same order, without storing `e` (decision 0041, amended). `source` is dropped
+    /// right after the call, so array expansion finds the three statements together.
+    fn sum_along_expression(
+        &mut self,
+        place: Place,
+        (source, result_type): (&Place, types::Type<'db>),
+        axis: u32,
+        node: NodeId,
+    ) {
+        let result = self.temporary(result_type, node);
+        let axis = Operand::Constant(Constant::integer(self.int_type(), i128::from(axis)));
+        let next = self.new_block();
+        self.terminate(
+            TerminatorKind::Call {
+                callee: Callee::Builtin(Builtin::SumAlong),
+                arguments: vec![Argument::Borrow(source.clone()), Argument::Owned(axis)],
+                destination: Place::from(result),
+                target: next,
+                error: None,
+            },
+            node,
+        );
+        self.start(next);
+        self.drop_now(source.local, node);
+        let moved = self.take(Place::from(result), result_type);
+        self.assign(place, Rvalue::Use(moved), node);
+    }
+
     /// Writes into each place of the result the pairwise sum of its row, the elements along the
     /// last axis, whose length is `along`, of type `element`.
     fn sum_rows(
@@ -185,9 +223,10 @@ impl<'db> Builder<'db> {
     }
 
     /// Sets each place of the result to 0, then adds every element of the array into its place,
-    /// in row-major order.
+    /// in row-major order; a `bool` element adds as an `int`, counting the `True` ones.
     fn sum_along(&mut self, reduced: &Reduced<'_, 'db>, element: types::Type<'db>, node: NodeId) {
-        let zero = Operand::Constant(self.number_constant(element, 0));
+        let counted = self.summand(element);
+        let zero = Operand::Constant(self.number_constant(counted, 0));
         self.loop_nest(
             reduced.kept,
             &mut Vec::new(),
@@ -206,8 +245,9 @@ impl<'db> Builder<'db> {
                     .source
                     .clone()
                     .project(Projection::Index(indices.to_vec()));
-                let terms = (Operand::Copy(at.clone()), Operand::Copy(value));
-                builder.arithmetic(at, BinaryOperator::Add, terms, element, node);
+                let value = builder.as_summand(value, element, node);
+                let terms = (Operand::Copy(at.clone()), value);
+                builder.arithmetic(at, BinaryOperator::Add, terms, counted, node);
             },
         );
     }

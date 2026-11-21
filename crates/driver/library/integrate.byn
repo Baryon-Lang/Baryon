@@ -1,0 +1,166 @@
+"""The `integrate` module: SciPy's `scipy.integrate` written in Baryon (decision 0054).
+
+This file holds the fixed rules, which integrate samples already taken: `trapezoid`, `simpson`,
+`cumulative_trapezoid` and `romb` (roadmap 3.19.3). Each takes the samples as a rank-1
+`Array[f64, 1]` and gives the bits SciPy 1.18 gives for the same samples. Every sum adds in
+NumPy's pairwise order, through `Array.sum`, and every other step rounds where SciPy's does, so a
+test can compare a result with SciPy's using `==`.
+
+Samples that do not fit the rule, such as `x` of another length than `y`, are a mistake in the
+program and panic, where SciPy raises `ValueError` (decision 0042 point 5 for `stats`, and
+decision 0040 for shapes).
+"""
+
+import math
+from integrate_quad import IntegrationError as IntegrationError, quad as quad
+
+
+def trapezoid(y: Array[f64, 1], x: Array[f64, 1] | None = None, dx: f64 = 1.0) -> f64:
+    """The integral of the samples `y` by the trapezoidal rule, as `scipy.integrate.trapezoid`.
+
+    The samples lie at the points `x`, or `dx` apart when `x` is not given. Each interval adds
+    `(x[i + 1] - x[i]) * (y[i + 1] + y[i]) / 2.0`, and the intervals are summed in NumPy's
+    pairwise order. Fewer than two samples give 0.0. Panics when `x` is not as long as `y`.
+    Reads the arrays once and stores nothing.
+    """
+    n = len(y)
+    if x is not None:
+        assert len(x) == n, "trapezoid needs x as long as y"
+    if n < 2:
+        return 0.0
+    if x is None:
+        return (dx * (y[1:] + y[: n - 1]) / 2.0).sum()
+    return ((x[1:] - x[: n - 1]) * (y[1:] + y[: n - 1]) / 2.0).sum()
+
+
+def cumulative_trapezoid(
+    y: Array[f64, 1],
+    x: Array[f64, 1] | None = None,
+    dx: f64 = 1.0,
+    initial: f64 | None = None,
+) -> Array[f64, 1]:
+    """The running integral of `y` by the trapezoidal rule, as
+    `scipy.integrate.cumulative_trapezoid`.
+
+    Element `i` is the integral from the first sample to sample `i + 1`, so the result is one
+    shorter than `y`; with `initial=0.0` it starts with that 0.0 and is as long as `y`. Each
+    element adds the next interval to the one before, left to right, as NumPy's `cumsum` does.
+    Panics when `y` is empty, when `x` is not as long as `y`, or when `initial` is anything but
+    0.0, the only value SciPy accepts.
+    """
+    n = len(y)
+    assert n > 0, "cumulative_trapezoid needs at least one sample"
+    if x is not None:
+        assert len(x) == n, "cumulative_trapezoid needs x as long as y"
+    offset = 0
+    if initial is not None:
+        assert initial == 0.0, "cumulative_trapezoid takes initial=None or initial=0.0"
+        offset = 1
+    result: Array[f64, 1] = Array.zeros(n - 1 + offset)
+    total = 0.0
+    for i in range(n - 1):
+        if x is None:
+            total += dx * (y[i + 1] + y[i]) / 2.0
+        else:
+            total += (x[i + 1] - x[i]) * (y[i + 1] + y[i]) / 2.0
+        result[i + offset] = total
+    return result
+
+
+def _quotient(top: f64, bottom: f64) -> f64:
+    """`top / bottom`, or 0.0 when `bottom` is zero, as SciPy's guarded divisions in `simpson`
+    give it."""
+    if bottom != 0.0:
+        return top / bottom
+    return 0.0
+
+
+def _basic_simpson(y: Array[f64, 1], stop: int, x: Array[f64, 1] | None, dx: f64) -> f64:
+    """Simpson's rule over the pairs of intervals that start at samples 0, 2, 4 and on, below
+    `stop`, as SciPy's `_basic_simpson`. With `x`, each pair uses its own two spacings; the
+    pairs are summed in NumPy's pairwise order either way.
+    """
+    if x is None:
+        if stop <= 0:
+            return dx / 3.0 * 0.0
+        return dx / 3.0 * (y[0:stop:2] + 4.0 * y[1 : stop + 1 : 2] + y[2 : stop + 2 : 2]).sum()
+    count = (stop + 1) // 2 if stop > 0 else 0
+    terms: Array[f64, 1] = Array.zeros(count)
+    for k in range(count):
+        i = 2 * k
+        h0 = x[i + 1] - x[i]
+        h1 = x[i + 2] - x[i + 1]
+        hsum = h0 + h1
+        hprod = h0 * h1
+        ratio = _quotient(h0, h1)
+        terms[k] = hsum / 6.0 * (
+            y[i] * (2.0 - _quotient(1.0, ratio))
+            + y[i + 1] * (hsum * _quotient(hsum, hprod))
+            + y[i + 2] * (2.0 - ratio)
+        )
+    return terms.sum()
+
+
+def simpson(y: Array[f64, 1], x: Array[f64, 1] | None = None, dx: f64 = 1.0) -> f64:
+    """The integral of the samples `y` by Simpson's rule, as `scipy.integrate.simpson`.
+
+    The samples lie at the points `x`, or `dx` apart when `x` is not given, and the spacing may
+    vary. An odd number of samples is covered by pairs of intervals. With an even number, the
+    pairs cover all but the last interval, which Cartwright's correction adds, as SciPy does
+    since version 1.11; two samples give the trapezoid. One sample gives 0.0. Panics when `y` is
+    empty, where SciPy raises `IndexError`, or when `x` is not as long as `y`.
+    """
+    n = len(y)
+    if x is not None:
+        assert len(x) == n, "simpson needs x as long as y"
+    if n % 2 == 1:
+        return _basic_simpson(y, n - 2, x, dx)
+    assert n > 0, "simpson needs at least one sample"
+    if n == 2:
+        last = dx
+        if x is not None:
+            last = x[1] - x[0]
+        return 0.0 + 0.5 * last * (y[1] + y[0])
+    result = _basic_simpson(y, n - 3, x, dx)
+    h0 = dx
+    h1 = dx
+    if x is not None:
+        h0 = x[n - 2] - x[n - 3]
+        h1 = x[n - 1] - x[n - 2]
+    alpha = _quotient(2.0 * (h1 * h1) + 3.0 * h0 * h1, 6.0 * (h1 + h0))
+    beta = _quotient(h1 * h1 + 3.0 * h0 * h1, 6.0 * h0)
+    eta = _quotient(math.pow(h1, 3.0), 6.0 * h0 * (h0 + h1))
+    result += alpha * y[n - 1] + beta * y[n - 2] - eta * y[n - 3]
+    return result + 0.0
+
+
+def romb(y: Array[f64, 1], dx: f64 = 1.0) -> f64:
+    """The integral of `y` by Romberg's method, as `scipy.integrate.romb`: trapezoid sums on
+    halving steps, refined by Richardson extrapolation.
+
+    `y` holds `2**k + 1` samples `dx` apart. Each level adds the new midpoints in NumPy's
+    pairwise order, so the result has SciPy's bits. SciPy's `show=` table is not printed.
+    Panics when the number of samples is not one plus a power of 2, where SciPy raises
+    `ValueError`. Keeps `(k + 1)(k + 2) / 2` numbers, for `k` up to about 60.
+    """
+    intervals = len(y) - 1
+    n = 1
+    k = 0
+    while n < intervals:
+        n *= 2
+        k += 1
+    assert n == intervals, "romb needs one plus a power of 2 samples"
+    h = f64(intervals) * dx
+    rows: list[list[f64]] = [[(y[0] + y[intervals]) / 2.0 * h]]
+    start = intervals
+    step = intervals
+    for i in range(1, k + 1):
+        start //= 2
+        row = [0.5 * (rows[i - 1][0] + h * y[start:intervals:step].sum())]
+        step //= 2
+        for j in range(1, i + 1):
+            previous = row[j - 1]
+            row.append(previous + (previous - rows[i - 1][j - 1]) / f64((1 << (2 * j)) - 1))
+        rows.append(row)
+        h /= 2.0
+    return rows[k][k]

@@ -300,3 +300,19 @@ def callable_owned_apply(f: Callable[[int], ITEM], n: int) -> list[ITEM]:
 def callable_owned():
     xs = callable_owned_apply(make, 3)
     show(xs[2])
+
+
+# site: match_capture
+# A `match` capture that borrows the value inside a read-only optional parameter
+# (decision 0032, roadmap 1.9.50).
+def match_capture_show(v: ITEM | None):
+    match v:
+        case None:
+            print("none")
+        case inside:
+            show(inside)
+
+
+def match_capture():
+    match_capture_show(make(4))
+    match_capture_show(None)

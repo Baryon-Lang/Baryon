@@ -11,10 +11,11 @@
 //! (nominal, decision 0031). A type parameter bounded by a trait has that trait and every
 //! trait it requires.
 
+use crate::forms::is_copy;
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File, Package};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Declaration, Item, TypeDb, TypeKind};
+use types::{Declaration, Float, Item, Primitive, TypeDb, TypeKind};
 
 /// A trait a type parameter may be bounded by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +107,47 @@ pub(crate) fn bound(db: &dyn TypeDb, package: Package, file: File, name: NodeId)
     match written_bound(db, package, file, name)? {
         Bound::Trait(found) => Some(found),
         Bound::Other => None,
+    }
+}
+
+/// Whether `ty` satisfies `bound`, for a type in `package`. A user trait is satisfied by a
+/// struct that names it, or a trait that requires it, among its bases, by a type parameter
+/// bounded the same way (decision 0031), and by a union whose every member satisfies it
+/// (decision 0032). A user trait reads the struct's declaration, so this is never called while
+/// that declaration is computed.
+pub(crate) fn satisfies<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    bound: Trait,
+    ty: types::Type<'db>,
+) -> bool {
+    if let Trait::User(wanted) = bound {
+        return matches!(ty.kind(db), TypeKind::Unknown)
+            || implemented(db, package, ty).contains(&wanted);
+    }
+    if let TypeKind::Parameter { file, name } = ty.kind(db)
+        && let Some(own) = self::bound(db, package, *file, *name)
+    {
+        // Every float is a number, and every number is a copy type.
+        return own == bound
+            || (bound == Trait::Number && own == Trait::Float)
+            || (bound == Trait::Copy && own.is_numeric());
+    }
+    let f64 = |ty: types::Type<'db>| {
+        matches!(
+            ty.kind(db),
+            TypeKind::Primitive(Primitive::Float(Float::F64)) | TypeKind::Unknown
+        )
+    };
+    match (bound, ty.kind(db)) {
+        (_, TypeKind::Unknown) | (Trait::Float, TypeKind::Primitive(Primitive::Float(_))) => true,
+        (Trait::Number, TypeKind::Primitive(primitive)) => *primitive != Primitive::Bool,
+        (Trait::VectorSpace, TypeKind::Array { element, .. } | TypeKind::Fixed { element, .. }) => {
+            f64(*element)
+        }
+        (Trait::VectorSpace, _) => f64(ty),
+        (Trait::Copy, _) => is_copy(db, ty),
+        _ => false,
     }
 }
 

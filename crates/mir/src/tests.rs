@@ -471,5 +471,6 @@ mod parallel;
 mod vector;
 
 mod slices;
+mod spread;
 mod strides;
 mod unions;

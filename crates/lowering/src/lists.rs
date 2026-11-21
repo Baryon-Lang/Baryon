@@ -137,8 +137,8 @@ impl<'db> Builder<'db> {
 
     /// `sorted(list)` or `sorted(list, reverse=flag)` into `place` (roadmap 1.13.13): a copy of
     /// the list, as `copy()` makes, sorted in place by [`Builtin::Sort`], which is stable and
-    /// puts every float NaN last (Collins, 2026-11-10). The flag is a `bool`, `False` when left
-    /// out.
+    /// puts every float NaN last (chief designer, 2026-11-10). The flag is a `bool`, `False` when
+    /// left out.
     ///
     /// Cost: the copy, then O(n log n) comparisons.
     pub(crate) fn sorted(

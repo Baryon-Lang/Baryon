@@ -3,24 +3,24 @@
 `baryon` is the one tool for a Baryon program: it checks, builds, runs, tests and documents a
 package, and serves an editor. This chapter lists every command, what it needs, what it prints and
 the exit status it ends with. It is a prototype (roadmap 1.11): arguments are positional, and the
-options are `--release`, `--timings`, `-k` for `test` and `--run` for `watch`.
+options are `--release`, `--blas`, `--timings`, `-k` for `test` and `--run` for `watch`.
 
 | Command | What it does |
 | --- | --- |
 | [`baryon check <directory>`](#baryon-check) | Reports every error and warning in the package |
-| [`baryon build [--release] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
-| [`baryon run [--release] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
-| [`baryon test [--release] [--timings] [-k <text>] <directory>`](#baryon-test) | Builds and runs every `@test` function, or those whose name contains `text` |
-| [`baryon watch [--release] [--run] <directory> <output>`](#baryon-watch) | Builds the package, then rebuilds it each time a file is saved |
+| [`baryon build [--release] [--blas] [--timings] <directory> <output>`](#baryon-build) | Compiles the package into the executable `output` |
+| [`baryon run [--release] [--blas] [--timings] <directory>`](#baryon-run) | Builds the package and runs it |
+| [`baryon test [--release] [--blas] [--timings] [-k <text>] <directory>`](#baryon-test) | Builds and runs every `@test` function, or those whose name contains `text` |
+| [`baryon watch [--release] [--blas] [--run] <directory> <output>`](#baryon-watch) | Builds the package, then rebuilds it each time a file is saved |
 | [`baryon doc <directory> <output>`](#baryon-doc) | Writes the package's documentation as Markdown |
 | [`baryon lsp`](#baryon-lsp) | Runs the language server an editor talks to |
-| `baryon --version` | Prints the release, such as `baryon 0.2.0`; put it in a bug report |
+| `baryon --version` | Prints the release, such as `baryon 0.3.0`; put it in a bug report |
 | `baryon --help` | Prints the usage line |
 
 ## Installing
 
-From release 0.2.0, each release has prebuilt archives for Linux on x86_64 and macOS on Apple
-silicon, holding `baryon` and `libruntime.a` together; the
+Each release has prebuilt archives for Linux on x86_64 and macOS on Apple silicon, holding
+`baryon` and `libruntime.a` together; the
 [beginner's guide](../guide/README.md#download-a-prebuilt-baryon) says how to download, check and
 install one. On any other system, or to follow `main`, `baryon` is built from this repository
 with the pinned Rust toolchain
@@ -46,6 +46,10 @@ distributions give versions installed side by side; so on Ubuntu 22.04, whose `c
 found and how to install one. `check`, `doc` and `lsp` need neither. On Linux, installing
 LLVM's linker too (the `lld` package) makes every build's link about twice as fast; `baryon`
 uses it when `clang` can find it, and links with the system linker otherwise.
+
+Only a build with [`--blas`](#matrix-products-through-blas) needs a BLAS library. macOS has one,
+Accelerate. On Linux, install OpenBLAS: `sudo apt install libopenblas-dev` on Debian and
+Ubuntu, `sudo dnf install openblas-devel` on Fedora.
 
 ## Packages
 
@@ -73,7 +77,7 @@ standard output and exit with 0. Called with no arguments or wrong ones, `baryon
 line to standard error and exits with 2:
 
 ```text
-baryon: usage: baryon check <directory> | baryon build [--release] [--timings] <directory> <output> | baryon run [--release] [--timings] <directory> | baryon test [--release] [--timings] [-k <text>] <directory> | baryon watch [--release] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp
+baryon: usage: baryon check <directory> | baryon build [--release] [--blas] [--timings] <directory> <output> | baryon run [--release] [--blas] [--timings] <directory> | baryon test [--release] [--blas] [--timings] [-k <text>] <directory> | baryon watch [--release] [--blas] [--run] <directory> <output> | baryon doc <directory> <output> | baryon lsp
 ```
 
 ## `baryon check`
@@ -108,7 +112,7 @@ that checks may still use a feature `build` cannot compile yet; see
 ## `baryon build`
 
 ```text
-baryon build [--release] [--timings] <directory> <output>
+baryon build [--release] [--blas] [--timings] <directory> <output>
 ```
 
 Checks the package as `check` does, compiles it, and writes the executable `output`, linked with
@@ -137,6 +141,51 @@ the debug build to the bit). Both keep their line tables, so a panic prints a ba
 Develop and test in a debug build, which compiles quickly and stops an overflow at the line that
 caused it. Time, run long simulations in, and ship a release build. Every other check,
 such as array bounds, stays on in both ([Integer overflow](types.md#integer-overflow)).
+
+### Matrix products through BLAS
+
+`--blas`, anywhere after `build`, `run`, `test` or `watch`, makes `a @ b` of two `Array`
+matrices of `f64`, or of `f32`, call the system BLAS: `cblas_dgemm` or `cblas_sgemm` from
+OpenBLAS on Linux and from Accelerate on macOS
+([decision 0040](../decisions/0040-linear-algebra-and-fft.md)). BLAS is tuned for each
+processor and uses every core, so large products run many times faster:
+
+| `a @ b`, two `f64` matrices, Linux x86_64, 4 cores | Without `--blas` | With `--blas` | Faster by |
+| --- | --- | --- | --- |
+| 256 × 256 | 0.007 s | 0.006 s | about the same |
+| 1024 × 1024 | 0.51 s | 0.037 s | 14 times |
+| 2048 × 2048 | 4.1 s | 0.19 s | 22 times |
+
+Each time is a whole release-build program that fills both matrices and multiplies them, the
+best of three runs. OpenBLAS on one thread (`OPENBLAS_NUM_THREADS=1`) takes 0.056 s at 1024.
+macOS on Apple silicon, with Accelerate, is not measured yet.
+
+What changes with the flag:
+
+- **The last bits.** BLAS adds each entry's products in its own order, which depends on the
+  processor and the number of threads, so results can differ from a build without the flag in
+  the last bits, as NumPy's `@` does. Without the flag the order is fixed and every machine
+  gets the same bits ([The matrix product](arrays.md#the-matrix-product)).
+- **Threads.** BLAS runs on as many threads as the machine has cores. `OPENBLAS_NUM_THREADS`
+  on Linux and `VECLIB_MAXIMUM_THREADS` on macOS set fewer, which helps when `@` is called
+  inside a `prange` loop that already uses every core.
+- **Linking.** The program is linked with the BLAS library, dynamically
+  ([decision 0040](../decisions/0040-linear-algebra-and-fft.md#amendment-2026-11-14-how---blas-links-on-linux)).
+  On Linux the machine that runs it needs OpenBLAS's shared library, which the
+  `libopenblas0` package installs and `libopenblas-dev` brings with it; without it the program
+  does not start, and the system says `error while loading shared libraries:
+  libopenblas.so.0`. A build without OpenBLAS installed stops with exit status 2, the linker's
+  message and how to install it:
+
+  ```text
+  baryon: ld.lld: error: unable to find library -lopenblas
+  clang: error: linker command failed with exit code 1 (use -v to see invocation)
+  `--blas` links with OpenBLAS, which was not found: install it with `sudo apt install libopenblas-dev` on Debian or Ubuntu, or `sudo dnf install openblas-devel` on Fedora
+  ```
+
+Only a product of two `Array` matrices of one float type goes to BLAS. A matrix times a vector,
+`Fixed` arrays, integers and mixed `f32` and `f64` stay compiled loops. A program built without
+the flag never refers to a BLAS library.
 
 ### Timing a build
 
@@ -173,7 +222,7 @@ Running the executable runs `main`. It exits with:
 ## `baryon run`
 
 ```text
-baryon run [--release] [--timings] <directory>
+baryon run [--release] [--blas] [--timings] <directory>
 ```
 
 Builds the package as `build` does, into a scratch directory, runs it with the terminal's standard
@@ -190,7 +239,7 @@ hello, world
 ## `baryon test`
 
 ```text
-baryon test [--release] [--timings] [-k <text>] <directory>
+baryon test [--release] [--blas] [--timings] [-k <text>] <directory>
 ```
 
 Builds every top-level function decorated `@test` into one test program and runs each test in its
@@ -210,7 +259,7 @@ package does not build.
 ## `baryon watch`
 
 ```text
-baryon watch [--release] [--run] <directory> <output>
+baryon watch [--release] [--blas] [--run] <directory> <output>
 ```
 
 Builds the package into the executable `output` as [`build`](#baryon-build) does, then keeps

@@ -18,6 +18,10 @@
 //! element pointer, rank, lengths and strides to `baryon_rt_sum_strided_f64`, and a dot product
 //! with one passes each element pointer and stride to `baryon_rt_dot_strided_f64`. The runtime
 //! reduces a contiguous array where it lies and gathers any other first.
+//!
+//! A [`Builtin::MatrixProduct`](mir::Builtin::MatrixProduct), made only in a `--blas` build,
+//! passes the address of `cblas_dgemm` or `cblas_sgemm` and each matrix's element pointer,
+//! lengths and strides to the runtime, which calls BLAS (decision 0040).
 
 use crate::Unsupported;
 use crate::function::{Destination, Function, block_label};
@@ -46,7 +50,7 @@ impl<'db> Function<'_, '_, 'db> {
         for argument in arguments {
             let value = match argument {
                 Argument::Owned(operand) => self.value(operand)?.0,
-                Argument::Borrow(place) | Argument::InOut(place) => {
+                Argument::Borrow(place) | Argument::InOut(place) | Argument::Spread(place) => {
                     self.place_value(place)?
                         .ok_or_else(|| Unsupported::new("`None` where a value is needed"))?
                         .0
@@ -141,6 +145,67 @@ impl<'db> Function<'_, '_, 'db> {
             ));
         };
         self.reduction("dot", &[left, right], destination, target)
+    }
+
+    /// Writes `left @ right` of two `f32` or `f64` matrices into `result`, the new array
+    /// lowering made, through the system BLAS, and goes to `target` (decision 0040, roadmap
+    /// 3.10.2). The call goes to the runtime's `baryon_rt_matrix_product_<float>` with the
+    /// address of `cblas_dgemm` or `cblas_sgemm` as its first argument, so this function is
+    /// the only place a BLAS symbol is named, and only a program built with `--blas` names it.
+    pub(crate) fn matrix_product(
+        &mut self,
+        arguments: &[Argument<'db>],
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        let [
+            Argument::Borrow(left),
+            Argument::Borrow(right),
+            Argument::InOut(result),
+        ] = arguments
+        else {
+            return Err(Unsupported::new(
+                "`@` through BLAS with arguments other than two borrowed matrices and a result",
+            ));
+        };
+        let (_, ty) = self.place(result)?;
+        let (element, _) = self.array(ty)?;
+        let (llvm, suffix, gemm) = match self.types.number(element) {
+            Some(Number::Float(32)) => ("float", "f32", "cblas_sgemm"),
+            Some(Number::Float(_)) => ("double", "f64", "cblas_dgemm"),
+            _ => return Err(self.types.unsupported(element)),
+        };
+        let mut values = vec![format!("ptr @{gemm}")];
+        for array in [left, right, result] {
+            let Reduced {
+                data,
+                header: Some((2, lengths, strides)),
+                ..
+            } = self.reduced(array)?
+            else {
+                return Err(Unsupported::new(
+                    "`@` through BLAS of arrays that are not matrices",
+                ));
+            };
+            values.extend([data, lengths, strides].map(|address| format!("ptr {address}")));
+        }
+        self.declare(
+            gemm,
+            &format!(
+                "declare void @{gemm}(i32, i32, i32, i32, i32, i32, {llvm}, ptr, i32, ptr, i32, \
+                 {llvm}, ptr, i32)"
+            ),
+        );
+        let function = format!("baryon_rt_matrix_product_{suffix}");
+        self.declare(
+            &function,
+            &format!(
+                "declare void @{function}({}) nounwind",
+                ["ptr"; 10].join(", ")
+            ),
+        );
+        self.line(&format!("call void @{function}({})", values.join(", ")));
+        self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
     }
 
     /// Writes `destination` as a call of the runtime's `sum` or `dot`, named `name`, over

@@ -11,14 +11,17 @@ worked out once, by `slice_positions`, `head_positions` or `tail_positions`, and
 copies those elements of each column.
 
 Sorting, for `df.sort_values(...)`: `row_positions` gives the rows in their order, `ordered`
-(`ordered_flags` for a column of `bool`) puts them in the order of one column, once for each
-column sorted by, the last one first, and `taken` copies each column in that order.
+of `<std>/frame_order.byn` (`ordered_flags` for a column of `bool`) puts them in the order of
+one column, once for each column sorted by, the last one first, and `taken` copies each column
+in that order.
 
 Grouping, for `df.groupby(...).agg(...)`: the rows are sorted by the key columns, after
 `kept_rows` leaves out those with a missing key; `group_marks`, once for each key column,
 then `group_starts` find where each group starts; `group_keys` gives one row of each group
 to read its keys from; and `group_floats` or `group_integers` reduces one column, which the
-compiler has converted to `f64` or `i64`, to one value for each group.
+compiler has converted to `f64` or `i64`, to one value for each group. For one key of
+whole numbers `run_starts` of `<std>/frame_order.byn` finds the starts, and its
+`keyed_sums` the sums and means of floats (roadmap 3.13.21).
 
 Printing, for `print(df)` and a frame in an f-string: each column is formatted with
 `float_cells`, `single_cells`, `cells` or `text_cells`, by the type of its elements, and
@@ -48,6 +51,17 @@ def masked[T](column: Array[T, 1], mask: Array[bool, 1]) -> Array[T, 1]:
 def taken[T](column: Array[T, 1], positions: Array[i64, 1]) -> Array[T, 1]:
     """The elements of `column` at `positions`, in that order, as a new array."""
     return column[positions]
+
+
+def repeated[T: Copy](count: int, value: T) -> Array[T, 1]:
+    """A column of `count` rows that all hold `value`: what `df.assign(fee=0.5)` adds."""
+    return Array.fill((count,), value)
+
+
+def text_repeated(count: int, text: str) -> Array[str, 1]:
+    """A column of `count` rows that all hold a copy of `text`: `df.assign(venue="NYSE")`.
+    Cost: `count` copies of the text."""
+    return Array([text.copy() for row in range(count)])
 
 
 def slice_positions(
@@ -90,71 +104,10 @@ def tail_positions(count: int, rows: int) -> Array[i64, 1]:
 
 def row_positions(count: int) -> Array[i64, 1]:
     """The positions of all `count` rows of a frame, in order: where a sort starts."""
-    return Array([at for at in range(count)])
-
-
-def ordered[T: Number](
-    column: Array[T, 1], start: Array[i64, 1], ascending: bool
-) -> Array[i64, 1]:
-    """The positions `start` put in the order of the values of `column` they name: rising when
-    `ascending`, falling when not. The sort is stable, so rows with equal values keep the order
-    they have in `start`; sorting by the last key first and the first key last therefore
-    sorts by several keys. NaN goes last in both directions, as in pandas.
-
-    A merge sort from the bottom up: `n log n` comparisons and two arrays of `n` positions,
-    whatever the values are."""
-    count = len(start)
-    order = start.copy()
-    spare = start.copy()
-    valid = 0
+    positions = Array.fill((count,), 0)
     for at in range(count):
-        value = column[start[at]]
-        if value == value:
-            order[valid] = start[at]
-            valid += 1
-    missing = valid
-    for at in range(count):
-        value = column[start[at]]
-        if value != value:
-            order[missing] = start[at]
-            missing += 1
-    width = 1
-    while width < valid:
-        low = 0
-        while low < valid:
-            middle = min(low + width, valid)
-            high = min(low + 2 * width, valid)
-            left = low
-            right = middle
-            for at in range(low, high):
-                from_left = right >= high
-                if left < middle and right < high:
-                    first = column[order[left]]
-                    second = column[order[right]]
-                    if ascending:
-                        from_left = not (second < first)
-                    else:
-                        from_left = not (second > first)
-                if from_left:
-                    spare[at] = order[left]
-                    left += 1
-                else:
-                    spare[at] = order[right]
-                    right += 1
-            low = high
-        for at in range(valid):
-            order[at] = spare[at]
-        width *= 2
-    return order
-
-
-def ordered_flags(
-    column: Array[bool, 1], start: Array[i64, 1], ascending: bool
-) -> Array[i64, 1]:
-    """`ordered` for a column of `bool`, where `False` comes before `True`. Cost: one more
-    array of `n` integers."""
-    numbers = Array([1 if flag else 0 for flag in column])
-    return ordered(numbers, start, ascending)
+        positions[at] = at
+    return positions
 
 
 def kept_rows[T: Number](column: Array[T, 1], order: Array[i64, 1]) -> Array[i64, 1]:
@@ -165,7 +118,7 @@ def kept_rows[T: Number](column: Array[T, 1], order: Array[i64, 1]) -> Array[i64
 
 def no_marks(order: Array[i64, 1]) -> Array[bool, 1]:
     """One `False` for each row of `order`: the marks before any key column is taken in."""
-    return Array([False for at in order])
+    return Array.fill((len(order),), False)
 
 
 def group_marks[T: Number](
@@ -174,10 +127,16 @@ def group_marks[T: Number](
     """`marks` with one more key column taken in: element `i` is true where row `order[i]`
     starts a group, that is where it is the first row or its value in `column` differs from
     that of the row before it in `order`."""
-    return Array([
-        marks[at] or at == 0 or column[order[at]] != column[order[at - 1]]
-        for at in range(len(order))
-    ])
+    result = marks.copy()
+    if len(order) > 0:
+        result[0] = True
+        before = column[order[0]]
+        for at in range(1, len(order)):
+            value = column[order[at]]
+            if value != before:
+                result[at] = True
+            before = value
+    return result
 
 
 def group_starts(marks: Array[bool, 1]) -> Array[i64, 1]:
@@ -195,7 +154,12 @@ def group_keys(order: Array[i64, 1], starts: Array[i64, 1]) -> Array[i64, 1]:
 
 def _values(column: Array[f64, 1], order: Array[i64, 1], low: int, high: int) -> list[f64]:
     """The values of one group, rows `low` to `high` of `order`, without NaN."""
-    return [column[order[at]] for at in range(low, high) if not isnan(column[order[at]])]
+    values: list[f64] = []
+    for at in range(low, high):
+        value = column[order[at]]
+        if value == value:
+            values.append(value)
+    return values
 
 
 def _reduced(values: list[f64], how: int) -> f64:
@@ -266,6 +230,24 @@ def group_integers(
             if how == 2:
                 value = max(value, other)
         result[group] = value
+    return Array(result)
+
+
+def group_distinct[T: Number](
+    column: Array[T, 1], ids: Array[i64, 1], order: Array[i64, 1], starts: Array[i64, 1]
+) -> Array[i64, 1]:
+    """How many different values each group holds in `column`, NaN left out, as pandas's
+    `nunique` leaves it out. `ids` numbers the values: two rows have one number exactly when
+    they hold the same value, and no number reaches the count of rows. `seen` remembers the
+    last group each number was counted in, so the cost is one pass over the rows."""
+    seen = Array.fill((len(ids),), -1)
+    result = [0 for group in range(len(starts) - 1)]
+    for group in range(len(starts) - 1):
+        for at in range(starts[group], starts[group + 1]):
+            row = order[at]
+            if column[row] == column[row] and seen[ids[row]] != group:
+                seen[ids[row]] = group
+                result[group] += 1
     return Array(result)
 
 

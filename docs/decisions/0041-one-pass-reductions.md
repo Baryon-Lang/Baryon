@@ -1,6 +1,6 @@
 # 0041. A sum of a whole-array expression is computed one pairwise leaf at a time
 
-Status: Accepted
+Status: Accepted, amended 2026-11-19
 Date: 2026-11-11
 Roadmap: 3.9
 
@@ -13,8 +13,8 @@ array is summed: one allocation, `n` writes and `n` reads more than the sum need
 which computes the same bits without the array, 3.3 ms.
 
 The result must keep its bits. `a.sum()` of floats adds in NumPy's pairwise tree (roadmap I.22,
-Collins, 2026-11-08), so `(a * b).sum()` has the bits of `numpy.sum(a * b)`. Adding one element
-at a time would be one pass, but different bits, and more rounding error.
+chief designer, 2026-11-08), so `(a * b).sum()` has the bits of `numpy.sum(a * b)`. Adding one
+element at a time would be one pass, but different bits, and more rounding error.
 
 NumPy's tree splits a run of more than 128 values at the multiple of 8 nearest below its middle,
 and adds a run of at most 128, a *leaf*, in 8 running totals. The leaves depend only on the
@@ -74,3 +74,42 @@ stack.
 - Only array expansion and the backend change; no pass sees a new kind of statement.
 - The buffer size, 128, is NumPy's leaf size. Changing NumPy's tree would change both the stored
   and the one-pass sums together, since both use the runtime's tree.
+
+## Amendment, 2026-11-19: integer sums and sums along an axis
+
+The chief designer accepted this amendment on 2026-11-19 (roadmap 3.9.1, idea I.46).
+
+The two cases the record left out still store the expression: `(a * b + r).sum()` of integers
+and `((u - v) * (u - v)).sum(axis=0)`. Measured with the release driver on 4 million elements,
+each sum takes about 6 to 7 ms and builds a 32 MB temporary that it reads once. Lowering writes
+both sums as its own loops over that temporary, so array expansion never sees that the
+temporary is only summed.
+
+### In `mir`: `Sum` takes integers, and one new built-in
+
+- `Builtin::Sum` also takes an array of integers or `bool`s. It is the exact sum, added one
+  element at a time in row-major order with checked `+` (decision 0030); a `bool` counts as 0
+  or 1 and the destination is an `i64`.
+- `Builtin::SumAlong` takes the array, `Borrow`ed, and the axis, an `i64` constant passed
+  `Owned`. Its destination gets a new array with the array's lengths less the axis, of the
+  element type, or `i64` for `bool`s. Each element is added in the order lowering's loops add
+  it today: floats along the last axis in the pairwise tree, as `Sum` adds a row, and every
+  other case one value at a time in row-major order.
+
+Lowering writes either form only in the shape the record already uses: `t = e`, the call on
+`t`, and a drop of `t`. A sum of a stored array keeps lowering's loops. Array expansion rewrites
+every such call, so neither form reaches a backend; the LLVM backend reports a `SumAlong` it
+is given instead of building it.
+
+### In array expansion
+
+The expression is expanded with the same broadcasting and length checks as before, so the
+panics are the same. An integer sum keeps one running total, so an overflow panics at the same
+element. A sum along an axis writes each value into its place in the result. A float sum along
+the last axis writes one row at a time into a buffer as long as a row, and sums it with `Sum`,
+so each row has the bits it has today; the buffer is one row, not the whole expression.
+
+### Consequences
+
+- The bits and the panics are unchanged, because each order is the one lowering uses today.
+- `mir` changes in its own pull request, before the lowering and array expansion work.

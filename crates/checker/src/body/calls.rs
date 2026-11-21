@@ -1,5 +1,6 @@
 //! Calls: to functions, struct constructors, aliases of `Fixed` vectors, number conversions
-//! and the language's built-in functions. Method calls are in the `methods` module.
+//! and the language's built-in functions. Method calls are in the `methods` module, and calls
+//! of a value, such as a `Callable` parameter, in `value_calls`.
 
 use super::exclusive::Passed;
 use super::{Body, relations};
@@ -34,6 +35,12 @@ impl<'db> Body<'db> {
                 .and_then(|attribute| self.lowerer.definition(attribute)),
             _ => None,
         };
+        if let Some(error) = self.untyped_call(node, function, &arguments) {
+            return error;
+        }
+        if let Some(error) = self.star_outside_value(function, resolved, &arguments) {
+            return error;
+        }
         let callee = self.tree.text(function, self.text).to_owned();
         let ty = match resolved {
             Some(&Definition::Item(file, name)) if self.is_path_class(file, name) => {
@@ -68,7 +75,7 @@ impl<'db> Body<'db> {
                 let member = member.clone();
                 match self.math(node, &member, &arguments) {
                     Some(ty) => ty,
-                    None => self.untyped(&arguments),
+                    None => self.missing_member(node, ("math", &member), &arguments),
                 }
             }
             Some(Definition::Standard {
@@ -91,7 +98,7 @@ impl<'db> Body<'db> {
             }
             Some(Definition::Local(_)) => {
                 let ty = self.expression(function, None);
-                self.call_value(node, &callee, ty, &arguments)
+                self.call_value((node, function), &callee, ty, &arguments)
             }
             None if self.environ_value(function) => {
                 let method = self.tree.child(function, Role::Attribute);
@@ -102,11 +109,16 @@ impl<'db> Body<'db> {
                 ty
             }
             None if self.tree.kind(function) == SyntaxKind::Attribute => {
-                let grouped = self.grouped_frame(function);
-                let grouped = grouped.and_then(|frame| self.frame_agg(node, frame, &arguments));
+                let grouped = self.grouped_call(node, function, &arguments);
                 grouped.unwrap_or_else(|| self.method_call(node, function, &arguments, expected))
             }
-            Some(_) | None => self.untyped(&arguments),
+            // Any other expression, such as the result of a call, `p.derivative()(2.0)`, or
+            // an element, `fs[0](2.0)`, is called as its value is.
+            None if self.tree.kind(function) != SyntaxKind::Name => {
+                let ty = self.expression(function, None);
+                self.call_value((node, function), &callee, ty, &arguments)
+            }
+            Some(_) | None => self.unresolved_call(node, resolved, &arguments),
         };
         if !self.typed.calls.contains_key(&Key(node)) {
             self.record_builtin(node, function, &arguments, ty);
@@ -180,6 +192,18 @@ impl<'db> Body<'db> {
         name: NodeId,
         arguments: &Arguments,
     ) -> Type<'db> {
+        let overloads = self.overloads(file, name);
+        let name = if overloads.is_empty() {
+            name
+        } else {
+            match self.choose_overload(node, callee, file, &overloads, arguments) {
+                Ok(chosen) => chosen,
+                Err(error) => {
+                    self.untyped(arguments);
+                    return error;
+                }
+            }
+        };
         let Some(kind) = outline(self.db, file)
             .get(name)
             .map(|entry| entry.kind.clone())
@@ -189,14 +213,12 @@ impl<'db> Body<'db> {
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let declaration = self.db.declaration(item).declaration.clone();
         match (kind, declaration) {
-            (Kind::Function, Declaration::Function(signature)) => self.check_call(
-                node,
-                callee,
-                &signature,
-                None,
-                Callee::Function(item),
-                arguments,
-            ),
+            (Kind::Function, Declaration::Function(signature)) => {
+                let (function, before) = (Callee::Function(item), self.lowerer.diagnostics.len());
+                let returns = self.check_call(node, callee, &signature, None, function, arguments);
+                self.unfixed_type_argument((node, before), callee, &signature)
+                    .unwrap_or(returns)
+            }
             (Kind::Class(class), Declaration::Struct { fields, .. })
                 if class.base != Base::Enum =>
             {
@@ -232,14 +254,10 @@ impl<'db> Body<'db> {
                     parameters,
                     returns: Type::new(self.db, TypeKind::Struct(nominal)),
                 };
-                self.check_call(
-                    node,
-                    callee,
-                    &constructor,
-                    None,
-                    Callee::Constructor(item),
-                    arguments,
-                )
+                let (built, before) = (Callee::Constructor(item), self.lowerer.diagnostics.len());
+                let returns = self.check_call(node, callee, &constructor, None, built, arguments);
+                self.unfixed_type_argument((node, before), callee, &constructor)
+                    .unwrap_or(returns)
             }
             (Kind::Alias, Declaration::Alias(ty)) => self.construct(node, callee, ty, arguments),
             (Kind::Class(_), Declaration::Trait { .. }) => {
@@ -300,60 +318,6 @@ impl<'db> Body<'db> {
             }
             _ => self.untyped(arguments),
         }
-    }
-
-    /// A call to a value, such as a `Callable` parameter.
-    pub(super) fn call_value(
-        &mut self,
-        node: NodeId,
-        callee: &str,
-        ty: Type<'db>,
-        arguments: &Arguments,
-    ) -> Type<'db> {
-        if let TypeKind::Function { callable, .. } = ty.kind(self.db) {
-            return self.call_value(node, callee, *callable, arguments);
-        }
-        match ty.kind(self.db) {
-            TypeKind::Callable {
-                parameters,
-                returns,
-            } => {
-                let signature = Signature {
-                    type_parameters: Vec::new(),
-                    parameters: parameters
-                        .iter()
-                        .enumerate()
-                        .map(|(index, &ty)| Parameter {
-                            name: format!("argument {}", index + 1),
-                            ty,
-                            mode: Mode::Borrow,
-                            default: false,
-                        })
-                        .collect(),
-                    returns: *returns,
-                };
-                self.check_call(node, callee, &signature, None, Callee::Value, arguments)
-            }
-            _ if relations::is_open(self.db, ty) || !self.is_value_scalar(ty) => {
-                self.untyped(arguments)
-            }
-            _ => {
-                self.untyped(arguments);
-                let message = format!(
-                    "`{callee}` has type `{}`, which cannot be called",
-                    self.show(ty)
-                );
-                self.lowerer.error(node, &message, "not a function", None)
-            }
-        }
-    }
-
-    /// Whether `ty` is a number, `bool`, `str` or `None`.
-    fn is_value_scalar(&self, ty: Type<'db>) -> bool {
-        matches!(
-            ty.kind(self.db),
-            TypeKind::Primitive(_) | TypeKind::Str | TypeKind::None
-        )
     }
 
     /// Checks a call's arguments against `signature`, and returns the call's type. A method
@@ -436,6 +400,7 @@ impl<'db> Body<'db> {
         } else {
             self.generic_call(node, callee, signature, parameters, &pairs)
         };
+        self.shown_through_parameters(node, callee, &target, signature, &type_arguments);
         let mut slots = vec![None; signature.parameters.len()];
         for (slot, argument) in receiver
             .as_ref()
@@ -484,7 +449,8 @@ impl<'db> Body<'db> {
                 self.show(found)
             );
             let label = format!("type `{}`", self.show(found));
-            self.lowerer.error(argument, &message, &label, None);
+            let note = self.callable_struct_note(parameter.ty, found);
+            self.lowerer.error(argument, &message, &label, note);
         } else if parameter.mode == Mode::InOut {
             self.changed_exactly(argument, parameter, found);
         }

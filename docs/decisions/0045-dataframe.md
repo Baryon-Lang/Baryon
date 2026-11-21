@@ -1,8 +1,8 @@
 # 0045. A `DataFrame` has a schema the compiler checks, columns that are arrays, and pandas's names
 
-Status: Accepted (Collins, 2026-11-12)
+Status: Accepted (chief designer, 2026-11-12), amended 2026-11-19
 Date: 2026-11-11
-Roadmap: 3.13, 3.13.1 to 3.13.10, 3.14.4, D.21
+Roadmap: 3.13, 3.13.1 to 3.13.10, 3.13.22 to 3.13.25, 3.14.4, D.21
 
 ## Context
 
@@ -25,8 +25,8 @@ The forces:
 3. **The language has no closures, no operators on user types (D.19), no reference counting and
    no run-time type information.** pandas leans on all four: `df.apply(lambda ...)`, `Series`
    arithmetic, buffers shared between frames, and columns whose type is found at run time.
-4. **Collins's standing choices.** Native first, never wrapped Python. Library names stay the
-   ones Python users know wherever the behavior is the same (decisions 0039, 0040, 0042, 0043).
+4. **The chief designer's standing choices.** Native first, never wrapped Python. Library names stay
+   the ones Python users know wherever the behavior is the same (decisions 0039, 0040, 0042, 0043).
    A large copy is never hidden (the `dict.get` choice of 1.13.14).
 5. **Missing values are open (D.21)**, and a table cannot be read from a real file without them.
 
@@ -64,8 +64,8 @@ and runs on today's compiler, and it found what is missing:
 
 ## Decision
 
-Collins accepted this on 2026-11-12, choosing the schema in the type over columns found at run
-time, `None` with a validity bit over `NaN` as missing and over masked arrays, and pandas's
+The chief designer accepted this on 2026-11-12, choosing the schema in the type over columns found
+at run time, `None` with a validity bit over `NaN` as missing and over masked arrays, and pandas's
 names without a row index over Polars's names and over a row index.
 
 ### 1. The schema is part of the type (way A)
@@ -168,13 +168,13 @@ One form serves arrays and tables: an element type `T | None`.
 `unique()` and `nunique()` are methods of a rank-1 array, so `df.symbol.unique()` reads as it
 does in pandas, and `unique` gives the values in the order they first appear, as pandas does
 and `np.unique` does not. `df.value_counts("symbol")` is a method of the frame and gives a frame
-with the columns `symbol` and `count`. Collins chose this on 2026-11-13 over NumPy's sorted
-order and over methods of the frame only.
+with the columns `symbol` and `count`. The chief designer chose this on 2026-11-13 over NumPy's
+sorted order and over methods of the frame only.
 
 `df.describe()` gives a frame whose first column, `statistic`, a column of `str`, holds the
 names pandas has as its row index (`count`, `mean`, `std`, `min`, `25%`, `50%`, `75%`,
 `max`), followed by one `f64` column for each column of numbers under its own name. Polars
-lays `describe` out the same way. Collins chose this on 2026-11-13 over one row for each
+lays `describe` out the same way. The chief designer chose this on 2026-11-13 over one row for each
 column and over leaving `describe` out until frames have row labels.
 
 `DataFrame` and `concat` are built-in names, as `Array` is. `read_csv` takes its schema from the
@@ -262,3 +262,51 @@ Each of these is real work the study counted, not an oversight. Idea I.49 keeps 
 - D.19 is not needed: masks and column arithmetic are operations on built-in arrays.
 - The first version is about 30 weeks with CSV, not 5, and far short of pandas. The roadmap
   rows say so.
+
+## Amendment, 2026-11-19: the other spellings of `groupby`
+
+The chief designer accepted this amendment on 2026-11-19, as six points of one question
+(roadmap 3.13.22 to 3.13.25).
+
+Section 4 gives grouping one spelling, `df.groupby(keys).agg(new=("column", "reduction"))`.
+pandas users write several others first, and each was a compile error. Five of them are
+now accepted beside it. All are other ways to write that one call: none adds a type, a rule of
+ownership or a reduction, and the result is always a frame of the key columns followed by
+the reduced columns, with no index, as section 4 already says of `groupby`.
+
+`df.groupby(...)` is still not a value. It is a step that the same expression must finish
+with a reduction, a choice of columns and a reduction, or a `for` loop.
+
+1. **The reductions as methods.** `df.groupby("k").sum()` reduces every column that is not a
+   key, and `df.groupby("k")["v"].sum()`, `df.groupby("k")[["v", "n"]].mean()` and
+   `df.groupby("k").v.mean()` reduce the columns chosen. The methods are `sum`, `mean`,
+   `min`, `max`, `count`, `first`, `last`, `std`, `var`, `median`, `nunique` and `size`.
+   Each gives a frame of the key columns, then each reduced column under its own name;
+   `size()` gives the key columns and a column `size`. This is what pandas gives with
+   `as_index=False`. In pandas, without it, the keys are the index and
+   `df.groupby("k")["v"].sum()` is a Series; Baryon has no index and gives the frame.
+2. **Text under a reduction of every column.** `df.groupby("k").mean()` on a frame with a
+   column of `str` is a compile error that names the column, as the Consequences require
+   of a sum of text. Written out, `numeric_only=True` leaves the columns of `str` out, as
+   in pandas. `min`, `max`, `first`, `last`, `count`, `nunique` and `size` take text as
+   they do in `agg`. pandas joins the texts for `sum` and raises for `mean` when the line
+   runs.
+3. **Arguments of `groupby`.** `as_index=False` is accepted and changes nothing, since it is
+   what Baryon does. `as_index=True` is a compile error that says a frame has no index.
+   `sort=False` gives the groups in the order their keys first appear, where the default
+   sorts them. `dropna=False`, a group for the rows whose key is missing, is not built yet.
+4. **Other forms of `agg`.** `agg({"v": "sum", "n": "max"})` reduces each named column its
+   own way and keeps the columns' names, and `agg("sum")` is `.sum()`. `agg(["sum", "mean"])`
+   stays a compile error: its result has two levels of column names, which section 7 leaves
+   out.
+5. **The loop.** `for key, group in df.groupby("k"):` runs once for each group, in the order
+   of the keys. `key` is the group's key, and a tuple of one value when the keys are written
+   as a list, `df.groupby(["k"])`, as in pandas. `group` is a new frame of the group's rows
+   with every column, the keys included. It is a form of the `for` statement alone, as
+   `d.items()` is. Cost: one copy of each group's rows.
+6. **A stored grouping stays a compile error.** `g = df.groupby("k")` would be a value that
+   borrows the frame and owns the order of its rows, which needs a rule the language does
+   not have. Write the whole chain each time; the rows are grouped again each time.
+
+Still out, and not asked for: `transform`, `apply`, `filter`, `get_group`, `head(n)` and
+`ngroups` of a grouping.

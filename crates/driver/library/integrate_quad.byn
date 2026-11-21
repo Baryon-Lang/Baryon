@@ -1,0 +1,483 @@
+"""`quad` for `integrate` (roadmap 3.19.4): QUADPACK's adaptive quadrature on a finite interval,
+`dqagse` (QAGS) and, with `points=`, `dqagpe` (QAGP), translated step for step from the
+public-domain Fortran of Piessens, de Doncker-Kapenga, Überhuber and Kahaner (1983), which SciPy
+1.18 runs as C. Every sum and comparison is in the Fortran's order, so a result and its error
+estimate have SciPy's bits.
+
+QAGS integrates over the interval with the 21-point Gauss-Kronrod rule, then repeatedly halves the
+subinterval with the largest error estimate. When halving alone converges slowly, as at an
+integrable singularity at an end, Wynn's epsilon algorithm extrapolates the sequence of
+approximations. QAGP starts from the subintervals between the break points instead, and orders
+its extrapolation by the level of halving rather than by length.
+
+The rule, the extrapolation and the bookkeeping both share are in `integrate_quadpack`. The
+compiler reads this file for `<std>/integrate.byn`, which re-exports `quad` and
+`IntegrationError` (decision 0062); a program cannot import it.
+"""
+
+from math import inf
+from integrate_quadpack import EPSILON, HUGE, TINY, Extrapolation, bisect, conclude
+from integrate_quadpack import intervals, kronrod21, rule, sort_errors, total_area
+
+
+class IntegrationError(Exception):
+    """An integral `quad` could not compute to the requested tolerance, where SciPy returns its
+    value with an `IntegrationWarning` (decision 0065 point 3). `message` is SciPy's text."""
+
+    message: str
+
+
+def _qags[*Ts](
+    f: Callable[[f64, *Ts], f64],
+    a: f64,
+    b: f64,
+    args: tuple[*Ts],
+    tolerance: tuple[f64, f64],
+    limit: int,
+    transform: tuple[int, f64],
+) -> tuple[f64, f64, int]:
+    """The integral of `f` over [a, b] by `dqagse`, its error estimate and QUADPACK's code
+    `ier`, 0 on success; or, when `transform` is not (0, _), by `dqagie` over an infinite
+    interval mapped onto [a, b] = [0, 1] (see `kronrod15i`). `tolerance` is (`epsabs`,
+    `epsrel`); `limit` is at least 1. On a finite interval, calls `f` 21 times, then 42 times
+    per halving, for at most 21 × (2 × `limit` − 1) calls; an infinite one takes 15 per rule,
+    30 over the whole line."""
+    epsabs, epsrel = tolerance
+    if epsabs <= 0.0 and epsrel < max(50.0 * EPSILON, 0.5e-28):
+        return (0.0, 0.0, 6)
+    r = intervals(limit)
+    r.lower[0] = a
+    r.upper[0] = b
+    result, error, whole, deviation = rule(f, args, transform, a, b)
+    dres = abs(result)
+    errbnd = max(epsabs, epsrel * dres)
+    r.area[0] = result
+    r.error[0] = error
+    r.order[0] = 1
+    ier = 0
+    if error <= 100.0 * EPSILON * whole and error > errbnd:
+        ier = 2
+    if limit == 1:
+        ier = 1
+    if ier != 0 or (error <= errbnd and error != deviation) or error == 0.0:
+        return (result, error, ier)
+    table = Extrapolation(Array.zeros(52), 2, Array.zeros(3), 0)
+    table.table[0] = result
+    errmax = error
+    maxerr = 1
+    area = result
+    errsum = error
+    error = HUGE
+    nrmax = 1
+    ktmin = 0
+    extrap = False
+    noext = False
+    iroff1 = 0
+    iroff2 = 0
+    iroff3 = 0
+    ierro = 0
+    steady = dres >= (1.0 - 50.0 * EPSILON) * whole
+    small = 0.0
+    erlarg = 0.0
+    ertest = 0.0
+    correc = 0.0
+    summed = False
+    last = 2
+    while True:
+        erlast = errmax
+        a1, b1, b2, area12, erro12, previous, counted = bisect(
+            f, args, transform, r, maxerr, last
+        )
+        errsum = errsum + erro12 - errmax
+        area = area + area12 - previous
+        if counted:
+            if not (abs(previous - area12) > 1.0e-5 * abs(area12) or erro12 < 0.99 * errmax):
+                if extrap:
+                    iroff2 += 1
+                else:
+                    iroff1 += 1
+            if last > 10 and erro12 > errmax:
+                iroff3 += 1
+        errbnd = max(epsabs, epsrel * abs(area))
+        if iroff1 + iroff2 >= 10 or iroff3 >= 20:
+            ier = 2
+        if iroff2 >= 5:
+            ierro = 3
+        if last == limit:
+            ier = 1
+        if max(abs(a1), abs(b2)) <= (1.0 + 100.0 * EPSILON) * (abs(b1) + 1000.0 * TINY):
+            ier = 4
+        maxerr, errmax, nrmax = sort_errors(r, last, maxerr, nrmax)
+        if errsum <= errbnd:
+            summed = True
+            break
+        if ier != 0:
+            break
+        if last == 2:
+            small = abs(b - a) * 0.375
+            erlarg = errsum
+            ertest = errbnd
+            table.table[1] = area
+            last += 1
+            continue
+        if noext:
+            last += 1
+            continue
+        erlarg = erlarg - erlast
+        if abs(b1 - a1) > small:
+            erlarg = erlarg + erro12
+        if not extrap:
+            if abs(r.upper[maxerr - 1] - r.lower[maxerr - 1]) > small:
+                last += 1
+                continue
+            extrap = True
+            nrmax = 2
+        large = False
+        if not (ierro == 3 or erlarg <= ertest):
+            top = last
+            if last > 2 + limit // 2:
+                top = limit + 3 - last
+            for _ in range(nrmax, top + 1):
+                maxerr = r.order[nrmax - 1]
+                errmax = r.error[maxerr - 1]
+                if abs(r.upper[maxerr - 1] - r.lower[maxerr - 1]) > small:
+                    large = True
+                    break
+                nrmax += 1
+        if large:
+            last += 1
+            continue
+        table.push(area)
+        reseps, abseps = table.extrapolate()
+        ktmin += 1
+        if ktmin > 5 and error < 1.0e-3 * errsum:
+            ier = 5
+        if abseps < error:
+            ktmin = 0
+            error = abseps
+            result = reseps
+            correc = erlarg
+            ertest = max(epsabs, epsrel * abs(reseps))
+            if error <= ertest:
+                break
+        if table.n == 1:
+            noext = True
+        if ier == 5:
+            break
+        maxerr = r.order[0]
+        errmax = r.error[maxerr - 1]
+        nrmax = 1
+        extrap = False
+        small = small * 0.5
+        erlarg = errsum
+        last += 1
+    if summed:
+        return (total_area(r, last), errsum, ier - 1 if ier > 2 else ier)
+    return conclude(
+        r, last, (result, error, area, errsum, correc), (ier, ierro, steady), whole
+    )
+
+
+def _qagp[*Ts](
+    f: Callable[[f64, *Ts], f64],
+    a: f64,
+    b: f64,
+    args: tuple[*Ts],
+    tolerance: tuple[f64, f64],
+    limit: int,
+    points: Array[f64, 1],
+) -> tuple[f64, f64, int]:
+    """The integral of `f` over [a, b], a < b, by `dqagpe`, its error estimate and `ier`.
+    `points` are the break points strictly inside (a, b), increasing and distinct, as SciPy
+    passes them. Starts from the `len(points) + 1` intervals between them, 21 calls of `f`
+    each, then 42 calls per halving."""
+    epsabs, epsrel = tolerance
+    npts = len(points)
+    npts2 = npts + 2
+    if limit <= npts or (epsabs <= 0.0 and epsrel < max(50.0 * EPSILON, 0.5e-28)):
+        return (0.0, 0.0, 6)
+    r = intervals(limit)
+    nint = npts + 1
+    result = 0.0
+    error = 0.0
+    whole = 0.0
+    lower = a
+    infinite = Array.zeros(nint, bool)
+    for i in range(nint):
+        upper = points[i] if i < npts else b
+        area1, error1, absolute, deviation = kronrod21(f, lower, upper, args)
+        error = error + error1
+        result = result + area1
+        infinite[i] = error1 == deviation and error1 != 0.0
+        whole = whole + absolute
+        r.error[i] = error1
+        r.lower[i] = lower
+        r.upper[i] = upper
+        r.area[i] = area1
+        r.order[i] = i + 1
+        lower = upper
+    errsum = 0.0
+    for i in range(nint):
+        if infinite[i]:
+            r.error[i] = error
+        errsum = errsum + r.error[i]
+    dres = abs(result)
+    errbnd = max(epsabs, epsrel * dres)
+    ier = 0
+    if error <= 100.0 * EPSILON * whole and error > errbnd:
+        ier = 2
+    if nint != 1:
+        k = 0
+        for i in range(1, npts + 1):
+            largest = r.order[i - 1]
+            for j in range(i + 1, nint + 1):
+                other = r.order[j - 1]
+                if not r.error[largest - 1] > r.error[other - 1]:
+                    largest = other
+                    k = j
+            if largest != r.order[i - 1]:
+                r.order[k - 1] = r.order[i - 1]
+                r.order[i - 1] = largest
+        if limit < npts2:
+            ier = 1
+    if ier != 0 or error <= errbnd:
+        return (result, error, ier - 1 if ier > 2 else ier)
+    table = Extrapolation(Array.zeros(52), 1, Array.zeros(3), 0)
+    table.table[0] = result
+    maxerr = r.order[0]
+    errmax = r.error[maxerr - 1]
+    area = result
+    nrmax = 1
+    ktmin = 0
+    extrap = False
+    noext = False
+    erlarg = errsum
+    ertest = errbnd
+    levmax = 1
+    iroff1 = 0
+    iroff2 = 0
+    iroff3 = 0
+    ierro = 0
+    error = HUGE
+    correc = 0.0
+    steady = dres >= (1.0 - 50.0 * EPSILON) * whole
+    summed = False
+    last = npts2
+    while last <= limit:
+        level = r.level[maxerr - 1] + 1
+        erlast = errmax
+        a1, b1, b2, area12, erro12, previous, counted = bisect(
+            f, args, (0, 0.0), r, maxerr, last
+        )
+        errsum = errsum + erro12 - errmax
+        area = area + area12 - previous
+        if counted:
+            if not (abs(previous - area12) > 1.0e-5 * abs(area12) or erro12 < 0.99 * errmax):
+                if extrap:
+                    iroff2 += 1
+                else:
+                    iroff1 += 1
+            if last > 10 and erro12 > errmax:
+                iroff3 += 1
+        errbnd = max(epsabs, epsrel * abs(area))
+        if iroff1 + iroff2 >= 10 or iroff3 >= 20:
+            ier = 2
+        if iroff2 >= 5:
+            ierro = 3
+        if last == limit:
+            ier = 1
+        if max(abs(a1), abs(b2)) <= (1.0 + 100.0 * EPSILON) * (abs(b1) + 1000.0 * TINY):
+            ier = 4
+        maxerr, errmax, nrmax = sort_errors(r, last, maxerr, nrmax)
+        if errsum <= errbnd:
+            summed = True
+            break
+        if ier != 0:
+            break
+        if noext:
+            last += 1
+            continue
+        erlarg = erlarg - erlast
+        if level + 1 <= levmax:
+            erlarg = erlarg + erro12
+        if not extrap:
+            if r.level[maxerr - 1] + 1 <= levmax:
+                last += 1
+                continue
+            extrap = True
+            nrmax = 2
+        shallow = False
+        if not (ierro == 3 or erlarg <= ertest):
+            top = last
+            if last > 2 + limit // 2:
+                top = limit + 3 - last
+            for _ in range(nrmax, top + 1):
+                maxerr = r.order[nrmax - 1]
+                errmax = r.error[maxerr - 1]
+                if r.level[maxerr - 1] + 1 <= levmax:
+                    shallow = True
+                    break
+                nrmax += 1
+        if shallow:
+            last += 1
+            continue
+        table.push(area)
+        if table.n > 2:
+            reseps, abseps = table.extrapolate()
+            ktmin += 1
+            if ktmin > 5 and error < 1.0e-3 * errsum:
+                ier = 5
+            if abseps < error:
+                ktmin = 0
+                error = abseps
+                result = reseps
+                correc = erlarg
+                ertest = max(epsabs, epsrel * abs(reseps))
+                if error < ertest:
+                    break
+            if table.n == 1:
+                noext = True
+            if ier >= 5:
+                break
+        maxerr = r.order[0]
+        errmax = r.error[maxerr - 1]
+        nrmax = 1
+        extrap = False
+        levmax += 1
+        erlarg = errsum
+        last += 1
+    last = min(last, limit)
+    if summed:
+        return (total_area(r, last), errsum, ier - 1 if ier > 2 else ier)
+    return conclude(
+        r, last, (result, error, area, errsum, correc), (ier, ierro, steady), whole
+    )
+
+
+def _breaks(points: list[f64], a: f64, b: f64) -> Array[f64, 1]:
+    """The break points strictly between `a` and `b`, increasing and each once, as SciPy's
+    `np.unique` and its filter leave them."""
+    inside = Array.zeros(len(points))
+    n = 0
+    for p in points:
+        if a < p and p < b:
+            i = n
+            while i > 0 and inside[i - 1] > p:
+                i -= 1
+            if i > 0 and inside[i - 1] == p:
+                continue
+            for j in range(n, i, -1):
+                inside[j] = inside[j - 1]
+            inside[i] = p
+            n += 1
+    return inside[:n].copy()
+
+
+def _failure(ier: int, limit: int) -> str:
+    """SciPy's message for QUADPACK's code `ier`, 1 to 5."""
+    if ier == 1:
+        return (
+            f"The maximum number of subdivisions ({limit}) has been achieved.\n  "
+            + "If increasing the limit yields no improvement it is advised to "
+            + "analyze \n  the integrand in order to determine the difficulties.  "
+            + "If the position of a \n  local difficulty can be determined "
+            + "(singularity, discontinuity) one will \n  probably gain from "
+            + "splitting up the interval and calling the integrator \n  on the "
+            + "subranges.  Perhaps a special-purpose integrator should be used."
+        )
+    if ier == 2:
+        return (
+            "The occurrence of roundoff error is detected, which prevents \n  "
+            + "the requested tolerance from being achieved.  "
+            + "The error may be \n  underestimated."
+        )
+    if ier == 3:
+        return (
+            "Extremely bad integrand behavior occurs at some points of the\n  "
+            + "integration interval."
+        )
+    if ier == 4:
+        return (
+            "The algorithm does not converge.  Roundoff error is detected\n  "
+            + "in the extrapolation table.  It is assumed that the requested "
+            + "tolerance\n  cannot be achieved, and that the returned result "
+            + "(if full_output = 1) is \n  the best which can be obtained."
+        )
+    return "The integral is probably divergent, or slowly convergent."
+
+
+def _invalid(
+    tolerance: tuple[f64, f64], limit: int, points: list[f64] | None, ends: tuple[f64, f64]
+):
+    """Panics with the message SciPy's `quad` raises as `ValueError` for QUADPACK's code 6,
+    checking what SciPy checks, in its order. A panic shows its condition's source rather than
+    the values, so the last message leaves out the two numbers SciPy's has."""
+    epsabs, epsrel = tolerance
+    low, high = ends
+    tight = epsabs <= 0.0 and epsrel < max(50.0 * EPSILON, 5e-29)
+    assert not tight, (
+        "If 'epsabs'<=0, 'epsrel' must be greater than both 5e-29 and 50*(machine epsilon)."
+    )
+    if points is None:
+        assert limit >= 1, "Invalid 'limit' argument. There must be at least one subinterval"
+    else:
+        inside = True
+        for p in points:
+            inside = inside and low <= p and p <= high
+        assert inside, "All break points in 'points' must lie within the integration limits."
+        assert len(points) < limit, "Number of break points must be less than subinterval limit"
+
+
+def quad[*Ts](
+    func: Callable[[f64, *Ts], f64],
+    a: f64,
+    b: f64,
+    args: tuple[*Ts] = (),
+    epsabs: f64 = 1.49e-8,
+    epsrel: f64 = 1.49e-8,
+    limit: int = 50,
+    points: list[f64] | None = None,
+) -> Raises[tuple[f64, f64], IntegrationError]:
+    """The integral of `func` from `a` to `b` and an estimate of its absolute error, as
+    `scipy.integrate.quad` for finite `a` and `b`: QUADPACK's QAGS, or QAGP with `points=`,
+    giving SciPy's bits. `func(x, *args)` is called at points inside the interval, never at its
+    ends. The result aims at |error| ≤ max(`epsabs`, `epsrel` × |integral|), halving at most
+    `limit` subintervals; `points` are places inside the interval where `func` is hard to
+    integrate, such as a jump or a singularity, and must be fewer than `limit`. `a > b`
+    integrates backwards, and `a == b` gives (0.0, 0.0) without calling `func`.
+
+    Raises `IntegrationError` with SciPy's message where SciPy warns with
+    `IntegrationWarning`: the subdivision limit reached, roundoff, bad behavior, no
+    convergence, or a probably divergent integral (decision 0065). Panics with SciPy's message
+    where SciPy raises `ValueError`: `limit` below 1, `epsabs <= 0` with `epsrel` below
+    max(50 ε, 5e-29), or as many points as `limit`. Calls `func` at most 21 × (2 × `limit` −
+    1) times and keeps 6 × `limit` numbers.
+    """
+    if a == b:
+        return (0.0, 0.0)
+    flip = b < a
+    low = min(a, b)
+    high = max(a, b)
+    result = 0.0
+    error = 0.0
+    ier = 6
+    infinite = low == -inf or high == inf
+    if points is None:
+        if limit >= 1 and not infinite:
+            result, error, ier = _qags(func, low, high, args, (epsabs, epsrel), limit, (0, 0.0))
+        elif limit >= 1:
+            transform = (1, low)
+            if low == -inf:
+                transform = (2, 0.0) if high == inf else (-1, high)
+            result, error, ier = _qags(func, 0.0, 1.0, args, (epsabs, epsrel), limit, transform)
+    else:
+        assert not infinite, "Infinity inputs cannot be used with break points."
+        breaks = _breaks(points, low, high)
+        result, error, ier = _qagp(func, low, high, args, (epsabs, epsrel), limit, breaks)
+    if ier == 6:
+        _invalid((epsabs, epsrel), limit, points, (low, high))
+    if ier != 0:
+        raise IntegrationError(_failure(ier, limit))
+    if flip:
+        result = -result
+    return (result, error)

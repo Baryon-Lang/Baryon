@@ -7,7 +7,8 @@
 //!   lengths are checked when the line runs.
 //! - A comparison, `a > b` or `a == 2.0`, compares element by element and gives an array of
 //!   `bool`s of the broadcast shape, as `NumPy`'s does (roadmap 3.13.1). `&`, `|`, `^` and `~`
-//!   combine such arrays, and integer arrays, element by element.
+//!   combine such arrays, and integer arrays, element by element. `<<` and `>>` are not
+//!   element-wise, and are an error on an array.
 //! - `a @ b` is the matrix product of two rank-2 arrays, of a matrix and a vector, or of a
 //!   vector and a matrix.
 
@@ -28,6 +29,11 @@ impl<'db> Body<'db> {
         if operator == Operator::MatrixMultiply {
             return Some(self.matrix_product(node, left, right));
         }
+        if matches!(operator, Operator::LeftShift | Operator::RightShift)
+            && (self.is_any_array(left) || self.is_any_array(right))
+        {
+            return Some(self.array_shift(node, symbol));
+        }
         if !matches!(
             operator,
             Operator::Add
@@ -46,6 +52,19 @@ impl<'db> Body<'db> {
         self.array_operation(node, symbol, left, right, |body, a, b| {
             body.combine(node, operator, a, b)
         })
+    }
+
+    /// Reports `<<` or `>>`, `symbol`, with an array on either side (roadmap 1.9.64). The
+    /// language reference lists the element-wise operators, and the shifts are not among them:
+    /// building them element by element, as `NumPy` does, is idea I.69.
+    fn array_shift(&mut self, node: NodeId, symbol: &str) -> Type<'db> {
+        let message = format!("`{symbol}` does not apply to arrays");
+        self.lowerer.error(
+            node,
+            &message,
+            "an array",
+            Some("a shift applies to single whole numbers: shift each element in a loop"),
+        )
     }
 
     /// `left operator right` for a comparison where at least one side is an array, or `None`

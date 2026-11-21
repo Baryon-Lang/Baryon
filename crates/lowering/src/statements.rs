@@ -177,8 +177,14 @@ impl<'db> Builder<'db> {
         if self.is_list_slice(target) {
             return self.list_slice_store(target, value);
         }
+        if self.is_optional_selection(target) {
+            return self.optional_selection_store(target, value);
+        }
         if self.is_selection(target) {
             return self.selection_store(target, value);
+        }
+        if self.is_optional_element(target) {
+            return self.optional_element_store(target, value);
         }
         if self.is_column(target) {
             return self.column_store(target, value);
@@ -238,6 +244,9 @@ impl<'db> Builder<'db> {
         if self.is_selection(target) {
             return self.unsupported(statement, "in-place operators on elements an array chooses");
         }
+        if self.is_optional_augmented(statement) {
+            return self.optional_augmented(statement);
+        }
         let ty = self.ty(target);
         let array = self.is_array(ty);
         let float_parameter = self.is_float_parameter(ty);
@@ -264,7 +273,9 @@ impl<'db> Builder<'db> {
             let operands = (Operand::Copy(place.clone()), self.operand_as(value, ty));
             return self.integer_power(place, operands, ty, statement);
         }
-        let Some(operator) = arithmetic(syntax) else {
+        // `a **= b` on an array is `**` of each element (roadmap 1.9.58).
+        let power = (array && syntax == Operator::Power).then_some(mir::BinaryOperator::Power);
+        let Some(operator) = arithmetic(syntax).or(power) else {
             return self.unsupported(statement, &format!("`{}=`", syntax.symbol()));
         };
         let Some(mut place) = self.place(target) else {
