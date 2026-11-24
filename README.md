@@ -88,6 +88,10 @@ programs without Valgrind. CI has both, and there a missing OpenBLAS fails the t
 
 ## Documentation
 
+The [Learn site](https://baryon-lang.github.io/Baryon/) publishes all of `docs/` as a website with
+a sidebar and search, opening on [Learn Baryon](docs/guide/learn.md), which says where each kind
+of reader should start.
+
 New to Baryon? Start with the [beginner's guide](docs/guide/README.md), the first of six pages
 on how to code in Baryon: then [a tour of the language](docs/guide/language-tour.md),
 [arrays and numbers](docs/guide/arrays-and-numbers.md),

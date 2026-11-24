@@ -9,6 +9,10 @@ published to a package registry yet. Releases are time-based: one every two week
 
 Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 
+- The documentation has a website, the [Learn site](https://baryon-lang.github.io/Baryon/): every
+  page of `docs/`, with a sidebar and search, opening on
+  [Learn Baryon](docs/guide/learn.md), which says where each kind of reader should start. It is
+  published from `main`, so it always describes the compiler `main` builds.
 - The array and numerics layer has a name, NumBaryon: built-in arrays plus the `math`, `random`,
   `stats`, `linalg` and `fft` modules. It is a name for the documentation, not a package, so no
   program changes ([Arrays](docs/reference/arrays.md#numbaryon)).
