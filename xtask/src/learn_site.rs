@@ -41,7 +41,8 @@ const HOME_PAGE: &str = "guide/learn.md";
 
 /// What `docs/README.md`, the map of all documentation, is called on the site. mdBook makes a
 /// directory's `README.md` its `index.html`, which at the top would push out [`HOME_PAGE`], so
-/// the map is renamed and every link to it rewritten. Its edit link is the one that misses.
+/// the map is renamed and every link to it rewritten. `build` points both moved pages' edit
+/// links back at their files in `docs/`.
 const DOCUMENTATION_MAP: &str = "documentation.md";
 
 /// File types the site serves itself because a page shows them, such as the logo.
