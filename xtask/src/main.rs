@@ -15,6 +15,7 @@ mod conflicts;
 mod crate_licenses;
 mod dependencies;
 mod examples;
+mod learn_site;
 mod links;
 mod roadmap;
 
@@ -40,6 +41,8 @@ Commands:
   check-roadmap        Verify ROADMAP.md is well formed and updated by the current change
   crate-licenses <out> Write the licenses of every external crate linked into baryon and
                        libruntime.a to <out>, for the release archives
+  learn-site [<out>]   Build the Learn site, docs/ as HTML, into <out> or target/learn-site
+                       (needs mdbook)
   help                 Show this message";
 
 /// Directories never searched for files: version-control data, build output, and the
@@ -63,6 +66,7 @@ fn main() -> ExitCode {
         Some("crate-licenses") => {
             crate_licenses::write(&std::env::args().skip(2).collect::<Vec<_>>())
         }
+        Some("learn-site") => learn_site::build(std::env::args().nth(2).as_deref()),
         Some("help" | "--help" | "-h") => {
             println!("{USAGE}");
             Ok(())

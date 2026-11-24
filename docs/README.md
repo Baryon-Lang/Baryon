@@ -5,6 +5,11 @@ missing or unclear, that is a bug: open an issue.
 
 ## Learning the language
 
+The [Learn site](https://baryon-lang.github.io/Baryon/) publishes these pages as a website with a
+sidebar and search. It opens on [Learn Baryon](guide/learn.md), which shows a first program and
+says where a newcomer, a Python programmer, and a NumPy, pandas or SciPy user should start.
+`cargo xtask learn-site` builds it, and the `learn.yml` workflow publishes it from `main`.
+
 How to code in Baryon is taught by six guide pages, read in order. CI runs every step of each
 as written, so every program in them builds and prints what the page shows.
 
