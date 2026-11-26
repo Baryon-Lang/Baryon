@@ -48,8 +48,9 @@ def solve(a: Array[f32, 2], b: Array[f32, 2]) -> Raises[Array[f32, 2], LinAlgErr
 
 The vector `x` with `a @ x == b`, for a square matrix `a`: Gaussian elimination with partial
 pivoting, which at each step swaps up the row with the largest entry in the column. `a` and `b`
-are left unchanged. `solve` has four overloads ([decision 0067](../decisions/0067-library-overloading.md)),
-so the call picks the one that fits its arguments:
+are left unchanged. `solve` has four overloads
+([decision 0067](../decisions/0067-library-overloading.md)), so the call picks the one that fits
+its arguments:
 
 - **A matrix `b` of several right-hand sides**, k columns, gives a matrix `x` of k columns, as
   in NumPy: each column of `x` solves `a` against that column of `b`. `a` is factored once, so
