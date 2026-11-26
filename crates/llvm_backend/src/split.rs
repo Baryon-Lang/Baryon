@@ -11,9 +11,10 @@
 //! and reused, or written on another thread, without asking the others for numbers.
 //!
 //! The numbers are found by reading the functions' text. A constant's name is
-//! `@baryon.<kind>.N`, where the kind is `str`, `loc`, `spec`, `dict` or `dict.parts`; a dict
-//! layout's two names share their number. A metadata node is `!N`. Nothing else in the text
-//! the backend writes looks like either outside quotes, and the reader skips everything
+//! `@baryon.<kind>.N`, where the kind is `str`, `loc`, `spec`, `table`, `dict` or
+//! `dict.parts`; a dict layout's two names share their number. A metadata node is `!N`.
+//! Nothing else in the text the backend writes looks like either outside quotes, and the
+//! reader skips everything
 //! between quotes, where a message or a file name could hold any characters: inside quotes,
 //! the backend writes a quote itself as `\22`.
 
@@ -34,12 +35,13 @@ pub(crate) struct Pieces {
 }
 
 /// The prefixes of the constants' names, longest first so `dict.parts` is not read as `dict`.
-const CONSTANT_PREFIXES: [&str; 5] = [
+const CONSTANT_PREFIXES: [&str; 6] = [
     "@baryon.dict.parts.",
     "@baryon.dict.",
     "@baryon.str.",
     "@baryon.loc.",
     "@baryon.spec.",
+    "@baryon.table.",
 ];
 
 /// A number no constant has, which a constant's own name takes while it is compared with the

@@ -65,3 +65,25 @@ fn a_literal_with_a_variable_stores_each_element() {
     assert!(text.contains("store i64 %a1, ptr "), "{text}");
     assert!(!text.contains("@baryon.table."), "{text}");
 }
+
+/// Two definitions whose literals differ each get a table of their own, under different names
+/// in the module that holds both: each definition numbers its tables from the start, and the
+/// module numbers them again, as it does every other constant.
+#[test]
+fn literals_in_two_definitions_get_tables_of_their_own() {
+    let database = Database::default();
+    let text = super::module(
+        &database,
+        &[
+            ("first", listed(&database, &[Some(1), Some(2)])),
+            ("second", listed(&database, &[Some(3), Some(4)])),
+        ],
+    );
+    let names: Vec<&str> = text
+        .lines()
+        .filter(|line| line.starts_with("@baryon.table."))
+        .filter_map(|line| line.split_once(" = ").map(|(name, _)| name))
+        .collect();
+    assert_eq!(names.len(), 2, "{text}");
+    assert_ne!(names[0], names[1], "{text}");
+}
