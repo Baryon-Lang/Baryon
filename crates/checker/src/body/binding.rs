@@ -44,6 +44,7 @@ impl<'db> Body<'db> {
                 return;
             }
             self.assigned_complex_part(target);
+            self.assigned_state_element(target);
             self.assigned_module_member(target);
             // A slice takes a number for every element, `a[1:n] = 0.0` (reference, "Slices").
             // So do the elements an array chooses, `a[a < 0.0] = 0.0` (roadmap 3.13.1).
@@ -196,6 +197,7 @@ impl<'db> Body<'db> {
             return;
         }
         self.assigned_complex_part(target);
+        self.assigned_state_element(target);
         if self.maybe_none(target, current) {
             self.expression(value, None);
             return;
@@ -321,6 +323,7 @@ impl<'db> Body<'db> {
                 self.change(target);
                 let held = self.expression(target, None);
                 self.assigned_complex_part(target);
+                self.assigned_state_element(target);
                 self.expect(value.unwrap_or(target), held, ty, "the target holds");
             }
             _ => {}

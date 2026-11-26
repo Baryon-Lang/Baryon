@@ -116,12 +116,19 @@ the same types:
   each row. A row group whose distinct texts would take more than 1,048,576 bytes, pyarrow's
   limit, is written plainly, so a column of names that are all different costs nothing
   more.
+- **Each column of a row group carries its statistics**: how many values are missing, the
+  smallest and the largest. A reader asked for the rows where `price > 100` passes over a
+  row group whose largest price is below that, so a search of a large file reads less.
+  They are the statistics polars writes for the same frame: NaN is left out, a zero is
+  written as `-0.0` when it is the smallest and `0.0` when the largest, and text is ordered
+  by its UTF-8 bytes. A text longer than 4,096 bytes is not written as a smallest or
+  largest value.
 
 The writer has columns of `f64` and `f32`, of every whole number type, of `bool` and of
 `str`, and each of them with `| None`. A column of another type, such as complex numbers, is
 a compile error that names it. Numbers and booleans are stored plainly: only text has a
-dictionary so far, and no statistics are written yet, so a file with a column of few distinct
-numbers is larger than the one pandas writes.
+dictionary so far, so a file with a column of few distinct numbers is larger than the one
+pandas writes.
 
 ## Errors
 
@@ -167,8 +174,9 @@ decodes on one thread and rebuilds each float from its bytes by arithmetic. Buil
 
 `to_parquet` holds each column as plain bytes and again as compressed pages before it puts
 the file together, about twice the frame's size besides the frame, and frees it all before
-it returns. Writing the same million rows took about 0.8 s, built with `--release`, where
-polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB.
+it returns. Writing the same million rows took about 0.9 s, built with `--release`, where
+polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB. The statistics are
+less than a tenth of that time.
 
 ## Differences from pandas
 
@@ -192,7 +200,8 @@ polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB.
 
 ## Not built yet
 
-- Writing with another codec than Snappy, with dictionaries for numbers or with statistics.
+- Writing with another codec than Snappy or with dictionaries for numbers, and the page
+  indexes some writers add beside the statistics.
 - Columns of dates, times, timestamps and decimals, and of bytes that are not text: a frame
   has no column type for them yet.
 - Nested columns: lists, maps and structs.

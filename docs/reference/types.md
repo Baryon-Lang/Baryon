@@ -1025,6 +1025,24 @@ takes the type `T` under `Float`; under `Number` only an integer literal does, s
 integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which
 is what scales a vector.
 
+A `VectorSpace` state is also read by position. `len(y)` is its number of elements and `y[i]`
+reads element `i` as an `f64`, with the bounds check an `Array` has. An `f64` state has length 1,
+and `y[0]` is the number itself. Elements are only read: `y[i] = x` is an error, and a new state
+is built with `+`, `-` and `*`
+([decision 0065](../decisions/0065-integrate-api.md#amendment-2026-11-20-reading-a-state-by-position)).
+This is how an ODE solver's error norm weighs every element of any state:
+
+```python
+def norm[S: VectorSpace](y: S) -> f64:
+    total = 0.0
+    for i in range(len(y)):
+        total += y[i] * y[i]
+    return total
+```
+
+`norm(Vec3(1.0, 2.0, 2.0))`, `norm(Array([1.0, 2.0]))` and `norm(3.0)` are `9.0`, `5.0` and
+`9.0`.
+
 ### Traits
 
 A trait names a set of operations a type supports. The standard library has four, and user code
@@ -1034,7 +1052,7 @@ declares its own ([decision 0031](../decisions/0031-traits-are-protocols.md)).
 | --- | --- | --- |
 | `Number` | `+ - * /`, comparison, and literals | Every number type |
 | `Float` | `Number`, plus the `math` functions and `**`, which is `math.pow` | `f32`, `f64` |
-| `VectorSpace` | `+` and `-` with itself, and `*` by an `f64` on either side | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
+| `VectorSpace` | `+` and `-` with itself, `*` by an `f64` on either side, and reading by position: `len(y)` and `y[i]`, an `f64` | `f64`, `Fixed[f64, ...]`, `Array[f64, ...]` |
 | `Copy` | Copying on assignment | See [copy types](values-and-references.md#copy-types) |
 
 ### Declaring a trait

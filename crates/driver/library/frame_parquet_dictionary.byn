@@ -18,6 +18,8 @@ Cost: one pass over the bytes of the values to hash them, a table of at most twi
 slots as there are distinct values, and eight bytes for each value's index.
 """
 
+from frame_parquet_thrift import thrift_varint
+
 
 def _hash(raw: Array[u8, 1], first: int, last: int) -> int:
     """A hash of the bytes `raw[first:last]`, from 0 to 2 to the 32 less 1: FNV-1a of 32
@@ -124,16 +126,6 @@ def parquet_code_bits(entries: int) -> int:
     return bits
 
 
-def _varint(out: InOut[list[int]], value: int) -> None:
-    """Adds `value`, which is not negative, to `out` as a varint: seven bits to a byte,
-    lowest first, the top bit set on every byte but the last."""
-    rest = value
-    while rest >= 128:
-        out.append((rest & 127) | 128)
-        rest = rest >> 7
-    out.append(rest)
-
-
 def _repeats(codes: Array[i64, 1], at: int, end: int, most: int) -> int:
     """How many of the indices from `at`, up to `most` and never past `end`, equal the one
     at `at`. `at` is before `end`."""
@@ -159,7 +151,7 @@ def parquet_codes(codes: Array[i64, 1], first: int, count: int, bits: int) -> li
     while at < end:
         same = _repeats(codes, at, end, end - at)
         if same >= 8:
-            _varint(out, same << 1)
+            thrift_varint(out, same << 1)
             value = codes[at]
             for part in range((bits + 7) >> 3):
                 out.append((value >> (8 * part)) & 255)
@@ -169,7 +161,7 @@ def parquet_codes(codes: Array[i64, 1], first: int, count: int, bits: int) -> li
             while stop < end and _repeats(codes, stop, end, 8) < 8:
                 stop = min(end, stop + 8)
             groups = (stop - at + 7) >> 3
-            _varint(out, (groups << 1) | 1)
+            thrift_varint(out, (groups << 1) | 1)
             held = 0
             filled = 0
             for k in range(8 * groups):

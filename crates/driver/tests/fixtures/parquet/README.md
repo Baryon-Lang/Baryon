@@ -23,11 +23,20 @@ only; polars reads from them the values the tests expect.
 - `types_written.parquet` is what `to_parquet` wrote for the frame read from
   `types_snappy.parquet`, less `extra`. polars 2.1.0 reads it as a table equal to that one,
   with the same type for every column and every float the same bit for bit. Its two columns
-  of text, `w` and `x`, each have a dictionary page. The test that
+  of text, `w` and `x`, each have a dictionary page, and the statistics of every column
+  are those polars writes for the same table. The test that
   writes the frame again compares its bytes with this file, so a change to the writer shows.
   After a change that is meant, write the file again with the test's program and check it
   with polars: `a.equals(b, null_equal=True)` and `a.schema == b.schema`, where `a` is
   `types_snappy.parquet` without `extra` and `b` the new file.
+- `statistics.parquet` is what `to_parquet` wrote for the nine columns of three rows in
+  `tests/build/frame_parquet_statistics.rs`, kept for its statistics: zeros of each sign,
+  NaN, missing values, a negative whole number, booleans and text. polars 2.1.0 read it and
+  wrote the table again with `statistics=True`, and the missing count, the smallest value
+  and the largest value of every column were the same bytes in both files, as was the
+  `column_orders` entry of the metadata. After a change that is meant, write the file again
+  with the test's program and make the same comparison; a short script that walks the
+  Thrift metadata is enough.
 - `pages_v2.parquet` and `pages_v2_gzip.parquet` hold ten rows in data pages of version 2:
   `n`, an `INT64` through a dictionary, in one page of bit-packed runs and one of repeated
   runs; `s`, text in two pages; `b`, booleans stored as runs; and `x`, a `DOUBLE` whose
