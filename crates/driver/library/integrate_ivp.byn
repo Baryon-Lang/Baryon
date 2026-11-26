@@ -10,9 +10,8 @@ many times as SciPy does. SciPy forms its sums with BLAS, whose rounding depends
 processor, so results agree with SciPy's to about the last two digits, not bit for bit.
 
 The state `y0` is any `VectorSpace` type (decision 0065 point 1): an `f64` for one equation or a
-`Fixed` vector for a system. The library reads it element by element (the card 60 amendment)
-only to measure the error and to fill `y`. An `Array[f64, 1]` state is not built yet: its
-arithmetic inside a generic function shares memory between values (roadmap 1.9.75).
+`Fixed` or `Array[f64, 1]` vector for a system. The library reads it element by element (the
+card 60 amendment) only to measure the error and to fill `y`.
 
 The compiler reads this file for `<std>/integrate.byn`, which re-exports `solve_ivp`,
 `OdeResult` and `OdeSolution` (decision 0062); a program cannot import it.

@@ -1,6 +1,6 @@
-//! `solve_ivp` with RK45 (roadmap 3.19.7.2), built and run against `SciPy` 1.18.1: a `Fixed`
-//! system and `f64` equations, forward and backward, with `args=`, tolerances, `first_step=` and
-//! `max_step=`, an empty interval, and a run that fails near a singularity.
+//! `solve_ivp` with RK45 (roadmap 3.19.7.2 to 3.19.7.4), built and run against `SciPy` 1.18.1: a
+//! `Fixed` or `Array` system and `f64` equations, forward and backward, with `args=`, tolerances,
+//! `first_step=` and `max_step=`, an empty interval, and a run that fails near a singularity.
 //!
 //! Each run takes `SciPy`'s steps, so the step counts and the number of calls of `fun` are
 //! `SciPy`'s exactly. `SciPy` forms its sums with BLAS, whose rounding depends on the processor,
@@ -190,7 +190,7 @@ def main():
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: max_step > 0.0, \"`max_step` must be positive.\"\n  \
-         --> <std>/integrate_ivp.byn:318:5\n"
+         --> <std>/integrate_ivp.byn:317:5\n"
     );
 }
 
@@ -260,4 +260,45 @@ error: `RK54` is not a method of `solve_ivp`
 
 "
     );
+}
+
+/// An `Array[f64, 1]` state takes the same steps as a `Fixed` one, with and without `t_eval`,
+/// and frees each state once (roadmap 1.9.75): the Lorenz run of [`rk45_takes_scipys_steps`]
+/// and of [`t_eval_reports_the_times_asked_for`], with the state held in an `Array`.
+#[test]
+fn an_array_state_takes_scipys_steps() {
+    let program = "\
+from integrate import OdeResult, solve_ivp
+
+
+def lorenz(t: f64, y: Array[f64, 1]) -> Array[f64, 1]:
+    dx = 10.0 * (y[1] - y[0])
+    return Array([dx, y[0] * (28.0 - y[2]) - y[1], y[0] * y[1] - 8.0 / 3.0 * y[2]])
+
+
+def show(r: OdeResult):
+    steps = len(r.t)
+    last = r.y[0, steps - 1]
+    print(r.status, r.nfev, steps, r.y.shape[0], r.t.sum(), r.y.sum(), r.t[steps - 1], last)
+
+
+def main():
+    y0 = Array([1.0, 1.0, 1.0])
+    show(solve_ivp(lorenz, (0.0, 2.0), y0))
+    times: Array[f64, 1] = Array.zeros(9)
+    for i in range(9):
+        times[i] = f64(i) / 4.0
+    show(solve_ivp(lorenz, (0.0, 2.0), y0, t_eval=times))
+    print(y0)
+";
+    let directory = package("solve-ivp-array", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    let output = String::from_utf8_lossy(&ran.stdout);
+    let expected = "\
+0 158 23 3 19.180155390411677 467.17867364382965 2.0 -8.167936673944697
+0 158 9 3 9.0 129.40540591863066 2.0 -8.167936673944695";
+    assert_eq!(agree(expected, &output), ["[1. 1. 1.]"]);
 }

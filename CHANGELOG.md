@@ -63,11 +63,11 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   a `Fixed` vector or an `Array`. An `f64` has length 1. Elements are only read
   ([Generics](docs/reference/types.md#traits)).
 - `integrate.solve_ivp` solves an ordinary differential equation with SciPy's default method,
-  RK45, on an `f64` or `Fixed` state, with `args=`, `rtol=`, `atol=`, `first_step=` and
-  `max_step=`, and with `t_eval=` for the state at chosen times. `method=` is chosen when
-  compiling: an unknown name written as a literal is a compile error. It takes SciPy's steps
-  and returns an `OdeResult` with SciPy's fields. An `Array` state, DOP853, dense output and
-  events come later
+  RK45, on an `f64`, `Fixed` or `Array[f64, 1]` state, with `args=`, `rtol=`, `atol=`,
+  `first_step=` and `max_step=`, and with `t_eval=` for the state at chosen times. `method=` is
+  chosen when compiling: an unknown name written as a literal is a compile error. It takes
+  SciPy's steps and returns an `OdeResult` with SciPy's fields. DOP853, dense output and events
+  come later
   ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
