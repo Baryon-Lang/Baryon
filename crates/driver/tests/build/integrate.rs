@@ -94,6 +94,6 @@ def main():
     assert_eq!(
         panic_report(&run),
         "panic: assertion failed: n == intervals, \"romb needs one plus a power of 2 samples\"\n  \
-         --> <std>/integrate.byn:154:5\n"
+         --> <std>/integrate.byn:160:5\n"
     );
 }

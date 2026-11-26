@@ -18,6 +18,7 @@ The compiler reads this file for `<std>/integrate.byn`, which re-exports `solve_
 """
 
 from math import fabs, inf, sqrt
+from integrate_solution import RK45_INTERPOLANT, OdeSolution, ode_solution
 
 # Rounding of an `f64`: the gap between 1.0 and the next float, SciPy's `EPS`.
 _EPSILON: Final = 2.220446049250313e-16
@@ -31,12 +32,6 @@ _MIN_FACTOR: Final = 0.2
 _MAX_FACTOR: Final = 10.0
 # `-1 / (order + 1)` for RK45's fourth-order error estimate.
 _ERROR_EXPONENT: Final = -1.0 / 5.0
-
-
-class OdeSolution(Struct):
-    """The continuous solution of an ODE, SciPy's `OdeSolution`, called as `sol(t)`. Dense output
-    is built in row 3.19.8; until then `solve_ivp` never makes one, and `OdeResult.sol` is
-    `None`."""
 
 
 class OdeResult(Struct):
@@ -62,13 +57,13 @@ class OdeResult(Struct):
     status: int
     # SciPy's text for `status`.
     message: str
-    # The continuous solution, `None` unless `dense_output=True` (row 3.19.8).
+    # The continuous solution, `None` unless `dense_output=True`.
     sol: OdeSolution | None
     # Whether `status` is 0 or more.
     success: bool
 
 
-def _spacing(t: f64, direction: f64) -> f64:
+def spacing(t: f64, direction: f64) -> f64:
     """The gap from `t` to the next `f64` in the direction of the sign of `direction`, SciPy's
     `abs(np.nextafter(t, direction * inf) - t)`: 2**-52 times the power of two at or below |t|,
     half that when stepping from a power of two toward zero, and the smallest float below the
@@ -97,7 +92,7 @@ def _scaled_norm[S: VectorSpace](values: S, y: S, tolerances: tuple[f64, f64]) -
     return sqrt(total) / sqrt(f64(len(values)))
 
 
-def _initial_step[S: VectorSpace, *Ts](
+def initial_step[S: VectorSpace, *Ts](
     fun: Callable[[f64, S, *Ts], S],
     t0: f64,
     y0: S,
@@ -105,10 +100,12 @@ def _initial_step[S: VectorSpace, *Ts](
     args: tuple[*Ts],
     bounds: tuple[f64, f64, f64],
     tolerances: tuple[f64, f64],
+    exponent: f64,
 ) -> f64:
     """The size of the first step, SciPy's `select_initial_step`, from the time `t0`, state `y0`
-    and slope `f0`, with `bounds` as `(t_bound, max_step, direction)`. Calls `fun` once, and is
-    called only when the interval is not empty and the state has elements."""
+    and slope `f0`, with `bounds` as `(t_bound, max_step, direction)` and `exponent` as
+    `1 / (order + 1)` for the method's error estimator: 0.2 for RK45, 0.125 for DOP853. Calls
+    `fun` once, and is called only when the interval is not empty and the state has elements."""
     t_bound, max_step, direction = bounds
     interval_length = fabs(t_bound - t0)
     d0 = _scaled_norm(y0, y0, tolerances)
@@ -122,7 +119,7 @@ def _initial_step[S: VectorSpace, *Ts](
     d2 = _scaled_norm(f1 - f0, y0, tolerances) / h0
     h1 = max(1e-6, h0 * 1e-3)
     if d1 > 1e-15 or d2 > 1e-15:
-        h1 = (0.01 / max(d1, d2)) ** (1.0 / 5.0)
+        h1 = (0.01 / max(d1, d2)) ** exponent
     return min(min(100.0 * h0, h1), min(interval_length, max_step))
 
 
@@ -136,7 +133,7 @@ def _rk45_step[S: VectorSpace, *Ts](
 ) -> tuple[S, S, S, S, S, S, S, S]:
     """One Dormand-Prince step of `h` from the time `t`, state `y` and slope `f`: the
     fifth-order state at `t + h`, its slope, the error estimate, the difference from the
-    fourth-order state, and the five stages between the two slopes, which `_interpolate` reads
+    fourth-order state, and the five stages between the two slopes, which `_interpolant` reads
     for `t_eval`. Calls `fun` six times. Each sum adds the stages in order, the
     coefficient on the left, as SciPy's `rk_step` and `_estimate_error` write it."""
     k2 = fun(t + 0.2 * h, y + (f * 0.2) * h, *args)
@@ -180,24 +177,13 @@ def _rk45_step[S: VectorSpace, *Ts](
     return (y_new, f_new, e * h, k2, k3, k4, k5, k6)
 
 
-def _interpolate[S: VectorSpace](
-    t_old: f64,
-    h: f64,
-    y_old: S,
-    f: S,
-    k2: S,
-    k3: S,
-    k4: S,
-    k5: S,
-    k6: S,
-    f_new: S,
-    t: f64,
-) -> S:
-    """The state at `t` within a step, from Dormand-Prince's fourth-order interpolant, SciPy's
-    `RkDenseOutput`, for a step of `h` from `t_old` and `y_old` whose seven stages run from the
-    slope `f` to the slope `f_new`. With `x = (t - t_old) / h`, the state is
-    `y_old + h * (q0 x + q1 x**2 + q2 x**3 + q3 x**4)`, each `q` a sum of the seven stages, as
-    SciPy's `K.T.dot(P)` adds them."""
+def _interpolant[S: VectorSpace](
+    f: S, k2: S, k3: S, k4: S, k5: S, k6: S, f_new: S
+) -> tuple[S, S, S, S]:
+    """The four coefficients `q0` to `q3` of Dormand-Prince's fourth-order interpolant, SciPy's
+    `RkDenseOutput`, for a step whose seven stages run from the slope `f` to the slope `f_new`.
+    Each `q` is a sum of the seven stages, as SciPy's `K.T.dot(P)` adds them; `_dense` reads
+    them."""
     q0 = (
         f * 1.0
         + k2 * 0.0
@@ -234,11 +220,19 @@ def _interpolate[S: VectorSpace](
         + k6 * (-1453857185.0 / 822651844.0)
         + f_new * (69997945.0 / 29380423.0)
     )
+    return (q0, q1, q2, q3)
+
+
+def _dense[S: VectorSpace](
+    t_old: f64, h: f64, y_old: S, q: tuple[S, S, S, S], t: f64
+) -> S:
+    """The state at `t` within a step of `h` from `t_old` and `y_old`, from the interpolant `q`:
+    with `x = (t - t_old) / h`, `y_old + h * (q0 x + q1 x**2 + q2 x**3 + q3 x**4)`."""
     x = (t - t_old) / h
     x2 = x * x
     x3 = x2 * x
     x4 = x3 * x
-    return h * (q0 * x + q1 * x2 + q2 * x3 + q3 * x4) + y_old
+    return h * (q[0] * x + q[1] * x2 + q[2] * x3 + q[3] * x4) + y_old
 
 
 def _error_norm[S: VectorSpace](error: S, y: S, y_new: S, tolerances: tuple[f64, f64]) -> f64:
@@ -252,11 +246,17 @@ def _error_norm[S: VectorSpace](error: S, y: S, y_new: S, tolerances: tuple[f64,
     return sqrt(total) / sqrt(f64(len(error)))
 
 
-def _result[S: VectorSpace](
-    ts: list[f64], ys: list[S], n: int, nfev: int, status: int, message: str
+def ode_result[S: VectorSpace](
+    ts: list[f64],
+    ys: list[S],
+    n: int,
+    counts: tuple[int, int],
+    message: str,
+    sol: Owned[OdeSolution | None],
 ) -> OdeResult:
     """The `OdeResult` of a run that kept the times `ts` and the states `ys`, each state a
-    column of `y`."""
+    column of `y`, with `counts` as `(nfev, status)` and the continuous solution `sol`."""
+    nfev, status = counts
     times: Array[f64, 1] = Array.zeros(len(ts))
     states: Array[f64, 2] = Array.zeros((n, len(ts)))
     for j in range(len(ts)):
@@ -264,10 +264,10 @@ def _result[S: VectorSpace](
         for i in range(n):
             states[i, j] = ys[j][i]
     success = status == 0
-    return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), None, success)
+    return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), sol, success)
 
 
-def _checked_times(t_eval: Array[f64, 1], t0: f64, t_bound: f64) -> Array[f64, 1]:
+def checked_times(t_eval: Array[f64, 1], t0: f64, t_bound: f64) -> Array[f64, 1]:
     """`t_eval`, after SciPy's checks: every time within `t_span`, and in the direction of the
     run, each strictly after the one before. Panics with SciPy's message where SciPy raises
     `ValueError`."""
@@ -288,6 +288,7 @@ def solve_ivp[S: VectorSpace, *Ts](
     y0: S,
     method: str = "RK45",
     t_eval: Array[f64, 1] | None = None,
+    dense_output: bool = False,
     args: tuple[*Ts] = (),
     first_step: f64 | None = None,
     max_step: f64 = inf,
@@ -302,9 +303,11 @@ def solve_ivp[S: VectorSpace, *Ts](
     step is longer than `max_step`. A `t_span` that runs backwards integrates backwards.
 
     With `t_eval`, `t` holds those times instead, and `y` the state at each, read from the
-    interpolant of the step that covers it; an empty `t_span` reports none. `method` is
-    `"RK45"`: the checker sends a call whose method is held in a variable to
-    `_solve_ivp_named`, and reports any other literal (decision 0065 point 2).
+    interpolant of the step that covers it; an empty `t_span` reports none. With `dense_output`,
+    `sol` is the `OdeSolution` of every step's interpolant, called as `sol(t)`; otherwise it is
+    `None`. `method` is
+    `"RK45"` here: the checker sends `"DOP853"` to `solve_ivp_dop853`, a method held in a
+    variable to `_solve_ivp_named`, and reports any other literal (decision 0065 point 2).
 
     A run that cannot go on, because a step would be smaller than ten times the spacing of
     floats at `t`, stops with `status` -1, `success` False and SciPy's `message`, and returns
@@ -332,7 +335,7 @@ def solve_ivp[S: VectorSpace, *Ts](
         h_abs = first_step
     elif n > 0 and t_bound != t0:
         bounds = (t_bound, max_step, direction)
-        h_abs = _initial_step(fun, t, y, f, args, bounds, tolerances)
+        h_abs = initial_step(fun, t, y, f, args, bounds, tolerances, 0.2)
         nfev += 1
     # The times `t_eval` asks for, in the order of the run, and the next one to report; with no
     # `t_eval` the run reports every step instead, starting with `t0`.
@@ -340,13 +343,18 @@ def solve_ivp[S: VectorSpace, *Ts](
     # and stepping forwards finds nothing.
     wanted: Array[f64, 1] = Array.zeros(0)
     if t_eval is not None:
-        checked = _checked_times(t_eval, t0, t_bound)
+        checked = checked_times(t_eval, t0, t_bound)
         if t_bound != t0:
             wanted = checked
     every_step = t_eval is None
     position = 0
     ts: list[f64] = []
     ys: list[S] = []
+    # With `dense_output`, the times between the steps, the state at each step's start and each
+    # step's four interpolant coefficients, for `sol`.
+    steps: list[f64] = [t0]
+    starts: list[S] = []
+    polynomials: list[S] = []
     if every_step:
         ts.append(t0)
         ys.append(y * 1.0)
@@ -363,9 +371,15 @@ def solve_ivp[S: VectorSpace, *Ts](
                 ts.append(wanted[position])
                 ys.append(y * 1.0)
                 position += 1
+            if dense_output:
+                # SciPy's constant interpolant for a step of no length.
+                steps.append(t)
+                starts.append(y * 1.0)
+                for _ in range(4):
+                    polynomials.append(y * 0.0)
             finished = True
             continue
-        min_step = 10.0 * _spacing(t, direction)
+        min_step = 10.0 * spacing(t, direction)
         h_abs = min(h_abs, max_step)
         if h_abs < min_step:
             h_abs = min_step
@@ -387,11 +401,21 @@ def solve_ivp[S: VectorSpace, *Ts](
                 if rejected:
                     factor = min(1.0, factor)
                 h_abs *= factor
-                while position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0:
-                    te = wanted[position]
-                    ts.append(te)
-                    ys.append(_interpolate(t, h, y, f, k2, k3, k4, k5, k6, f_new, te))
-                    position += 1
+                covered = position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0
+                if covered or dense_output:
+                    q = _interpolant(f, k2, k3, k4, k5, k6, f_new)
+                    while position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0:
+                        ts.append(wanted[position])
+                        ys.append(_dense(t, h, y, q, wanted[position]))
+                        position += 1
+                    if dense_output:
+                        q0, q1, q2, q3 = q
+                        steps.append(t_new)
+                        starts.append(y * 1.0)
+                        polynomials.append(q0)
+                        polynomials.append(q1)
+                        polynomials.append(q2)
+                        polynomials.append(q3)
                 t = t_new
                 y = y_new
                 f = f_new
@@ -405,26 +429,18 @@ def solve_ivp[S: VectorSpace, *Ts](
                 rejected = True
         if not accepted:
             message = "Required step size is less than spacing between numbers."
-            return _result(ts, ys, n, nfev, -1, message)
+            sol = _solution(dense_output, steps, starts, polynomials, n)
+            return ode_result(ts, ys, n, (nfev, -1), message, sol)
     message = "The solver successfully reached the end of the integration interval."
-    return _result(ts, ys, n, nfev, 0, message)
+    sol = _solution(dense_output, steps, starts, polynomials, n)
+    return ode_result(ts, ys, n, (nfev, 0), message, sol)
 
 
-def _solve_ivp_named[S: VectorSpace, *Ts](
-    fun: Callable[[f64, S, *Ts], S],
-    t_span: tuple[f64, f64],
-    y0: S,
-    method: str = "RK45",
-    t_eval: Array[f64, 1] | None = None,
-    args: tuple[*Ts] = (),
-    first_step: f64 | None = None,
-    max_step: f64 = inf,
-    rtol: f64 = 1e-3,
-    atol: f64 = 1e-6,
-) -> Raises[OdeResult, ValueError]:
-    """`solve_ivp` with its `method` held in a variable, picked at run time (decision 0065 point
-    2): the checker sends such a call here. Raises `ValueError` for a name that is not a method
-    built, where a literal is a compile error."""
-    if method != "RK45":
-        raise ValueError("`method` must be one of {'RK45'} or OdeSolver class.")
-    return solve_ivp(fun, t_span, y0, "RK45", t_eval, args, first_step, max_step, rtol, atol)
+def _solution[S: VectorSpace](
+    dense_output: bool, steps: list[f64], starts: list[S], polynomials: list[S], n: int
+) -> OdeSolution | None:
+    """RK45's `OdeSolution` of the steps a run kept, or `None` without `dense_output`."""
+    if not dense_output:
+        return None
+    return ode_solution(steps, starts, polynomials, (n, 4), RK45_INTERPOLANT)
+

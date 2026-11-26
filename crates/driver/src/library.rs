@@ -146,6 +146,14 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
         include_str!("../library/integrate.byn"),
     ),
     (
+        "<std>/integrate_dop853.byn",
+        include_str!("../library/integrate_dop853.byn"),
+    ),
+    (
+        "<std>/integrate_dop853_tableau.byn",
+        include_str!("../library/integrate_dop853_tableau.byn"),
+    ),
+    (
         "<std>/integrate_ivp.byn",
         include_str!("../library/integrate_ivp.byn"),
     ),
@@ -156,6 +164,10 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
     (
         "<std>/integrate_quadpack.byn",
         include_str!("../library/integrate_quadpack.byn"),
+    ),
+    (
+        "<std>/integrate_solution.byn",
+        include_str!("../library/integrate_solution.byn"),
     ),
     ("<std>/legend.byn", include_str!("../library/legend.byn")),
     ("<std>/linalg.byn", include_str!("../library/linalg.byn")),
@@ -170,6 +182,10 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
     (
         "<std>/linalg_factor.byn",
         include_str!("../library/linalg_factor.byn"),
+    ),
+    (
+        "<std>/linalg_schur.byn",
+        include_str!("../library/linalg_schur.byn"),
     ),
     (
         "<std>/linalg_svd.byn",

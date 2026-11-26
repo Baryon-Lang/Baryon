@@ -14,6 +14,11 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([`linalg.solve`](docs/reference/linear-algebra.md#linalgsolve)).
 - `fft.fftn` and `fft.ifftn` transform an array of one to four dimensions along every axis, as
   NumPy's do ([`fft.fftn`](docs/reference/linear-algebra.md#fftfftn-and-fftifftn)).
+- `linalg.eig` and `eigvals` take an `f32` matrix and give `complex64` eigenvalues and vectors,
+  computed in `f32` as NumPy does for `float32`
+  ([`linalg.eig`](docs/reference/linear-algebra.md#linalgeig-and-linalgeigvals)).
+- `math.isnan`, `isinf` and `isfinite` of a value whose type is a `T: Float` parameter build at
+  `f32`; the `f32` instance failed to compile.
 - The documentation has a website, the [Learn site](https://baryon-lang.github.io/Baryon/): every
   page of `docs/`, with a sidebar and search, opening on
   [Learn Baryon](docs/guide/learn.md), which says where each kind of reader should start. It is
@@ -68,9 +73,14 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   RK45, on an `f64`, `Fixed` or `Array[f64, 1]` state, with `args=`, `rtol=`, `atol=`,
   `first_step=` and `max_step=`, and with `t_eval=` for the state at chosen times. `method=` is
   chosen when compiling: an unknown name written as a literal is a compile error. It takes
-  SciPy's steps and returns an `OdeResult` with SciPy's fields. DOP853, dense output and events
-  come later
+  SciPy's steps and returns an `OdeResult` with SciPy's fields. `method="DOP853"` runs SciPy's
+  eighth-order method for tight tolerances, with SciPy's steps too. `dense_output=True` keeps
+  each step's interpolant, so `result.sol(t)` gives the state at any time. Events come later
   ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
+- A guide page, [Integration](docs/guide/integration.md), works through `quad`, the fixed rules
+  and `solve_ivp` in physics programs, lists what changes from SciPy and times them against it:
+  100 runs of `solve_ivp` take 0.019 s where SciPy takes 4.7 s, and 100,000 `quad` calls 0.15 s
+  where SciPy takes 2.8 s. A test checks `quad` and `solve_ivp` against mpmath's true values.
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats
