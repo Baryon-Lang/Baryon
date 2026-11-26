@@ -243,7 +243,8 @@ error: `self` has type `Bag[i64]`, found `Bag[f64]`
 
 /// Calls the checker cannot type are reported where they are written (roadmap 1.9.48 and
 /// 1.9.49): a type parameter called as a conversion under a bound that allows none, a method
-/// on a type parameter with no trait that has it, and a generic function whose arguments do
+/// on a type parameter with no trait that has it (`copy` is the one exception, roadmap 1.9.60),
+/// and a generic function whose arguments do
 /// not fix its type parameter. Before, each got an unknown type with no error, and the build
 /// stopped on "lowering does not handle this call yet" or "the LLVM backend does not compile
 /// values of type `unknown` yet".
@@ -260,7 +261,7 @@ def twice[T: VectorSpace](xs: list[T]) -> T:
 
 
 def last[T](xs: list[T]) -> T:
-    return xs[len(xs) - 1].copy()
+    return xs[len(xs) - 1].conjugate()
 
 
 def make[T]() -> list[T]:
@@ -284,11 +285,11 @@ error: `T` is a type parameter, which cannot be called
   = note: a type parameter converts a number only under `Number` or `Float`, as `T(n)`; a \
 conversion otherwise names a number type, such as `f64(n)`
 
-error: `T` has no method `copy`
+error: `T` has no method `conjugate`
   --> main.byn:11:12
    |
-11 |     return xs[len(xs) - 1].copy()
-   |            ^^^^^^^^^^^^^^^^^^^^ not known for a type parameter
+11 |     return xs[len(xs) - 1].conjugate()
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^ not known for a type parameter
    = note: a type parameter has only what its bound allows, and a trait has methods only: bound \
 it by a trait that lists the method
 

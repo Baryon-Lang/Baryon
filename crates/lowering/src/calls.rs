@@ -197,6 +197,7 @@ impl<'db> Builder<'db> {
                 self.list_append(place, *list, *value, node);
             }
             (Some(("list", "copy")), [list]) => self.list_copy(&place, *list, node),
+            (Some(("parameter", "copy")), [value]) => self.parameter_copy(place, *value, node),
             // A text array is two arrays in a tuple, as a frame is its columns, and so is an
             // array with missing values.
             (Some(("Array", "copy")), [array])

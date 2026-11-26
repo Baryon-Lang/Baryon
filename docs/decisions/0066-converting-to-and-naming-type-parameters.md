@@ -62,3 +62,29 @@ struct until after 0.3.0.
   `Pair[f64](1.5, 2.5)` is an error.
 - `T(x)` costs what the concrete conversion costs: nothing at run time for a widening one, and a
   range check where one can panic.
+
+## Amendment, 2026-11-26: `.copy()` on a type parameter
+
+Card 50 accepted `.copy()` on any `T` and left one detail open: what happens when `T` is a type
+with no copy. The chief designer settled it with card 51, and chose on 2026-11-26, with card 70
+("Common types now, the rest later"), which types are built first (roadmap 1.9.60).
+
+3. **`.copy()` on a type parameter.** Inside a function generic over `T`, under any bound or
+   none, `x.copy()` on a value of type `T` makes a new value of type `T` that owns memory of
+   its own. Each copy the compiler makes for a type argument copies as that type does: a copy
+   type, such as a number, a `bool`, an enum or a `Copy` struct, is the value itself; a `str`, a
+   list of copy types or `str`s, and an array of copy types are new ones with the same
+   elements; a struct that defines its own `copy` method calls it. A call that fixes `T` to a
+   type with no copy is an error at that call, naming the type: "`last` calls `.copy()` on
+   `T`, and `tuple[list[f64], str]` has no copy". A type with a copy that is not built through
+   a type parameter yet, a `dict`, a frame, a text array, an array with missing values, a
+   `Path` or a list of lists, is an error at the call too, which says so; building those is
+   roadmap idea I.76. Outside a generic function `.copy()` is unchanged: a number still has
+   none.
+
+Lowering writes one MIR operation for the copy, since it builds a generic body once, and the
+stages that see each instance's own type write it: monomorphization calls a struct's own
+`copy`, and the backend writes the rest. The checker finds a copy at a call by reading the
+callee's text, as it finds a value shown through a type parameter (roadmap 1.9.67), so a
+copy reached through a local variable is not seen there, and the backend reports its type
+when it cannot copy it. Copying a tuple or a `T | None` part by part is a later card.
