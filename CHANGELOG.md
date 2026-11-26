@@ -42,7 +42,7 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([Parquet files](docs/reference/parquet-files.md)).
 - `df.to_parquet(path)` writes a DataFrame as a Parquet file that pandas, polars and other
   readers open with the same columns and types, compressed with Snappy. Text is written
-  through a dictionary, as those libraries write it, and numbers are stored plainly. Each
+  through a dictionary, as those libraries write it, and so are numbers that repeat. Each
   column of each row group carries its statistics, the count of missing values and the
   smallest and largest value, so a reader that filters can pass over row groups
   ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).

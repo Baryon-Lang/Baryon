@@ -1,21 +1,23 @@
-"""Parquet files written in Baryon: the dictionary of a column of text (roadmap 3.14.6.4,
-decision 0045).
+"""Parquet files written in Baryon: the dictionary of a column (roadmap 3.14.6.4, decision
+0045).
 
-A column of text often holds few distinct values, each many times: a symbol, a country, a
-status. A Parquet writer then stores each distinct value once, in a dictionary page, and the
+A column often holds few distinct values, each many times: a symbol, a country, a status, a
+year. A Parquet writer then stores each distinct value once, in a dictionary page, and the
 column as small whole numbers that index it, which is the `RLE_DICTIONARY` encoding. pandas
-and polars write text this way, and `parquet_chunks` of `<std>/frame_parquet_write.byn` does
-with the three functions here, for each row group of a column of `str`:
+and polars write columns this way, and `parquet_chunks` of `<std>/frame_parquet_write.byn`
+does with the functions here, for each row group of a column of `str` or of numbers:
 
-- `parquet_distinct` finds the distinct values and gives each value its index. It gives up
-  when the dictionary would pass a size, and the row group is then written plainly.
+- `parquet_distinct`, for text, and `parquet_distinct_numbers` find the distinct values and
+  give each value its index. They give up when the dictionary would pass a size, and the
+  row group is then written plainly.
 - `parquet_entries` is the dictionary page: the distinct values, written plainly.
 - `parquet_codes` is what a data page holds in place of the values: the indices as runs.
 
 A program cannot import this file.
 
 Cost: one pass over the bytes of the values to hash them, a table of at most twice as many
-slots as there are distinct values, and eight bytes for each value's index.
+slots as there are distinct values, sixteen bytes a slot for numbers, and eight bytes for
+each value's index.
 """
 
 from frame_parquet_thrift import thrift_varint
@@ -98,20 +100,102 @@ def parquet_distinct(
     return entries
 
 
-def parquet_entries(raw: Array[u8, 1], ends: Array[i64, 1], entries: list[int]) -> Array[u8, 1]:
-    """The body of a dictionary page, before compression: the values `entries` names, each
-    as its length in four bytes and its bytes (`PLAIN`), in order."""
-    size = 0
-    for entry in entries:
-        size += 4 + ends[entry + 1] - ends[entry]
+def _number(raw: Array[u8, 1], at: int, width: int) -> int:
+    """The `width` bytes of `raw` from `at`, 4 or 8, as one whole number that differs
+    wherever the bytes do. The high half of eight bytes is moved down by 2 to the 31 so
+    the number stays within 64 bits."""
+    low = int(raw[at]) | (int(raw[at + 1]) << 8)
+    low = low | (int(raw[at + 2]) << 16) | (int(raw[at + 3]) << 24)
+    if width == 4:
+        return low
+    high = int(raw[at + 4]) | (int(raw[at + 5]) << 8)
+    high = high | (int(raw[at + 6]) << 16) | (int(raw[at + 7]) << 24)
+    return (high - 2147483648) * 4294967296 + low
+
+
+def _place(slots: Array[i64, 1], keys: Array[i64, 1], key: int) -> int:
+    """Where the number `key` belongs in the table `slots`, whose length is a power of two:
+    the slot whose entry has that number, which `keys` holds for each slot in use, or the
+    empty slot a search for it ends at. The search starts at a hash of the number's two
+    halves, mixed so that numbers that differ only in their high bits part, and walks
+    forward, around the end; the table is never full."""
+    mask = len(slots) - 1
+    mixed = ((key & 4294967295) ^ ((key >> 32) & 4294967295)) * 73244475
+    slot = ((mixed >> 16) ^ mixed) & mask
+    while slots[slot] != 0 and keys[slot] != key:
+        slot = (slot + 1) & mask
+    return slot
+
+
+def parquet_distinct_numbers(
+    raw: Array[u8, 1],
+    width: int,
+    first: int,
+    count: int,
+    limit: int,
+    codes: InOut[Array[i64, 1]],
+) -> list[int]:
+    """The dictionary of the `count` numbers from value `first`, where value `k` is the
+    `width` bytes of `raw` from `k * width`, 4 or 8: what `parquet_distinct` gives for text,
+    and it gives up the same way, when the entries would take more than `limit` bytes. It
+    also gives up at 16,384 entries when fifteen in sixteen of the numbers read so far
+    were new, since a column like that, an id or a measurement, will not repeat enough to
+    gain, and searching a growing table for every one of its numbers costs more than the
+    rest of the write.
+
+    Numbers are told apart by their bytes, so `0.0` and `-0.0` are two entries and each NaN
+    is its own. The table keeps each entry's number beside its slot, so a search reads no
+    value again; that is what makes this faster than hashing the bytes as text.
+    """
+    codes = Array.fill((count,), 0)
+    entries: list[int] = []
+    slots = Array.fill((1024,), 0)
+    keys = Array.fill((1024,), 0)
+    for k in range(count):
+        key = _number(raw, (first + k) * width, width)
+        slot = _place(slots, keys, key)
+        if slots[slot] == 0:
+            mostly = len(entries) == 16384 and 16 * len(entries) > 15 * k
+            if mostly or (len(entries) + 1) * width > limit:
+                none: list[int] = []
+                return none
+            entries.append(first + k)
+            slots[slot] = len(entries)
+            keys[slot] = key
+            if 2 * len(entries) > len(slots):
+                slots = Array.fill((2 * len(slots),), 0)
+                keys = Array.fill((len(slots),), 0)
+                for entry in range(len(entries)):
+                    moved = _number(raw, entries[entry] * width, width)
+                    spot = _place(slots, keys, moved)
+                    slots[spot] = entry + 1
+                    keys[spot] = moved
+                slot = _place(slots, keys, key)
+        codes[k] = slots[slot] - 1
+    return entries
+
+
+def parquet_entries(
+    raw: Array[u8, 1], ends: Array[i64, 1], width: int, entries: list[int]
+) -> Array[u8, 1]:
+    """The body of a dictionary page, before compression: the values `entries` names, in
+    order, written plainly (`PLAIN`): the `width` bytes of each number, or for text, where
+    `width` is 0, each value's length in four bytes and then its bytes."""
+    size = width * len(entries)
+    if width == 0:
+        for entry in entries:
+            size += 4 + ends[entry + 1] - ends[entry]
     body = Array.zeros(size, u8)
     at = 0
     for entry in entries:
-        first = ends[entry]
-        length = ends[entry + 1] - first
-        for part in range(4):
-            body[at + part] = u8((length >> (8 * part)) & 255)
-        at += 4
+        first = entry * width
+        length = width
+        if width == 0:
+            first = ends[entry]
+            length = ends[entry + 1] - first
+            for part in range(4):
+                body[at + part] = u8((length >> (8 * part)) & 255)
+            at += 4
         for part in range(length):
             body[at + part] = raw[first + part]
         at += length
