@@ -1,6 +1,7 @@
 //! Tests of instantiation: every place a type appears is substituted.
 
 mod callables;
+mod copies;
 mod states;
 
 use crate::instantiate;

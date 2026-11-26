@@ -125,7 +125,8 @@ impl<'db> Instances<'db> {
 
 /// The body of `instance`, ready for a backend: lowered, its type parameters replaced by the
 /// instance's arguments, each call of a trait's method sent to the method that implements it
-/// (`implementation`, decision 0031), its drops elaborated and its whole-array expressions
+/// (`implementation`, decision 0031), each copy of a struct with its own `copy` sent to that
+/// method (`copy_method`, roadmap 1.9.60), its drops elaborated and its whole-array expressions
 /// expanded. Errors for what lowering cannot handle yet.
 ///
 /// A method of a generic class, such as `Pair[T]`'s `total`, is generic in its class's type
@@ -137,6 +138,7 @@ pub(crate) fn ready<'db>(
     declared: &dyn Fn(&Nominal<'db>) -> types::Declared<'db>,
     destructor: &dyn Fn(&Nominal<'db>) -> bool,
     implementation: &monomorphize::Implementation<'_, 'db>,
+    copy_method: &monomorphize::CopyMethod<'_, 'db>,
 ) -> Result<Body<'db>, Vec<Diagnostic>> {
     let mut body = lowering::lower(db, instance.item)?;
     if !instance.arguments.is_empty() {
@@ -166,6 +168,7 @@ pub(crate) fn ready<'db>(
         body = monomorphize::instantiate(db, &body, &parameters, &instance.arguments);
         monomorphize::forward_callables(db, &mut body, &|item| callable_positions(db, item));
         monomorphize::trait_calls(db, &mut body, implementation);
+        monomorphize::own_copies(&mut body, copy_method);
     }
     // A local that holds a module-level function, `f = sq`, is called directly in every body,
     // not only in a generic instance, where `instantiate` already did it (roadmap 1.9.43).

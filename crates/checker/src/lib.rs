@@ -300,6 +300,29 @@ pub fn implementation<'db>(
     }
 }
 
+/// The struct's own `copy` method that `x.copy()` calls when `x`'s type is a type parameter
+/// and an instance makes it `ty` (roadmap 1.9.60, decision 0066), with the type arguments of
+/// its class, which a generic struct's method is compiled at. `None` when `ty` is not a struct
+/// of `package` that defines `copy` itself; the checker reports a call that makes a type
+/// parameter such a struct before any instance is made. The application passes it, closed over
+/// its database and package, to monomorphization.
+///
+/// Cost: one lookup of `copy` among the struct's own fields and methods.
+#[must_use]
+pub fn copy_method<'db>(
+    db: &'db dyn TypeDb,
+    package: Package,
+    ty: Type<'db>,
+) -> Option<(Item<'db>, Vec<Type<'db>>)> {
+    let TypeKind::Struct(nominal) = ty.kind(db) else {
+        return None;
+    };
+    match embed::own(db, package, nominal, "copy")? {
+        embed::Own::Method { item, .. } => Some((item, nominal.arguments.clone())),
+        embed::Own::Field(_) => None,
+    }
+}
+
 /// Every type error and warning in `file`, a file of `package`: the errors of each definition's
 /// declaration and, for a function, of its body, in source order, methods after their class,
 /// then the errors that compare classes, such as a struct missing a method of a trait it names
