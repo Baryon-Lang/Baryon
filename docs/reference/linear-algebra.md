@@ -436,8 +436,9 @@ Each side can have any length, with the costs `fft` gives a side. N entries cost
 N log N operations and one copy of `x`; each line along an axis is copied into a contiguous
 vector before it is transformed, so a transform along the first axis reads memory in order too.
 
-Differences from NumPy: ranks 1 to 4 only, where NumPy takes any rank, and no `s`, `axes` or
-`norm` argument. An empty array panics, where NumPy raises `ValueError`.
+Differences from NumPy: ranks 1 to 4 only, where NumPy takes any rank, and `x` must be
+`complex128`, where NumPy also takes a real array, so real samples go into a complex array
+first. No `s`, `axes` or `norm` argument. An empty array panics, where NumPy raises `ValueError`.
 
 ## Files under `fft`
 
