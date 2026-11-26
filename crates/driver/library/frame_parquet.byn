@@ -1,0 +1,425 @@
+"""Parquet files: the metadata at the end of a file, read in Baryon (roadmap 3.14.6.3,
+decision 0045).
+
+The compiler calls `parquet_plan` for `DataFrame.read_parquet(path)`; a program cannot
+import this file. The schema comes from the program, so the compiler passes the names of
+the columns it wants, then asks `<std>/frame_parquet_types.byn` for each column by the type
+its field has, and that file decodes the pages with `<std>/frame_parquet_pages.byn`.
+
+A Parquet file is `PAR1`, the pages of every column, the metadata, the metadata's length in
+four bytes, and `PAR1` again. The metadata is a Thrift struct in the compact protocol:
+each field is a byte holding the field's type and how far its number is from the last
+field's, then the value, whole numbers in zigzag varints. The functions named `thrift_`
+read that protocol through a cursor, a list of three numbers: where the next byte is, the
+number of the last field read, and the item type of the last list header. Reading past
+the end gives zeros and leaves the cursor beyond the data, which the callers check once,
+so damaged metadata is an error and never a read outside the file.
+
+The plan `parquet_plan` gives is a list of whole numbers:
+
+- three to start: the rows of the file, its row groups, and the columns wanted;
+- four for each wanted column: its physical type as Parquet numbers them (0 `BOOLEAN`, 1
+  `INT32`, 2 `INT64`, 4 `FLOAT`, 5 `DOUBLE`, 6 `BYTE_ARRAY`), 1 when a value may be
+  missing, what `_note` makes of its annotations, and its length when the type has one;
+- five for each row group and each wanted column in turn: the codec of the column's chunk
+  there, how many values the chunk holds, where its first page starts, how many bytes its
+  pages take, and the rows of the group.
+
+Cost: the whole file is read into memory, and the plan is a few numbers for each column of
+each row group.
+"""
+
+
+def thrift_byte(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """The byte at the cursor `cur[0]`, which moves past it; 0 past the end of `data`, where
+    the cursor still moves, so a cursor beyond `len(data)` marks metadata cut short."""
+    at = cur[0]
+    cur[0] = at + 1
+    if at < 0 or at >= len(data):
+        return 0
+    return int(data[at])
+
+
+def thrift_varint(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """The unsigned number at the cursor, seven bits to a byte, lowest first."""
+    value = 0
+    shift = 0
+    while shift < 63:
+        byte = thrift_byte(data, cur)
+        value = value | ((byte & 127) << shift)
+        if byte < 128:
+            return value
+        shift += 7
+    cur[0] = len(data) + 1
+    return 0
+
+
+def thrift_zigzag(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """The signed number at the cursor, written as Thrift writes one: zigzag in a varint."""
+    value = thrift_varint(data, cur)
+    return (value >> 1) ^ -(value & 1)
+
+
+def thrift_field(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """Reads the header of the next field of the Thrift struct at the cursor: gives the
+    field's type, 0 at the end of the struct, and leaves the field's number in `cur[1]`."""
+    head = thrift_byte(data, cur)
+    if head == 0:
+        return 0
+    if head >> 4 == 0:
+        cur[1] = thrift_zigzag(data, cur)
+    else:
+        cur[1] += head >> 4
+    return head & 15
+
+
+def thrift_list(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """Reads the header of the Thrift list at the cursor: gives how many items it has and
+    leaves their type in `cur[2]`."""
+    head = thrift_byte(data, cur)
+    count = head >> 4
+    cur[2] = head & 15
+    if count == 15:
+        count = thrift_varint(data, cur)
+    return count
+
+
+def thrift_skip(data: Array[u8, 1], cur: InOut[list[int]], kind: int, depth: int) -> None:
+    """Moves the cursor past a Thrift value of the type `kind`. A type that does not exist,
+    or values nested more than 64 deep, puts the cursor beyond the end."""
+    count = len(data)
+    if depth > 64 or kind < 1 or kind > 12:
+        cur[0] = count + 1
+    elif kind == 3:
+        cur[0] += 1
+    elif kind >= 4 and kind <= 6:
+        thrift_varint(data, cur)
+    elif kind == 7:
+        cur[0] += 8
+    elif kind == 8:
+        cur[0] += thrift_varint(data, cur)
+    elif kind == 9 or kind == 10:
+        items = thrift_list(data, cur)
+        item = cur[2]
+        for _ in range(items):
+            if cur[0] > count:
+                break
+            if item == 1 or item == 2:
+                cur[0] += 1
+            else:
+                thrift_skip(data, cur, item, depth + 1)
+    elif kind == 11:
+        items = thrift_varint(data, cur)
+        if items > 0:
+            kinds = thrift_byte(data, cur)
+            for _ in range(items):
+                if cur[0] > count:
+                    break
+                thrift_skip(data, cur, kinds >> 4, depth + 1)
+                thrift_skip(data, cur, kinds & 15, depth + 1)
+    elif kind == 12:
+        outer = cur[1]
+        cur[1] = 0
+        while cur[0] <= count:
+            inner = thrift_field(data, cur)
+            if inner == 0:
+                break
+            thrift_skip(data, cur, inner, depth + 1)
+        cur[1] = outer
+
+
+def parquet_load(data: Array[u8, 1], at: int) -> int:
+    """The four bytes of `data` from `at`, as one number with the first byte lowest."""
+    low = int(data[at]) | (int(data[at + 1]) << 8)
+    return low | (int(data[at + 2]) << 16) | (int(data[at + 3]) << 24)
+
+
+def _logical(data: Array[u8, 1], cur: InOut[list[int]]) -> int:
+    """Reads the `LogicalType` union at the cursor and gives its note, as `_note` numbers
+    them: 1 for text, 100 or 200 plus the width for a whole number, 9 for any other."""
+    note = 0
+    outer = cur[1]
+    cur[1] = 0
+    while cur[0] <= len(data):
+        kind = thrift_field(data, cur)
+        if kind == 0:
+            break
+        member = cur[1]
+        if member == 10 and kind == 12:
+            width = 0
+            signed = True
+            cur[1] = 0
+            while cur[0] <= len(data):
+                inner = thrift_field(data, cur)
+                if inner == 0:
+                    break
+                if cur[1] == 1 and inner == 3:
+                    width = thrift_byte(data, cur)
+                elif cur[1] == 2 and (inner == 1 or inner == 2):
+                    signed = inner == 1
+                else:
+                    thrift_skip(data, cur, inner, 0)
+            cur[1] = member
+            note = (100 if signed else 200) + width
+        else:
+            thrift_skip(data, cur, kind, 0)
+            if member == 1 or member == 4 or member == 12:
+                note = 1
+            elif member != 11:
+                note = 9
+    cur[1] = outer
+    return note
+
+
+def _note(converted: int, logical: int) -> int:
+    """What a column's annotations say its values are: 0 nothing more than the physical
+    type, 1 text, 100 plus the width in bits a signed whole number, 200 plus the width an
+    unsigned one, and 9 a kind that is not read yet, such as a date or a decimal. The newer
+    `logical` annotation wins over the older `converted` one."""
+    if logical != 0:
+        return logical
+    if converted < 0:
+        return 0
+    if converted == 0 or converted == 4 or converted == 19:
+        return 1
+    if converted >= 11 and converted <= 14:
+        return 200 + (8 << (converted - 11))
+    if converted >= 15 and converted <= 18:
+        return 100 + (8 << (converted - 15))
+    return 9
+
+
+def _same(data: Array[u8, 1], start: int, end: int, wanted: Array[u8, 1]) -> bool:
+    """Whether the bytes of `data` from `start` to `end` are `wanted`."""
+    if end - start != len(wanted) or start < 0 or end > len(data):
+        return False
+    for at in range(len(wanted)):
+        if data[start + at] != wanted[at]:
+            return False
+    return True
+
+
+def _schema(
+    data: Array[u8, 1],
+    cur: InOut[list[int]],
+    wanted: list[Array[u8, 1]],
+    leaves: InOut[list[int]],
+    plan: InOut[list[int]],
+) -> None:
+    """Reads the list of schema elements at the cursor. For each of `wanted` that names a
+    column at the top of the schema it sets, in `leaves`, which leaf of the schema the
+    column is, counted from 0 as the column chunks of a row group are ordered, and in
+    `plan` the column's four numbers. A name that is a group is given the leaf -2."""
+    total = thrift_list(data, cur)
+    left: list[int] = []
+    leaf = 0
+    for element in range(total):
+        if cur[0] > len(data):
+            break
+        physical = -1
+        length = 0
+        repetition = 0
+        name = 0
+        name_end = 0
+        children = 0
+        converted = -1
+        logical = 0
+        outer = cur[1]
+        cur[1] = 0
+        while cur[0] <= len(data):
+            kind = thrift_field(data, cur)
+            if kind == 0:
+                break
+            if cur[1] == 1:
+                physical = thrift_zigzag(data, cur)
+            elif cur[1] == 2:
+                length = thrift_zigzag(data, cur)
+            elif cur[1] == 3:
+                repetition = thrift_zigzag(data, cur)
+            elif cur[1] == 4 and kind == 8:
+                size = thrift_varint(data, cur)
+                name = cur[0]
+                cur[0] += size
+                name_end = cur[0]
+            elif cur[1] == 5:
+                children = thrift_zigzag(data, cur)
+            elif cur[1] == 6:
+                converted = thrift_zigzag(data, cur)
+            elif cur[1] == 10 and kind == 12:
+                logical = _logical(data, cur)
+            else:
+                thrift_skip(data, cur, kind, 0)
+        cur[1] = outer
+        if element == 0:
+            left.append(children)
+            continue
+        top = len(left) == 1
+        for column in range(len(wanted)):
+            if top and leaves[column] == -1 and _same(data, name, name_end, wanted[column]):
+                leaves[column] = leaf if children == 0 else -2
+                plan[3 + 4 * column] = physical
+                plan[4 + 4 * column] = repetition
+                plan[5 + 4 * column] = _note(converted, logical)
+                plan[6 + 4 * column] = length
+        left[len(left) - 1] -= 1
+        if children > 0:
+            left.append(children)
+        else:
+            leaf += 1
+        while len(left) > 1 and left[len(left) - 1] == 0:
+            left.pop()
+
+
+def _chunk(data: Array[u8, 1], cur: InOut[list[int]], found: InOut[list[int]]) -> None:
+    """Reads the `ColumnChunk` at the cursor into `found`: its codec, how many values it
+    holds with the missing ones, where its first page starts and how many bytes its pages
+    take."""
+    found[0] = -1
+    found[1] = 0
+    found[3] = 0
+    first = 0
+    dictionary = 0
+    outer = cur[1]
+    cur[1] = 0
+    while cur[0] <= len(data):
+        kind = thrift_field(data, cur)
+        if kind == 0:
+            break
+        if cur[1] == 3 and kind == 12:
+            cur[1] = 0
+            while cur[0] <= len(data):
+                inner = thrift_field(data, cur)
+                if inner == 0:
+                    break
+                if cur[1] == 4:
+                    found[0] = thrift_zigzag(data, cur)
+                elif cur[1] == 5:
+                    found[1] = thrift_zigzag(data, cur)
+                elif cur[1] == 7:
+                    found[3] = thrift_zigzag(data, cur)
+                elif cur[1] == 9:
+                    first = thrift_zigzag(data, cur)
+                elif cur[1] == 11:
+                    dictionary = thrift_zigzag(data, cur)
+                else:
+                    thrift_skip(data, cur, inner, 0)
+            cur[1] = 3
+        else:
+            thrift_skip(data, cur, kind, 0)
+    cur[1] = outer
+    # The dictionary page comes first when there is one; some writers leave its offset 0.
+    found[2] = dictionary if dictionary > 0 and dictionary < first else first
+
+
+def _groups(
+    data: Array[u8, 1], cur: InOut[list[int]], leaves: list[int], plan: InOut[list[int]]
+) -> None:
+    """Reads the list of row groups at the cursor and adds to `plan`, for each group and
+    each wanted column in turn, the five numbers of its column chunk."""
+    total = thrift_list(data, cur)
+    columns = plan[2]
+    found = [0, 0, 0, 0]
+    for group in range(total):
+        if cur[0] > len(data):
+            break
+        plan[1] += 1
+        base = len(plan)
+        for _ in range(5 * columns):
+            plan.append(-1)
+        rows = 0
+        outer = cur[1]
+        cur[1] = 0
+        while cur[0] <= len(data):
+            kind = thrift_field(data, cur)
+            if kind == 0:
+                break
+            if cur[1] == 1 and kind == 9:
+                chunks = thrift_list(data, cur)
+                for leaf in range(chunks):
+                    if cur[0] > len(data):
+                        break
+                    _chunk(data, cur, found)
+                    for column in range(columns):
+                        if leaves[column] == leaf:
+                            for part in range(4):
+                                plan[base + 5 * column + part] = found[part]
+                cur[1] = 1
+            elif cur[1] == 3:
+                rows = thrift_zigzag(data, cur)
+            else:
+                thrift_skip(data, cur, kind, 0)
+        cur[1] = outer
+        for column in range(columns):
+            plan[base + 5 * column + 4] = rows
+
+
+def parquet_plan(
+    path: str, names: list[str]
+) -> Raises[tuple[Array[u8, 1], list[int]], OSError | ValueError]:
+    """Reads the Parquet file `path` and plans the reading of the columns `names`: gives the
+    file's bytes and the plan this file's documentation lays out. A column is found by its
+    name among the columns at the top of the file's schema, the first one when a name is
+    there twice.
+
+    Raises `OSError` when the file cannot be read, and `ValueError` when it is not a
+    Parquet file, it is cut short, its metadata is damaged, it has no column of one of
+    `names`, or that column is nested: a list, a map or a struct.
+    """
+    data = Array.fromfile(path, u8)
+    count = len(data)
+    magic = "PAR1".encode()
+    if count < 4 or not _same(data, 0, 4, magic):
+        raise ValueError(f"{path}: not a Parquet file")
+    if count < 12 or not _same(data, count - 4, count, magic):
+        raise ValueError(f"{path}: the file is cut short, with no metadata at its end")
+    start = count - 8 - parquet_load(data, count - 8)
+    if start < 4:
+        raise ValueError(f"{path}: the metadata of the file is damaged")
+    columns = len(names)
+    plan = [-1, 0, columns]
+    leaves: list[int] = []
+    for _ in range(columns):
+        leaves.append(-1)
+        for _ in range(4):
+            plan.append(-1)
+    wanted = [name.encode() for name in names]
+    cur = [start, 0, 0]
+    schema = False
+    while cur[0] <= count:
+        kind = thrift_field(data, cur)
+        if kind == 0:
+            break
+        if cur[1] == 2 and kind == 9:
+            _schema(data, cur, wanted, leaves, plan)
+            cur[1] = 2
+            schema = True
+        elif cur[1] == 3:
+            plan[0] = thrift_zigzag(data, cur)
+        elif cur[1] == 4 and kind == 9 and schema:
+            _groups(data, cur, leaves, plan)
+            cur[1] = 4
+        else:
+            thrift_skip(data, cur, kind, 0)
+    if cur[0] > count - 8 or not schema or plan[0] < 0:
+        raise ValueError(f"{path}: the metadata of the file is damaged")
+    for column in range(columns):
+        if leaves[column] == -2 or plan[4 + 4 * column] == 2:
+            name = names[column].copy()
+            raise ValueError(f"{path}: the column '{name}' is nested, which is not read yet")
+        if leaves[column] < 0:
+            name = names[column].copy()
+            raise ValueError(f"{path}: the file has no column '{name}'")
+    rows = 0
+    for group in range(plan[1]):
+        base = 3 + 4 * columns + 5 * columns * group
+        if columns > 0:
+            rows += plan[base + 4]
+        for column in range(columns):
+            at = base + 5 * column
+            if plan[at] < 0 or plan[at + 2] < 4 or plan[at + 3] < 0:
+                raise ValueError(f"{path}: the metadata of the file is damaged")
+            if plan[at + 2] + plan[at + 3] > start:
+                raise ValueError(f"{path}: the metadata of the file is damaged")
+    if columns > 0 and rows != plan[0]:
+        raise ValueError(f"{path}: the metadata of the file is damaged")
+    return (data, plan)

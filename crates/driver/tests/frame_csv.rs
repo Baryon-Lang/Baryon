@@ -122,7 +122,7 @@ error: `DataFrame` has no function `read_table`
    |
 17 |     other: DataFrame[Trade] = DataFrame.read_table("trades.csv")
    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not defined
-   = note: a frame is made with `DataFrame({...})`, `DataFrame(rows)` or `DataFrame.read_csv(path)`
+   = note: a frame is made with `DataFrame({...})`, `DataFrame(rows)`, `DataFrame.read_csv(path)` or `DataFrame.read_parquet(path)`
 
 error: `DataFrame.read_csv` can fail with `OSError`, which is not handled here
   --> main.byn:21:32

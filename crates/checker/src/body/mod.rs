@@ -65,6 +65,7 @@ mod frame_groups;
 mod frame_join_keys;
 mod frame_joins;
 mod frame_missing;
+mod frame_parquet;
 mod frame_rows;
 mod frame_schema;
 mod frame_sort;
