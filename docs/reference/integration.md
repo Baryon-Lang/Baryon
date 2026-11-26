@@ -171,8 +171,8 @@ panic: assertion failed: limit >= 1, "Invalid 'limit' argument. There must be at
 its default method, RK45. RK45 is the Dormand-Prince pair of explicit Runge-Kutta formulas, of
 orders 5 and 4: each step calls `fun` six times, and the difference between the two orders
 estimates the step's error. A step whose error is too large is retried shorter; a good step
-makes the next one longer. The state `y` may be an `f64`, for one equation, or a `Fixed` vector,
-for a system:
+makes the next one longer. The state `y` may be an `f64`, for one equation, or a `Fixed` vector or
+an `Array[f64, 1]`, for a system:
 
 ```python
 from math import cos
@@ -200,7 +200,7 @@ step counts SciPy gives for the same call.
 | --- | --- | --- |
 | `fun` | The right-hand side, `fun(t, y, *args)`, returning `dy/dt` as the same type as `y` | |
 | `t_span` | `(t0, t_bound)`, a `tuple[f64, f64]`; `t_bound < t0` integrates backwards | |
-| `y0` | The starting state, an `f64` or a `Fixed` vector of `f64` | |
+| `y0` | The starting state, an `f64`, a `Fixed` vector of `f64` or an `Array[f64, 1]` | |
 | `method` | The integrator, in SciPy's spelling; only `"RK45"` is built (see below) | `"RK45"` |
 | `t_eval` | The times to report the state at, an `Array[f64, 1]` within `t_span` and in the run's direction; `None` reports every step | `None` |
 | `args` | A tuple passed on to `fun` after `t` and `y` | `()` |
@@ -255,8 +255,7 @@ singularity. Each step keeps one state; the result stores `len(t)` states.
 - `quad`'s `weight=` is roadmap 3.19.5, and `full_output=` is not built: its third value would
   change the shape of every call (decision 0065).
 - `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
-- `solve_ivp` takes an `f64` or a `Fixed` state. An `Array[f64, 1]` state is not built yet:
-  arithmetic on one inside a generic function shares memory between values (roadmap 1.9.75).
+- `solve_ivp` takes an `f64`, a `Fixed` or an `Array[f64, 1]` state; SciPy also takes a list.
   SciPy's other parameters, `dense_output=`, `events=`, `vectorized=` and an array `atol`, are
   not built yet (roadmap 3.19.8 and 3.19.9; ideas I.64 and I.77), and `method=` takes only
   `"RK45"`.
