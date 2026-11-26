@@ -396,7 +396,7 @@ and 3.25.
 | 3.19.7.3 | `t_eval=`, and `method=` routed when compiling from a literal (decision 0065 point 2) | 1 | 3.19.7.2 | Done | Claude | [#596](https://github.com/Baryon-Lang/Baryon/pull/596) |
 | 3.19.7.4 | `solve_ivp` on an `Array[f64, 1]` state, tested against SciPy's steps with and without `t_eval` | 1 | 1.9.75 | Done | Claude | [#598](https://github.com/Baryon-Lang/Baryon/pull/598) |
 | 3.19.8 | DOP853, and dense output for both methods, `sol.sol(t)`, through `__call__` on structs (decision 0058, chief designer, card 43). `__call__` is built first (#466). Built in the sub-rows below | 3.5 | 3.19.7 | In progress | Claude | [#466](https://github.com/Baryon-Lang/Baryon/pull/466) |
-| 3.19.8.1 | `method="DOP853"`, with SciPy's steps and, for `t_eval`, its seventh-order interpolant; a method held in a variable picks either | 1 | 3.19.7 | In progress | Claude | — |
+| 3.19.8.1 | `method="DOP853"`, with SciPy's steps and, for `t_eval`, its seventh-order interpolant; a method held in a variable picks either | 1 | 3.19.7 | Done | Claude | [#601](https://github.com/Baryon-Lang/Baryon/pull/601) |
 | 3.19.8.2 | `dense_output=True` for RK45: `sol` an `OdeSolution`, called as `sol(t)` through `__call__` | 1 | 3.19.8.1 | Planned | — | — |
 | 3.19.8.3 | `dense_output=True` for DOP853 | 0.5 | 3.19.8.2 | Planned | — | — |
 | 3.19.9 | `events=` for `solve_ivp`, in the shape a later card chooses: SciPy keeps the functions in a list, which version 0 cannot hold | 2 | 3.19.7 | Planned | — | — |
