@@ -6,7 +6,6 @@
 //! The files in `tests/fixtures/xz` were written by Python; its `README.md` says how. The
 //! table they hold is `tests/fixtures/zlib/text.txt`.
 
-use super::zlib::chapter_example;
 use super::{Scratch, baryon_build, package};
 use std::fs;
 use std::io;
@@ -103,10 +102,13 @@ def main() -> Raises[None, OSError]:
     );
 }
 
-/// The Compression chapter's xz example prints what the chapter says it prints.
+/// The `lzma` page's example, read from the page itself, prints what the page says it prints.
 #[test]
 fn the_reference_s_lzma_example_runs() {
-    let (output, _) = run("lzma_reference", chapter_example(8)).unwrap();
+    let page = include_str!("../../../../docs/reference/lzma.md");
+    let block = page.split("```python\n").nth(1).unwrap_or_default();
+    let program = &block[..block.find("```").unwrap_or_default()];
+    let (output, _) = run("lzma_reference", program).unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),

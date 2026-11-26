@@ -23,6 +23,10 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([Sorting, grouping and joining DataFrames](docs/reference/dataframe-operations.md)).
 - `groupby` with a sum and a mean of 10 million rows takes 0.24 s, down from 0.87 s, with the same
   results bit for bit.
+- `lzma.compress` writes xz data that Python's `lzma.decompress` reads. Presets 4 to 9 compress
+  like preset 3 with their larger dictionary for now, so their output runs about 4% to 28% larger
+  than Python's; an optimal parser to close the gap is row 3.27.12
+  ([`lzma.compress`](docs/reference/lzma.md#lzmacompress)).
 - `DataFrame.read_csv` and `to_csv` take `sep=`, one character written out, such as `";"` or
   `"\t"`. `read_csv` takes `na_values=`, more cells to read as missing, `skiprows=`, lines to
   pass over before the header, and `nrows=`, the most rows to read, and `to_csv` takes `na_rep=`,

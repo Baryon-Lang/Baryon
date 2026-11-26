@@ -1,0 +1,80 @@
+"""Internal file of `lzma` (decision 0049): `compress`, which wraps the LZMA2 data of
+`lzma_encoder.byn` in an xz stream, its block, index and footer. `lzma` re-exports `compress`
+(decision 0062); a program cannot import this file.
+"""
+
+from lzma_common import Output, crc32, crc64, reserve
+from lzma_encoder import dictionary_bits, lzma2_compressed
+from os import ErrorKind
+
+
+def compress(data: Array[u8, 1], preset: int = 6) -> Raises[Array[u8, 1], OSError]:
+    """`data` compressed as one xz stream with a CRC-64 check, as `lzma.compress(data,
+    preset=preset)` gives it in Python. `preset` runs from 0, fastest, to 9, smallest, and sets
+    the dictionary, from 256 KiB to 64 MiB, and how long the encoder searches for matches. A
+    preset outside 0 to 9 raises `OSError` with the kind `INVALID_DATA` and Python's message,
+    `Invalid or unsupported options`. The stream is standard xz, which Python's `lzma` and `xz`
+    read; its bytes are Baryon's own, not liblzma's (decision 0049).
+
+    Cost: the data and its compressed copy in memory, plus a hash table of 4 MiB and a chain of
+    4 bytes for each byte of the dictionary, up to the data's length."""
+    if preset < 0 or preset > 9:
+        raise OSError(ErrorKind.INVALID_DATA, i32(0), "Invalid or unsupported options", "")
+    out = Output(Array.zeros(64, u8), 0)
+    _append(out, [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00, 0x00, 0x04])
+    _append_word(out, crc32(out.data, 6, 8))
+    records: list[int] = []
+    if len(data) > 0:
+        start = out.length
+        _append(out, [0x02, 0x00, 0x21, 0x01, dictionary_bits(preset) * 2 - 24, 0, 0, 0])
+        _append_word(out, crc32(out.data, start, start + 8))
+        packed = lzma2_compressed(data, preset)
+        reserve(out, len(packed))
+        for i in range(len(packed)):
+            out.data[out.length + i] = packed[i]
+        out.length += len(packed)
+        records = [12 + len(packed) + 8, len(data)]
+        while (out.length - start) % 4 != 0:
+            _append(out, [0])
+        check = crc64(data, 0, len(data))
+        for i in range(8):
+            _append(out, [(check >> (8 * i)) & 0xFF])
+    index = out.length
+    _append(out, [0])
+    _append_number(out, len(records) // 2)
+    for value in records:
+        _append_number(out, value)
+    while (out.length - index) % 4 != 0:
+        _append(out, [0])
+    _append_word(out, crc32(out.data, index, out.length))
+    footer = out.length
+    _append_word(out, 0)
+    _append_word(out, (out.length - 4 - index) // 4 - 1)
+    _append(out, [0x00, 0x04])
+    footer_crc = crc32(out.data, footer + 4, footer + 10)
+    for i in range(4):
+        out.data[footer + i] = u8((footer_crc >> (8 * i)) & 0xFF)
+    _append(out, [0x59, 0x5A])
+    return out.data[: out.length].copy()
+
+
+def _append(out: InOut[Output], values: list[int]):
+    """Adds the bytes `values`."""
+    reserve(out, len(values))
+    for value in values:
+        out.data[out.length] = u8(value & 0xFF)
+        out.length += 1
+
+
+def _append_word(out: InOut[Output], value: int):
+    """Adds `value` as four bytes, lowest first."""
+    _append(out, [value, value >> 8, value >> 16, value >> 24])
+
+
+def _append_number(out: InOut[Output], value: int):
+    """Adds `value` as xz's variable-length integer: 7 bits a byte, lowest first."""
+    rest = value
+    while rest >= 0x80:
+        _append(out, [(rest & 0x7F) | 0x80])
+        rest = rest >> 7
+    _append(out, [rest])

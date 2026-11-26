@@ -1,0 +1,468 @@
+"""LZMA2 compression into an xz stream: the writing half of the `lzma` module (roadmap 3.27.11,
+decision 0049). An internal file: programs call `lzma.compress`, which calls `xz_compressed`.
+
+The encoder parses the data greedily with a one-step lookahead, as XZ Utils' fast mode does: at
+each position it takes the longest of the four last distances ("reps") or the longest match a
+hash chain finds, unless a literal and a better match at the next position would cost less. It
+codes literals, matches and lengths with the same adaptive probabilities and range coder the
+decoder in `lzma.byn` reads. Chunks of up to 2 MiB of data and 64 KiB of output follow LZMA2's
+rules, and a chunk that does not shrink is stored instead.
+
+The stream is standard xz, which Python's `lzma` and `xz` read, but its bytes are not
+liblzma's: liblzma's presets above 3 search for the cheapest parse, which this encoder does not
+(decision 0049, part 5).
+"""
+
+class _Bytes(Struct):
+    """Bytes written so far: the first `length` of `data`, whose size doubles when it fills."""
+
+    data: Array[u8, 1]
+    length: int
+
+
+def _put(out: InOut[_Bytes], value: int):
+    """Adds the byte `value & 0xFF`."""
+    if out.length == len(out.data):
+        grown = Array.zeros(2 * len(out.data) + 64, u8)
+        for i in range(out.length):
+            grown[i] = out.data[i]
+        out.data = grown
+    out.data[out.length] = u8(value & 0xFF)
+    out.length += 1
+
+
+class _Range(Struct):
+    """A range encoder: `low` holds up to 33 bits, `range` 32, and `cache` with `pending` the
+    bytes not yet written because a carry may still change them."""
+
+    low: int
+    range: int
+    cache: int
+    pending: int
+    out: _Bytes
+
+
+def _range() -> _Range:
+    """A range encoder with nothing coded yet."""
+    return _Range(0, 0xFFFFFFFF, 0, 1, _Bytes(Array.zeros(1 << 16, u8), 0))
+
+
+def _shift(rc: InOut[_Range]):
+    """Moves the top byte of `low` out, resolving a carry into the bytes held back."""
+    if rc.low < 0xFF000000 or rc.low >= 0x100000000:
+        carry = rc.low >> 32
+        held = rc.cache
+        while rc.pending > 0:
+            _put(rc.out, held + carry)
+            held = 0xFF
+            rc.pending -= 1
+        rc.cache = (rc.low >> 24) & 0xFF
+    rc.pending += 1
+    rc.low = (rc.low & 0x00FFFFFF) << 8
+
+
+def _bit(rc: InOut[_Range], probs: InOut[Array[i32, 1]], index: int, bit: int):
+    """Codes `bit` with the adaptive probability `probs[index]` and updates it, as the decoder
+    does."""
+    prob = int(probs[index])
+    bound = (rc.range >> 11) * prob
+    if bit == 0:
+        rc.range = bound
+        probs[index] = i32(prob + ((2048 - prob) >> 5))
+    else:
+        rc.low += bound
+        rc.range -= bound
+        probs[index] = i32(prob - (prob >> 5))
+    while rc.range < 16777216:
+        rc.range = (rc.range << 8) & 0xFFFFFFFF
+        _shift(rc)
+
+
+def _tree(rc: InOut[_Range], probs: InOut[Array[i32, 1]], base: int, bits: int, value: int):
+    """Codes the `bits`-bit `value` highest bit first with the bit tree at `probs[base:]`."""
+    m = 1
+    for i in range(bits - 1, -1, -1):
+        bit = (value >> i) & 1
+        _bit(rc, probs, base + m, bit)
+        m = (m << 1) | bit
+
+
+def _reverse(rc: InOut[_Range], probs: InOut[Array[i32, 1]], base: int, bits: int, value: int):
+    """Codes the `bits`-bit `value` lowest bit first with the bit tree at `probs[base:]`."""
+    m = 1
+    for i in range(bits):
+        bit = (value >> i) & 1
+        _bit(rc, probs, base + m, bit)
+        m = (m << 1) | bit
+
+
+def _direct(rc: InOut[_Range], bits: int, value: int):
+    """Codes the `bits`-bit `value` highest bit first, each with probability one half."""
+    for i in range(bits - 1, -1, -1):
+        rc.range = rc.range >> 1
+        if (value >> i) & 1 != 0:
+            rc.low += rc.range
+        while rc.range < 16777216:
+            rc.range = (rc.range << 8) & 0xFFFFFFFF
+            _shift(rc)
+
+
+def _flush(rc: InOut[_Range]):
+    """Writes the last bytes, after which the decoder's code is 0."""
+    for _ in range(5):
+        _shift(rc)
+
+
+def _length(rc: InOut[_Range], probs: InOut[Array[i32, 1]], base: int, length: int, pos: int):
+    """Codes a match length of 2 to 273 with the length coder at `probs[base:]`."""
+    value = length - 2
+    if value < 8:
+        _bit(rc, probs, base, 0)
+        _tree(rc, probs, base + 2 + 8 * pos, 3, value)
+    elif value < 16:
+        _bit(rc, probs, base, 1)
+        _bit(rc, probs, base + 1, 0)
+        _tree(rc, probs, base + 130 + 8 * pos, 3, value - 8)
+    else:
+        _bit(rc, probs, base, 1)
+        _bit(rc, probs, base + 1, 1)
+        _tree(rc, probs, base + 258, 8, value - 16)
+
+
+def _slot(distance: int) -> int:
+    """The distance slot of `distance`, the distance less 1: itself below 4, else twice the
+    position of its top bit plus the bit below it."""
+    if distance < 4:
+        return distance
+    top = 0
+    while (distance >> (top + 1)) != 0:
+        top += 1
+    return 2 * top + ((distance >> (top - 1)) & 1)
+
+
+class _Coder(Struct):
+    """The LZMA model with `lc` 3, `lp` 0 and `pb` 2: the probabilities, the state machine's
+    `state` and the last four distances, each less 1, in `reps`."""
+
+    probs: Array[i32, 1]
+    state: int
+    reps: Array[int, 1]
+
+
+def _coder() -> _Coder:
+    """A model reset, as a chunk with a state reset starts."""
+    probs = Array.zeros(1846 + (768 << 3), i32)
+    for i in range(len(probs)):
+        probs[i] = i32(1024)
+    return _Coder(probs, 0, Array.zeros(4, int))
+
+
+def _literal(rc: InOut[_Range], coder: InOut[_Coder], data: Array[u8, 1], at: int):
+    """Codes the byte at `at` as a literal; after a match, against the byte at the last
+    distance."""
+    pos = at & 3
+    _bit(rc, coder.probs, (coder.state << 4) + pos, 0)
+    previous = 0
+    if at > 0:
+        previous = int(data[at - 1])
+    base = 1846 + 768 * (previous >> 5)
+    symbol = int(data[at]) | 0x100
+    if coder.state >= 7:
+        matched = int(data[at - coder.reps[0] - 1])
+        offset = 0x100
+        while symbol < 0x10000:
+            matched = matched << 1
+            match_bit = matched & offset
+            bit = (symbol >> 7) & 1
+            _bit(rc, coder.probs, base + offset + match_bit + (symbol >> 8), bit)
+            symbol = symbol << 1
+            offset = offset & ~(matched ^ symbol)
+    else:
+        while symbol < 0x10000:
+            _bit(rc, coder.probs, base + (symbol >> 8), (symbol >> 7) & 1)
+            symbol = symbol << 1
+    state = coder.state
+    coder.state = 0 if state < 4 else (state - 3 if state < 10 else state - 6)
+
+
+def _match(rc: InOut[_Range], coder: InOut[_Coder], at: int, distance: int, length: int):
+    """Codes a match of `length` bytes at `distance` less 1 back."""
+    pos = at & 3
+    state = coder.state
+    _bit(rc, coder.probs, (state << 4) + pos, 1)
+    _bit(rc, coder.probs, 192 + state, 0)
+    _length(rc, coder.probs, 818, length, pos)
+    slot = _slot(distance)
+    _tree(rc, coder.probs, 432 + 64 * min(length - 2, 3), 6, slot)
+    if slot >= 4:
+        direct = (slot >> 1) - 1
+        base = (2 | (slot & 1)) << direct
+        if slot < 14:
+            _reverse(rc, coder.probs, 688 + base - slot, direct, distance - base)
+        else:
+            _direct(rc, direct - 4, (distance - base) >> 4)
+            _reverse(rc, coder.probs, 802, 4, (distance - base) & 15)
+    coder.reps[3] = coder.reps[2]
+    coder.reps[2] = coder.reps[1]
+    coder.reps[1] = coder.reps[0]
+    coder.reps[0] = distance
+    coder.state = 7 if state < 7 else 10
+
+
+def _repeat(rc: InOut[_Range], coder: InOut[_Coder], at: int, which: int, length: int):
+    """Codes a match of `length` bytes at the last distance number `which`, 0 to 3; length 1
+    at the last distance is the short form."""
+    pos = at & 3
+    state = coder.state
+    _bit(rc, coder.probs, (state << 4) + pos, 1)
+    _bit(rc, coder.probs, 192 + state, 1)
+    if which == 0:
+        _bit(rc, coder.probs, 204 + state, 0)
+        _bit(rc, coder.probs, 240 + (state << 4) + pos, 0 if length == 1 else 1)
+        if length == 1:
+            coder.state = 9 if state < 7 else 11
+            return
+    else:
+        _bit(rc, coder.probs, 204 + state, 1)
+        distance = coder.reps[which]
+        if which == 1:
+            _bit(rc, coder.probs, 216 + state, 0)
+        else:
+            _bit(rc, coder.probs, 216 + state, 1)
+            _bit(rc, coder.probs, 228 + state, which - 2)
+            if which == 3:
+                coder.reps[3] = coder.reps[2]
+            coder.reps[2] = coder.reps[1]
+        coder.reps[1] = coder.reps[0]
+        coder.reps[0] = distance
+    _length(rc, coder.probs, 1332, length, pos)
+    coder.state = 8 if state < 7 else 11
+
+
+class _Finder(Struct):
+    """Hash chains over the data: `head[h]` is the last position whose next three bytes hash to
+    `h`, plus 1, and `chain[p % window]` the position before `p` with the same hash, plus 1.
+    `depth` limits how many positions a search visits, and `nice` stops it at a match that
+    long."""
+
+    head: Array[i32, 1]
+    chain: Array[i32, 1]
+    window: int
+    depth: int
+    nice: int
+    inserted: int
+    cached: int
+    cached_length: int
+    cached_distance: int
+
+
+def _hash(data: Array[u8, 1], at: int) -> int:
+    """The 20-bit hash of the three bytes at `at`."""
+    value = int(data[at]) | (int(data[at + 1]) << 8) | (int(data[at + 2]) << 16)
+    return ((value * 2654435761) >> 12) & 0xFFFFF
+
+
+def _insert(finder: InOut[_Finder], data: Array[u8, 1], until: int):
+    """Adds every position before `until` to the chains."""
+    stop = min(until, len(data) - 2)
+    while finder.inserted < stop:
+        at = finder.inserted
+        h = _hash(data, at)
+        finder.chain[at % finder.window] = finder.head[h]
+        finder.head[h] = i32(at + 1)
+        finder.inserted += 1
+
+
+def _common(data: Array[u8, 1], at: int, back: int, limit: int) -> int:
+    """How many bytes from `at` equal those `back` bytes before, up to `limit`."""
+    length = 0
+    while length < limit and data[at + length] == data[at + length - back]:
+        length += 1
+    return length
+
+
+def _longest(finder: InOut[_Finder], data: Array[u8, 1], at: int) -> tuple[int, int]:
+    """The longest match at `at` the chains find, as its length and its distance less 1;
+    length 0 when there is none of at least 3 bytes. The last search is kept, since the
+    lookahead searches each position before the parse reaches it."""
+    if finder.cached == at:
+        return (finder.cached_length, finder.cached_distance)
+    limit = min(273, len(data) - at)
+    if limit < 3:
+        return (0, 0)
+    _insert(finder, data, at)
+    best = 0
+    best_distance = 0
+    candidate = int(finder.head[_hash(data, at)]) - 1
+    tries = finder.depth
+    while candidate >= 0 and tries > 0:
+        back = at - candidate
+        if back > finder.window:
+            break
+        if data[candidate + best] == data[at + best]:
+            length = _common(data, at, back, limit)
+            if length > best:
+                best = length
+                best_distance = back - 1
+                if length >= finder.nice or length == limit:
+                    break
+        candidate = int(finder.chain[candidate % finder.window]) - 1
+        tries -= 1
+    finder.cached = at
+    finder.cached_length = best
+    finder.cached_distance = best_distance
+    return (best, best_distance)
+
+
+def _longest_rep(coder: _Coder, data: Array[u8, 1], at: int, limit: int) -> tuple[int, int]:
+    """The longest match at one of the last four distances, as its length and which distance;
+    length 0 when none matches 2 bytes."""
+    best = 0
+    which = 0
+    for i in range(4):
+        back = coder.reps[i] + 1
+        if back > at:
+            continue
+        length = _common(data, at, back, limit)
+        if length >= 2 and length > best:
+            best = length
+            which = i
+    return (best, which)
+
+
+def _farther(small: int, big: int) -> bool:
+    """Whether the distance `big` is over 128 times `small`, so a match one byte longer at
+    `big` saves less than it costs."""
+    return (big >> 7) > small
+
+
+def _choose(
+    finder: InOut[_Finder], coder: _Coder, data: Array[u8, 1], at: int
+) -> tuple[int, int, int]:
+    """What to code at `at`, as XZ Utils' fast mode chooses it: a length, a kind (0 a literal,
+    1 a match, 2 a match at a last distance) and the distance less 1 or which last distance."""
+    avail = len(data) - at
+    if avail < 2:
+        return (1, 0, 0)
+    limit = min(273, avail)
+    rep_length, which = _longest_rep(coder, data, at, limit)
+    if rep_length >= finder.nice:
+        return (rep_length, 2, which)
+    length, distance = _longest(finder, data, at)
+    if length >= finder.nice:
+        return (length, 1, distance)
+    if rep_length >= 2 and (
+        rep_length + 1 >= length
+        or (rep_length + 2 >= length and distance >= 1 << 9)
+        or (rep_length + 3 >= length and distance >= 1 << 15)
+    ):
+        return (rep_length, 2, which)
+    if length < 3 or avail <= 2:
+        return (1, 0, 0)
+    next_length, next_distance = _longest(finder, data, at + 1)
+    if next_length >= 3 and (
+        (next_length >= length and next_distance < distance)
+        or (next_length == length + 1 and not _farther(distance, next_distance))
+        or next_length > length + 1
+        or (next_length + 1 >= length and length >= 3 and _farther(next_distance, distance))
+    ):
+        return (1, 0, 0)
+    least = max(length - 1, 2)
+    for i in range(4):
+        back = coder.reps[i] + 1
+        if back <= at + 1 and _common(data, at + 1, back, min(least, avail - 1)) >= least:
+            return (1, 0, 0)
+    return (length, 1, distance)
+
+
+class _Chunks(Struct):
+    """The LZMA2 stream so far, and what the next LZMA chunk must reset: `reset` once a
+    dictionary reset is written, `properties` once the properties byte is, and `state` when
+    the model must start afresh because the last chunk was stored."""
+
+    out: _Bytes
+    reset: bool
+    properties: bool
+    state: bool
+
+
+def _stored(chunks: InOut[_Chunks], data: Array[u8, 1], start: int, stop: int):
+    """Writes `data[start:stop]` as stored chunks of at most 64 KiB."""
+    at = start
+    while at < stop:
+        count = min(65536, stop - at)
+        _put(chunks.out, 2 if chunks.reset else 1)
+        chunks.reset = True
+        _put(chunks.out, (count - 1) >> 8)
+        _put(chunks.out, count - 1)
+        for i in range(count):
+            _put(chunks.out, int(data[at + i]))
+        at += count
+    chunks.state = True
+
+
+def _packed(chunks: InOut[_Chunks], rc: _Range, unpacked: int):
+    """Writes an LZMA chunk of `unpacked` bytes of data, coded as `rc` holds them."""
+    reset = 0
+    if not chunks.reset:
+        reset = 3
+    elif not chunks.properties:
+        reset = 2
+    elif chunks.state:
+        reset = 1
+    _put(chunks.out, 0x80 | (reset << 5) | ((unpacked - 1) >> 16))
+    _put(chunks.out, (unpacked - 1) >> 8)
+    _put(chunks.out, unpacked - 1)
+    _put(chunks.out, (rc.out.length - 1) >> 8)
+    _put(chunks.out, rc.out.length - 1)
+    if reset >= 2:
+        _put(chunks.out, 0x5D)
+    for i in range(rc.out.length):
+        _put(chunks.out, int(rc.out.data[i]))
+    chunks.reset = True
+    chunks.properties = True
+    chunks.state = False
+
+
+def dictionary_bits(preset: int) -> int:
+    """The base-2 logarithm of the dictionary size of `preset`, 0 to 9, as XZ Utils sets it:
+    256 KiB at 0 to 64 MiB at 9."""
+    return [18, 20, 21, 22, 22, 23, 23, 24, 25, 26][preset]
+
+
+def lzma2_compressed(data: Array[u8, 1], preset: int) -> Array[u8, 1]:
+    """`data` as LZMA2 chunks with `lc` 3, `lp` 0 and `pb` 2 and the dictionary of `preset`,
+    ending with the end chunk. Presets 0 to 3 search the hash chains as long as XZ Utils'
+    fast mode does at the same presets; 4 to 9 search as 3 does, with their larger
+    dictionaries, since a longer greedy search costs time and gains little without the
+    cheapest-parse search those presets use in XZ Utils."""
+    window = max(1, min(1 << dictionary_bits(preset), len(data)))
+    depth = [4, 8, 24, 48][min(preset, 3)]
+    nice = 128 if preset < 2 else 273
+    finder = _Finder(
+        Array.zeros(1 << 20, i32), Array.zeros(window, i32), window, depth, nice, 0, -1, 0, 0
+    )
+    chunks = _Chunks(_Bytes(Array.zeros(len(data) // 2 + 64, u8), 0), False, False, True)
+    coder = _coder()
+    at = 0
+    while at < len(data):
+        start = at
+        if chunks.state:
+            coder = _coder()
+        rc = _range()
+        while at < len(data) and at - start + 273 <= 1 << 21 and rc.out.length + rc.pending < 65000:
+            length, kind, value = _choose(finder, coder, data, at)
+            if kind == 0:
+                _literal(rc, coder, data, at)
+            elif kind == 1:
+                _match(rc, coder, at, value, length)
+            else:
+                _repeat(rc, coder, at, value, length)
+            at += length
+        _flush(rc)
+        if rc.out.length < at - start and rc.out.length <= 65536:
+            _packed(chunks, rc, at - start)
+        else:
+            _stored(chunks, data, start, at)
+    _put(chunks.out, 0)
+    return chunks.out.data[: chunks.out.length].copy()
