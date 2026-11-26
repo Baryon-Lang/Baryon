@@ -243,6 +243,6 @@ singularity. Each step keeps one state; the result stores `len(t)` states.
 - `solve_ivp` takes an `f64` or a `Fixed` state. An `Array[f64, 1]` state is not built yet:
   arithmetic on one inside a generic function shares memory between values (roadmap 1.9.75).
   SciPy's other parameters, `method=`, `t_eval=`, `dense_output=`, `events=`, `vectorized=`
-  and an array `atol`, are not built yet (roadmap 3.19.7.3 to 3.19.9; ideas I.64 and I.65).
+  and an array `atol`, are not built yet (roadmap 3.19.7.3 to 3.19.9; ideas I.64 and I.77).
 - `solve_ivp` raises `rtol` to 2.2e-14 without SciPy's warning, and panics where SciPy raises
   `ValueError`.
