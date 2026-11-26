@@ -239,6 +239,15 @@ pub enum Builtin {
     /// last either way, as `numpy.sort` puts it (chief designer, 2026-11-10). It is a merge sort:
     /// O(n log n) comparisons and a buffer of half the list. The call cannot fail.
     Sort,
+    /// `x.copy()` where the type of `x` is a type parameter (roadmap 1.9.60, decision 0066):
+    /// one argument, the value, passed `Borrow`; the destination has its type and owns memory
+    /// of its own, so changing one leaves the other alone. Lowering builds a generic body once,
+    /// where it cannot choose among the copies each type has, so it writes this in their place.
+    /// Monomorphization turns it into a direct call of the type's own `copy` method when the
+    /// type argument is a struct that has one. A backend writes it for every other type it
+    /// knows how to copy and reports the rest. The call cannot fail; running out of memory
+    /// panics.
+    Copy,
     /// `round(x, digits)` (roadmap 1.13.13): two arguments, each passed `Owned`, the number, an
     /// `f32`, an `f64` or an `i64`, and the digits, an `i64`; the destination has the number's
     /// type. It gives the multiple of `10 ** -digits` nearest the number's exact value, ties to
@@ -324,6 +333,7 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
+    /// assert_eq!(mir::Builtin::Copy.name(), "copy through a type parameter");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
     /// assert_eq!(mir::Builtin::Path(mir::PathMethod::Parent).name(), "Path.parent");
     /// assert_eq!(mir::Builtin::ArrayFile(mir::ArrayFile::ToFile).name(), "Array.tofile");
@@ -363,6 +373,7 @@ impl Builtin {
             Self::EnvironmentEntries => "os.environ.copy",
             Self::Exit => "sys.exit",
             Self::Sort => "sorted",
+            Self::Copy => "copy through a type parameter",
             Self::RoundDigits => "round",
             Self::StandardStream => "standard stream",
             Self::Input => "input",

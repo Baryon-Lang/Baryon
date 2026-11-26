@@ -221,8 +221,10 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             Builtin::MatrixProduct => self.matrix_product(arguments, target),
             // `File`, `ArrayFile`, `Path`, `Run` and `Input` can fail, so `call` sends them to
-            // `raising_builtin` with their error edge.
-            Builtin::File(_)
+            // `raising_builtin` with their error edge. Nothing writes a copy through a type
+            // parameter yet (roadmap 1.9.60).
+            Builtin::Copy
+            | Builtin::File(_)
             | Builtin::ArrayFile(_)
             | Builtin::Run
             | Builtin::Input
