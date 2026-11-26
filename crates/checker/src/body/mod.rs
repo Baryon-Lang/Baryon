@@ -75,6 +75,7 @@ mod frames;
 mod generics;
 mod h5by;
 mod indices;
+mod integrate;
 mod interpolation;
 mod library;
 mod loops;

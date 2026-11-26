@@ -58,8 +58,10 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([Generics](docs/reference/types.md#traits)).
 - `integrate.solve_ivp` solves an ordinary differential equation with SciPy's default method,
   RK45, on an `f64` or `Fixed` state, with `args=`, `rtol=`, `atol=`, `first_step=` and
-  `max_step=`. It takes SciPy's steps and returns an `OdeResult` with SciPy's fields. An `Array`
-  state, `t_eval=`, `method=`, dense output and events come later
+  `max_step=`, and with `t_eval=` for the state at chosen times. `method=` is chosen when
+  compiling: an unknown name written as a literal is a compile error. It takes SciPy's steps
+  and returns an `OdeResult` with SciPy's fields. An `Array` state, DOP853, dense output and
+  events come later
   ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:

@@ -201,6 +201,8 @@ step counts SciPy gives for the same call.
 | `fun` | The right-hand side, `fun(t, y, *args)`, returning `dy/dt` as the same type as `y` | |
 | `t_span` | `(t0, t_bound)`, a `tuple[f64, f64]`; `t_bound < t0` integrates backwards | |
 | `y0` | The starting state, an `f64` or a `Fixed` vector of `f64` | |
+| `method` | The integrator, in SciPy's spelling; only `"RK45"` is built (see below) | `"RK45"` |
+| `t_eval` | The times to report the state at, an `Array[f64, 1]` within `t_span` and in the run's direction; `None` reports every step | `None` |
 | `args` | A tuple passed on to `fun` after `t` and `y` | `()` |
 | `first_step` | The size of the first step; `None` picks it by SciPy's rule | `None` |
 | `max_step` | The longest step allowed | `inf` |
@@ -210,13 +212,26 @@ The result is an `OdeResult` with SciPy's 11 fields, read as attributes:
 
 | Field | Value |
 | --- | --- |
-| `t` | The times of the steps, an `Array[f64, 1]`, from `t0` to where the run stopped |
+| `t` | The times of the steps, an `Array[f64, 1]`, from `t0` to where the run stopped; with `t_eval`, the times of `t_eval` the run reached |
 | `y` | The state at each time, an `Array[f64, 2]` of shape `(len(y0), len(t))`; an `f64` state has length 1 |
 | `nfev` | How many times `fun` was called |
 | `njev`, `nlu` | Jacobians computed and LU factorizations made: 0 for RK45 |
 | `status`, `success`, `message` | 0, `True` and SciPy's text when the run reached `t_bound`; -1 and `False` when it failed |
 | `sol` | The continuous solution: `None`, since `dense_output=` is not built yet (roadmap 3.19.8) |
 | `t_events`, `y_events` | `None`, since `events=` is not built yet (roadmap 3.19.9) |
+
+With `t_eval`, the run takes the same steps, and the state at each time asked for comes from
+the step that covers it, through RK45's fourth-order interpolant, as in SciPy. A `t_span` with
+no length reports none of them, as SciPy does. A time outside `t_span`, or times out of order,
+panic with SciPy's message.
+
+`method=` is chosen when compiling
+([decision 0065](../decisions/0065-integrate-api.md#2-method-is-a-string-chosen-when-compiling-when-it-is-a-literal)).
+Written as a literal, or left out, it picks the integrator at compile time, and only that one is
+compiled; a literal that names no method built, such as `"RK54"`, is a compile error that lists
+the methods. A method held in a variable is picked at run time: the call then raises
+`ValueError` for an unknown name, so it needs a `try` or a `Raises` like any call that raises.
+Only RK45 is built so far; DOP853 is roadmap 3.19.8.
 
 A run fails, as SciPy's does, when a step would have to be shorter than ten times the spacing of
 floats at `t`, as near a singularity: `dy/dt = y * y` from `y(0) = 1` stops just before
@@ -242,7 +257,12 @@ singularity. Each step keeps one state; the result stores `len(t)` states.
 - `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
 - `solve_ivp` takes an `f64` or a `Fixed` state. An `Array[f64, 1]` state is not built yet:
   arithmetic on one inside a generic function shares memory between values (roadmap 1.9.75).
-  SciPy's other parameters, `method=`, `t_eval=`, `dense_output=`, `events=`, `vectorized=`
-  and an array `atol`, are not built yet (roadmap 3.19.7.3 to 3.19.9; ideas I.64 and I.77).
+  SciPy's other parameters, `dense_output=`, `events=`, `vectorized=` and an array `atol`, are
+  not built yet (roadmap 3.19.8 and 3.19.9; ideas I.64 and I.77), and `method=` takes only
+  `"RK45"`.
+- `method=` held in a variable raises `ValueError` with a message that lists only the methods
+  built, where SciPy's lists every method it has.
+- With `t_eval` and an empty `t_span`, `y` is an array of shape `(len(y0), 0)`, where SciPy
+  gives an empty list.
 - `solve_ivp` raises `rtol` to 2.2e-14 without SciPy's warning, and panics where SciPy raises
   `ValueError`.

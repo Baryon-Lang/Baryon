@@ -54,6 +54,7 @@ impl<'db> Body<'db> {
             }
             Some(&Definition::Item(file, name)) => {
                 let (file, name) = self.text_mode_open(file, name, &arguments);
+                let (file, name) = self.ode_method(file, name, &arguments);
                 self.call_item(node, &callee, file, name, &arguments)
             }
             Some(Definition::Builtin("Array")) => self.array_from_list(node, &arguments, expected),

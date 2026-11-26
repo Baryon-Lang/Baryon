@@ -34,6 +34,35 @@ const SCIPY: &str = "\
 0 1 2 1 2.0 4.0 1.0 2.0
 -1 632 67 1 63.883757720511255 1165736867277266.5 0.9999286400563746 480848617754195.6";
 
+/// Asserts that each line `output` begins with matches `SciPy`'s line in `expected`: the four
+/// counts exactly and the numbers to a relative 1e-10, only the times for a failed run. Returns
+/// the lines after them.
+fn agree<'a>(expected: &str, output: &'a str) -> Vec<&'a str> {
+    let mut lines = output.lines();
+    for (expected, found) in expected.lines().zip(&mut lines) {
+        let expected: Vec<&str> = expected.split(' ').collect();
+        let found: Vec<&str> = found.split(' ').collect();
+        assert_eq!(expected[..4], found[..4], "{output}");
+        // The failing run's state is near a singularity, so only its times are compared.
+        let compared: &[usize] = if expected[0] == "-1" {
+            &[4, 6]
+        } else {
+            &[4, 5, 6, 7]
+        };
+        for &column in compared {
+            let (want, got): (f64, f64) = (
+                expected[column].parse().unwrap_or(f64::NAN),
+                found[column].parse().unwrap_or(f64::NAN),
+            );
+            assert!(
+                (want - got).abs() <= 1e-10 * want.abs(),
+                "{want} {got}\n{output}"
+            );
+        }
+    }
+    lines.collect()
+}
+
 /// Each run takes `SciPy`'s steps: the counts match exactly and the numbers to 1e-10.
 #[test]
 fn rk45_takes_scipys_steps() {
@@ -77,33 +106,64 @@ def main():
     let ran = Command::new(&program).output().unwrap();
     assert!(ran.status.success(), "{}", stderr(&ran));
     let output = String::from_utf8_lossy(&ran.stdout);
-    let mut lines = output.lines();
-    for (expected, found) in SCIPY.lines().zip(&mut lines) {
-        let expected: Vec<&str> = expected.split(' ').collect();
-        let found: Vec<&str> = found.split(' ').collect();
-        assert_eq!(expected[..4], found[..4], "{output}");
-        // The failing run's state is near a singularity, so only its times are compared.
-        let compared: &[usize] = if expected[0] == "-1" {
-            &[4, 6]
-        } else {
-            &[4, 5, 6, 7]
-        };
-        for &column in compared {
-            let (want, got) = (expected[column], found[column]);
-            let (want, got): (f64, f64) = (want.parse().unwrap(), got.parse().unwrap());
-            assert!(
-                (want - got).abs() <= 1e-10 * want.abs(),
-                "{want} {got}\n{output}"
-            );
-        }
-    }
     assert_eq!(
-        lines.collect::<Vec<_>>(),
+        agree(SCIPY, &output),
         [
             "False Required step size is less than spacing between numbers. 0 0 True",
             "True True"
         ]
     );
+}
+
+/// `t_eval` reports the state at the times asked for, read from each step's interpolant, forward
+/// and backward, and reports none for an empty `t_span`, as `SciPy` does. The expected lines were
+/// printed by the script above with these runs, `np.linspace(0, 2, 9)` being `0.0, 0.25, ...`:
+///
+/// ```text
+/// solve_ivp(lorenz, (0, 2), np.array([1., 1., 1.]), t_eval=np.linspace(0, 2, 9))
+/// solve_ivp(f, (5, 0), [2.0], t_eval=[5, 3.3, .1, 0], args=(.5,))
+/// ```
+#[test]
+fn t_eval_reports_the_times_asked_for() {
+    let program = "\
+from integrate import OdeResult, solve_ivp
+
+Vec3 = Fixed[f64, (3,)]
+
+
+def lorenz(t: f64, y: Vec3) -> Vec3:
+    return Vec3(10.0 * (y[1] - y[0]), y[0] * (28.0 - y[2]) - y[1], y[0] * y[1] - 8.0 / 3.0 * y[2])
+
+
+def decay(t: f64, y: f64, k: f64) -> f64:
+    return -k * y
+
+
+def show(r: OdeResult):
+    steps = len(r.t)
+    last = r.y[0, steps - 1]
+    print(r.status, r.nfev, steps, r.y.shape[0], r.t.sum(), r.y.sum(), r.t[steps - 1], last)
+
+
+def main():
+    times: Array[f64, 1] = Array.zeros(9)
+    for i in range(9):
+        times[i] = f64(i) / 4.0
+    show(solve_ivp(lorenz, (0.0, 2.0), Vec3(1.0, 1.0, 1.0), t_eval=times))
+    show(solve_ivp(decay, (5.0, 0.0), 2.0, t_eval=Array([5.0, 3.3, 0.1, 0.0]), args=(0.5,)))
+    empty = solve_ivp(decay, (1.0, 1.0), 2.0, t_eval=Array([1.0]), args=(0.5,))
+    print(empty.nfev, len(empty.t), empty.y.shape)
+";
+    let directory = package("solve-ivp-t-eval", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    let output = String::from_utf8_lossy(&ran.stdout);
+    let expected = "\
+0 158 9 3 9.0 129.40540591863066 2.0 -8.167936673944695
+0 26 4 1 8.4 54.22261829822385 0.0 24.365664492751193";
+    assert_eq!(agree(expected, &output), ["1 0 (1, 0)"]);
 }
 
 /// A `max_step` that is not positive is a mistake in the program and panics with `SciPy`'s
@@ -130,6 +190,74 @@ def main():
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: max_step > 0.0, \"`max_step` must be positive.\"\n  \
-         --> <std>/integrate_ivp.byn:233:5\n"
+         --> <std>/integrate_ivp.byn:318:5\n"
+    );
+}
+
+/// `method=` is chosen when compiling (decision 0065 point 2): `"RK45"` by position or keyword
+/// runs RK45, and a method held in a variable is picked at run time, raising `ValueError` for a
+/// name that is not built.
+#[test]
+fn methods_are_chosen_when_compiling_or_at_run_time() {
+    let program = "\
+from integrate import solve_ivp
+
+
+def decay(t: f64, y: f64) -> f64:
+    return -y
+
+
+def main():
+    by_position = solve_ivp(decay, (0.0, 1.0), 1.0, \"RK45\")
+    by_keyword = solve_ivp(decay, (0.0, 1.0), 1.0, method=\"RK45\")
+    print(by_position.nfev)
+    print(by_keyword.nfev)
+    for name in [\"RK45\", \"LSODA\"]:
+        try:
+            result = solve_ivp(decay, (0.0, 1.0), 1.0, method=name)
+            print(result.nfev)
+        except ValueError as error:
+            print(error.message)
+";
+    let directory = package("solve-ivp-methods", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "14\n14\n14\n`method` must be one of {'RK45'} or OdeSolver class.\n"
+    );
+}
+
+/// A method written as a literal that is not built is a compile error that lists the methods.
+#[test]
+fn an_unknown_method_literal_is_a_compile_error() {
+    let program = "\
+from integrate import solve_ivp
+
+
+def decay(t: f64, y: f64) -> f64:
+    return -y
+
+
+def main():
+    result = solve_ivp(decay, (0.0, 1.0), 1.0, method=\"RK54\")
+    print(result.nfev)
+";
+    let directory = package("solve-ivp-unknown-method", &[("main.byn", program)]).unwrap();
+    let (output, _) = baryon_build(&directory).unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        stderr(&output),
+        "\
+error: `RK54` is not a method of `solve_ivp`
+ --> main.byn:9:55
+  |
+9 |     result = solve_ivp(decay, (0.0, 1.0), 1.0, method=\"RK54\")
+  |                                                       ^^^^^^ unknown method
+  = note: the methods built are \"RK45\"
+
+"
     );
 }
