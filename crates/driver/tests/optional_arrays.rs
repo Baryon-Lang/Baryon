@@ -327,3 +327,30 @@ through a type parameter yet
 through `T` is idea I.71"
     );
 }
+
+/// A generic function whose parameter is an array of `T | None` reports that once, where it
+/// is declared, and a call of it adds nothing (roadmap 1.9.73): the call used to say the
+/// function did not fix `T` from its arguments too, which no argument could.
+#[test]
+fn an_array_of_a_type_parameter_or_none_is_reported_once() {
+    let program = r"
+def total[T: Number](xs: Array[T | None, 1]) -> T:
+    return xs.sum()
+
+
+def main():
+    gaps: Array[f64 | None, 1] = Array([1.0, None])
+    print(total(gaps))
+";
+    assert_eq!(
+        check_one(program),
+        "\
+error: an array cannot hold `T | None` yet
+ --> main.byn:1:32
+  |
+1 | def total[T: Number](xs: Array[T | None, 1]) -> T:
+  |                                ^^^^^^^^ not a number, a `bool` or `str`, or `None`
+  = note: an array with missing values holds numbers, `bool`s or `str` today, such as \
+`Array[f64 | None, 1]`"
+    );
+}
