@@ -1,6 +1,6 @@
-//! Checking `DataFrame.read_parquet` (decision 0045, roadmap 3.14.6.3), end to end: programs
-//! that call it go through the parser, the syntax check, the resolver and the checker, and the
-//! rendered diagnostics are compared in full.
+//! Checking `DataFrame.read_parquet` and `to_parquet` (decision 0045, roadmap 3.14.6.3 and
+//! 3.14.6.4), end to end: programs that call them go through the parser, the syntax check,
+//! the resolver and the checker, and the rendered diagnostics are compared in full.
 
 use driver::Session;
 
@@ -133,5 +133,84 @@ error: `DataFrame.read_parquet` can fail with `ValueError`, which is not handled
 20 |     trades: DataFrame[Trade] = DataFrame.read_parquet("trades.parquet")
    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can fail with `ValueError`
    = note: catch it with `try:` and `except ValueError:`, or let it pass on by declaring `-> Raises[None, ValueError]`"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// A frame is written in a function that lets `OSError` pass on and in a `try` that catches
+/// it, with no diagnostic.
+#[test]
+fn writing_a_file_checks() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+def save(trades: DataFrame[Trade]) -> Raises[None, OSError]:
+    trades.to_parquet("trades.parquet")
+
+
+def main():
+    trades = DataFrame({"symbol": Array(["A", "B"]), "price": Array([1.5, None])})
+    try:
+        trades.to_parquet("trades.parquet")
+        save(trades)
+    except OSError as error:
+        print(error)
+"#;
+    assert_eq!(check_one(program), "");
+}
+
+/// A keyword, a call with no path, a path that is not text, a column type the writer does
+/// not have and an `OSError` that is not handled are each one diagnostic.
+#[test]
+fn a_wrong_write_is_an_error() {
+    let program = r#"
+def main() -> Raises[None, OSError]:
+    trades = DataFrame({"symbol": Array(["A", "B"]), "price": Array([1.5, 2.5])})
+    trades.to_parquet("trades.parquet", compression="gzip")
+    trades.to_parquet()
+    trades.to_parquet(3)
+    waves = DataFrame({"z": Array([1.0 + 2.0j])})
+    waves.to_parquet("waves.parquet")
+
+
+def unhandled():
+    trades = DataFrame({"price": Array([1.5, 2.5])})
+    trades.to_parquet("trades.parquet")
+"#;
+    let expected = r#"error: `to_parquet` does not take `compression` yet
+ --> main.byn:3:41
+  |
+3 |     trades.to_parquet("trades.parquet", compression="gzip")
+  |                                         ^^^^^^^^^^^ not built yet
+  = note: this version takes the path alone, and compresses with Snappy
+
+error: `to_parquet` takes the path of the file to write
+ --> main.byn:4:5
+  |
+4 |     trades.to_parquet()
+  |     ^^^^^^^^^^^^^^^^^^^ wrong arguments
+  = note: for example `trades.to_parquet("trades.parquet")`
+
+error: expected `str`, found `i64`
+ --> main.byn:5:23
+  |
+5 |     trades.to_parquet(3)
+  |                       ^ a path is `str`
+
+error: `to_parquet` cannot write the column `z` of type `complex128` yet
+ --> main.byn:7:5
+  |
+7 |     waves.to_parquet("waves.parquet")
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not built yet
+  = note: a column of floats, of whole numbers, of `bool` or of `str` is written, and one of those that may be `None`
+
+error: `trades.to_parquet` can fail with `OSError`, which is not handled here
+  --> main.byn:12:5
+   |
+12 |     trades.to_parquet("trades.parquet")
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ can fail with `OSError`
+   = note: catch it with `try:` and `except OSError:`, or let it pass on by declaring `-> Raises[None, OSError]`"#;
     assert_eq!(check_one(program), expected);
 }

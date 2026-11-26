@@ -1,5 +1,5 @@
-//! Parquet files read into a frame (decision 0045, roadmap 3.14.6.3):
-//! `DataFrame.read_parquet(path)`.
+//! Parquet files read into a frame and written from one (decision 0045, roadmap 3.14.6.3
+//! and 3.14.6.4): `DataFrame.read_parquet(path)` and `frame.to_parquet(path)`.
 //!
 //! The reader is Baryon code in the library, which knows nothing of the schema, so this
 //! module calls it once for the file and once for each column the checker found in the
@@ -17,9 +17,16 @@
 //! Every call can fail, so each has the error edge of the `read_parquet` call. A column
 //! that is built stays an owning temporary until the last call has returned, so an error in
 //! a later column frees the earlier ones.
+//!
+//! Writing goes the other way. For each column, the function of
+//! `<std>/frame_parquet_put.byn` for its type, `parquet_put_f64` or
+//! `parquet_put_optional_str`, gives the column's compressed chunks, and `parquet_write` of
+//! `<std>/frame_parquet_write.byn` lays them out with the schema, which it is told as one
+//! number for each column, its kind.
 
 use crate::builder::Builder;
 use crate::frames::erase;
+use crate::optional_arrays::{VALIDITY, VALUES};
 use mir::{Argument, Constant, ConstantValue, Operand, Place, Projection, Rvalue};
 use syntax::NodeId;
 use types::{Float, Integer, Primitive, Type, TypeDb, TypeKind};
@@ -47,7 +54,113 @@ fn suffix<'db>(db: &'db dyn TypeDb, element: Type<'db>) -> Option<&'static str> 
     })
 }
 
+/// The kind `<std>/frame_parquet_write.byn` numbers a column of `element`s by. `None` for a
+/// type the writer does not have, which the checker has refused.
+fn kind<'db>(db: &'db dyn TypeDb, element: Type<'db>) -> Option<i128> {
+    Some(match element.kind(db) {
+        TypeKind::Primitive(Primitive::Bool) => 0,
+        TypeKind::Primitive(Primitive::Integer(integer)) => match integer {
+            Integer::I8 => 1,
+            Integer::I16 => 2,
+            Integer::I32 => 3,
+            Integer::I64 => 4,
+            Integer::U8 => 5,
+            Integer::U16 => 6,
+            Integer::U32 => 7,
+            Integer::U64 => 8,
+        },
+        TypeKind::Primitive(Primitive::Float(Float::F32)) => 9,
+        TypeKind::Primitive(Primitive::Float(Float::F64)) => 10,
+        TypeKind::Str => 11,
+        _ => return None,
+    })
+}
+
 impl Builder<'_> {
+    /// `frame.to_parquet(path)`, which gives nothing, into `place`: each column's chunks
+    /// from the library, then the file written by its `parquet_write`.
+    ///
+    /// Cost at run time: every column's compressed chunks are held until the file is
+    /// written.
+    pub(crate) fn frame_to_parquet(
+        &mut self,
+        place: Place,
+        frame: NodeId,
+        path: NodeId,
+        node: NodeId,
+    ) {
+        let Some(columns) = self.frame_columns(frame) else {
+            return self.unsupported(node, "`to_parquet` of a value that is not a frame");
+        };
+        let text = Type::new(self.db, TypeKind::Str);
+        let int = self.int_type();
+        let list = |item| Type::new(self.db, TypeKind::List(item));
+        let chunk = vec![self.bitmap_type(), list(int)];
+        let chunk = Type::new(self.db, TypeKind::Tuple(chunk));
+        let first = match self.ty(frame).kind(self.db) {
+            TypeKind::Tuple(stored) => stored.first().copied(),
+            _ => None,
+        };
+        let stored = self.borrow(frame);
+        let mut chunks = Vec::with_capacity(columns.len());
+        let mut names = Vec::with_capacity(columns.len());
+        let mut kinds = Vec::with_capacity(columns.len());
+        for (position, column) in (0_u32..).zip(columns) {
+            let at = stored.clone().project(Projection::Field(position));
+            let (element, optional) = match column.element.kind(self.db) {
+                TypeKind::Optional(value) => (*value, true),
+                _ => (column.element, false),
+            };
+            let (Some(kind), Some(name)) = (kind(self.db, element), suffix(self.db, element))
+            else {
+                return self.unsupported(node, "`to_parquet` of a column of this type");
+            };
+            let kind = if optional { kind + 100 } else { kind };
+            let mut given = if optional {
+                [VALUES, VALIDITY]
+                    .map(|part| at.clone().project(Projection::Field(part)))
+                    .to_vec()
+            } else {
+                vec![at]
+            };
+            let kind = Operand::Constant(Constant::integer(int, kind));
+            given.push(Place::from(self.held(int, kind.clone(), node)));
+            let function = if optional {
+                format!("parquet_put_optional_{name}")
+            } else {
+                format!("parquet_put_{name}")
+            };
+            let Some(encoded) = self.frame_call(&function, Vec::new(), given, chunk, node) else {
+                return;
+            };
+            chunks.push(Operand::Move(Place::from(encoded)));
+            kinds.push(kind);
+            names.push(Operand::Constant(Constant {
+                ty: text,
+                value: ConstantValue::Str(column.name.clone()),
+            }));
+        }
+        let mut lists = Vec::with_capacity(3);
+        for (item, values) in [(text, names), (int, kinds), (chunk, chunks)] {
+            let held = self.temporary(list(item), node);
+            self.assign(
+                Place::from(held),
+                Rvalue::Aggregate(list(item), values),
+                node,
+            );
+            self.drop_later(held);
+            lists.push(Place::from(held));
+        }
+        let rows = stored.project(Projection::Field(0));
+        let rows = self.column_length(rows, first, node);
+        let rows = Place::from(self.held(int, rows, node));
+        let mut given = vec![self.borrow(path)];
+        given.extend(lists);
+        given.push(rows);
+        let given = given.into_iter().map(Argument::Borrow).collect();
+        self.csv_call("parquet_write", given, place, node);
+    }
+
     /// `DataFrame.read_parquet(path)` into `place`, the frame's type being the call's own,
     /// which the checker took from the context.
     ///
