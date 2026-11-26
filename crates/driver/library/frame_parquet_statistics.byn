@@ -1,0 +1,198 @@
+"""Parquet files written in Baryon: the statistics of a column chunk (roadmap 3.14.6.4,
+decision 0045).
+
+A Parquet file says, for each column of each row group, how many values are missing and
+which value is the smallest and which the largest. A reader asked for the rows where
+`price > 100` reads those three numbers first and passes over every row group that cannot
+hold such a row, so a file with statistics is cheaper to search. pandas and polars write
+them, and `parquet_chunks` of `<std>/frame_parquet_write.byn` does through
+`parquet_statistics` here. A program cannot import this file.
+
+The order is the one the format gives each type, and the file's metadata says so in its
+`column_orders`:
+
+- whole numbers by value, signed or unsigned as the column is;
+- floats by value, with every NaN left out, and since `-0.0` equals `0.0` the smallest is
+  written as `-0.0` and the largest as `0.0` when either is a zero, as the format asks;
+- `bool` with `False` first;
+- text by its UTF-8 bytes, each byte unsigned, a shorter text before a longer one it starts.
+
+Cost: one pass over the values' bytes. A value is compared through a whole number worked
+out from its bytes, since Baryon cannot yet read bytes as a float.
+"""
+
+from frame_parquet_thrift import thrift_number, thrift_varint
+
+
+def _text_limit() -> int:
+    """The longest text written as a smallest or largest value, in bytes. Past it both are
+    left out, so one long text does not swell the metadata; the missing count stays."""
+    return 4096
+
+
+def _word(raw: Array[u8, 1], at: int) -> int:
+    """The four bytes of `raw` from `at` as a whole number from 0 to 2 to the 32 less 1,
+    lowest byte first."""
+    low = int(raw[at]) | (int(raw[at + 1]) << 8)
+    return low | (int(raw[at + 2]) << 16) | (int(raw[at + 3]) << 24)
+
+
+def _key(raw: Array[u8, 1], at: int, base: int) -> int:
+    """A whole number that orders the value whose plain bytes start at `raw[at]` as the
+    format orders the kind `base`: a greater value has a greater number. `base` is 0 for
+    `bool`, 1 to 4 for `i8` to `i64`, 5 to 8 for `u8` to `u64`, 9 for `f32` and 10 for `f64`.
+
+    A float's bits are its sign and a magnitude that grows with the number's size, so a
+    float that is not negative keeps its magnitude and a negative one gets the magnitude
+    turned over, less one, which puts `-0.0` just under `0.0`. A `u64` is moved down by 2
+    to the 63 to stay within 64 bits.
+    """
+    if base == 0:
+        return int(raw[at])
+    half = 2147483648
+    high = _word(raw, at)
+    if base == 9:
+        if high >= half:
+            return half - high - 1
+        return high
+    if base != 4 and base != 8 and base != 10:
+        if base < 5 and high >= half:
+            return high - 2 * half
+        return high
+    low = high
+    high = _word(raw, at + 4)
+    if base == 8:
+        return (high - half) * 2 * half + low
+    if base == 10 and high >= half:
+        return (half - high - 1) * 2 * half + (2 * half - 1 - low)
+    if high >= half:
+        high -= 2 * half
+    return high * 2 * half + low
+
+
+def _nan(raw: Array[u8, 1], at: int, base: int) -> bool:
+    """Whether the float whose plain bytes start at `raw[at]` is a NaN: every bit of its
+    exponent set and some bit of its fraction. `base` is 9 for `f32` and 10 for `f64`."""
+    if base == 9:
+        return (_word(raw, at) & 2147483647) > 2139095040
+    high = _word(raw, at + 4) & 2147483647
+    return high > 2146435072 or (high == 2146435072 and _word(raw, at) != 0)
+
+
+def _before(raw: Array[u8, 1], ends: Array[i64, 1], one: int, other: int) -> bool:
+    """Whether the text of value `one` comes before that of value `other` by its bytes, where
+    value `k` is `raw` from `ends[k]` to `ends[k + 1]`."""
+    first = ends[one]
+    second = ends[other]
+    length = ends[one + 1] - first
+    longer = ends[other + 1] - second
+    for part in range(min(length, longer)):
+        if raw[first + part] != raw[second + part]:
+            return raw[first + part] < raw[second + part]
+    return length < longer
+
+
+def _bounds(raw: Array[u8, 1], ends: Array[i64, 1], first: int, count: int, base: int) -> list[int]:
+    """Which of the `count` values from value `first` is the smallest and which the largest,
+    as two value numbers, or an empty list when there is no value to compare: none at all,
+    or floats that are all NaN. Of equal values the first met is kept."""
+    found: list[int] = []
+    if base == 11:
+        if count > 0:
+            least = first
+            most = first
+            for value in range(first + 1, first + count):
+                if _before(raw, ends, value, least):
+                    least = value
+                elif _before(raw, ends, most, value):
+                    most = value
+            found = [least, most]
+        return found
+    width = 1
+    if base == 4 or base == 8 or base == 10:
+        width = 8
+    elif base != 0:
+        width = 4
+    floats = base == 9 or base == 10
+    least = -1
+    most = -1
+    low = 0
+    high = 0
+    for value in range(first, first + count):
+        at = value * width
+        if not (floats and _nan(raw, at, base)):
+            key = _key(raw, at, base)
+            if least < 0:
+                least = value
+                most = value
+                low = key
+                high = key
+            elif key < low:
+                least = value
+                low = key
+            elif key > high:
+                most = value
+                high = key
+    if least >= 0:
+        found = [least, most]
+    return found
+
+
+def _value(
+    out: InOut[list[int]], raw: Array[u8, 1], ends: Array[i64, 1], value: int, base: int, zero: int
+) -> None:
+    """Adds the plain bytes of value `value` to `out` with their length before them as a
+    varint, as a Thrift field of bytes holds them. A float that is a zero of either sign is
+    written as `-0.0` when `zero` is -1 and as `0.0` when it is 1."""
+    first = value
+    length = 1
+    if base == 11:
+        first = ends[value]
+        length = ends[value + 1] - first
+    elif base == 4 or base == 8 or base == 10:
+        first = 8 * value
+        length = 8
+    elif base != 0:
+        first = 4 * value
+        length = 4
+    thrift_varint(out, length)
+    key = 1
+    if base == 9 or base == 10:
+        key = _key(raw, first, base)
+    if key == 0 or key == -1:
+        for part in range(length - 1):
+            out.append(0)
+        out.append(128 if zero < 0 else 0)
+    else:
+        for part in range(length):
+            out.append(int(raw[first + part]))
+
+
+def parquet_statistics(
+    raw: Array[u8, 1], ends: Array[i64, 1], first: int, count: int, base: int, missing: int
+) -> list[int]:
+    """The statistics of a column chunk as the Thrift struct its metadata holds, ended: how
+    many values are missing, `missing`, and the largest and the smallest of the `count`
+    values that are there, from value `first`, as their plain bytes.
+
+    `raw` and `ends` hold the values as `parquet_chunks` takes them, and `base` is the
+    column's kind without its 100. The largest and smallest are left out when there is no
+    value to compare, or when a text among the two is longer than 4,096 bytes.
+    """
+    out: list[int] = []
+    thrift_number(out, 3, 6, missing)
+    found = _bounds(raw, ends, first, count, base)
+    if len(found) == 2:
+        least = found[0]
+        most = found[1]
+        short = True
+        if base == 11:
+            limit = _text_limit()
+            short = ends[least + 1] - ends[least] <= limit and ends[most + 1] - ends[most] <= limit
+        if short:
+            out.append(40)
+            _value(out, raw, ends, most, base, 1)
+            out.append(24)
+            _value(out, raw, ends, least, base, -1)
+    out.append(0)
+    return out

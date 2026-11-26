@@ -1,0 +1,50 @@
+"""Parquet files written in Baryon: the pieces of Thrift's compact protocol that the metadata
+and the page headers are made of (roadmap 3.14.6.4, decision 0045).
+
+A Parquet file describes itself in Thrift structs. In the compact protocol a field starts
+with one byte: in its top four bits how far its number is past the last field's, and in
+its low four bits its type; a struct ends with a 0 byte. Whole numbers are varints, zigzag
+when they may be negative, and text and bytes are a length then the bytes. The writers of
+`<std>/frame_parquet_write.byn`, `<std>/frame_parquet_dictionary.byn` and
+`<std>/frame_parquet_statistics.byn` add these pieces to a list of bytes. A program cannot
+import this file.
+"""
+
+
+def thrift_varint(out: InOut[list[int]], value: int) -> None:
+    """Adds `value`, which is not negative, to `out` as a varint: seven bits to a byte,
+    lowest first, the top bit set on every byte but the last."""
+    rest = value
+    while rest >= 128:
+        out.append((rest & 127) | 128)
+        rest = rest >> 7
+    out.append(rest)
+
+
+def thrift_number(out: InOut[list[int]], delta: int, kind: int, value: int) -> None:
+    """Adds a field that holds the whole number `value`, which is not negative: the header
+    byte for a field `delta` past the last one, of the compact type `kind` (5 for 32 bits, 6
+    for 64), and the value as a zigzag varint."""
+    out.append((delta << 4) | kind)
+    thrift_varint(out, value << 1)
+
+
+def thrift_text(out: InOut[list[int]], delta: int, text: str) -> None:
+    """Adds a field `delta` past the last one that holds `text`: the header byte, the length
+    of its UTF-8 bytes as a varint, and the bytes."""
+    out.append((delta << 4) | 8)
+    raw = text.encode()
+    thrift_varint(out, len(raw))
+    for byte in raw:
+        out.append(int(byte))
+
+
+def thrift_items(out: InOut[list[int]], delta: int, kind: int, count: int) -> None:
+    """Adds the start of a field `delta` past the last one that holds a list of `count`
+    items of the compact type `kind`: the header byte and the list's header."""
+    out.append((delta << 4) | 9)
+    if count < 15:
+        out.append((count << 4) | kind)
+    else:
+        out.append(240 | kind)
+        thrift_varint(out, count)
