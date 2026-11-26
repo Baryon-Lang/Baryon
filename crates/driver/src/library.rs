@@ -49,6 +49,14 @@ pub(crate) const LIBRARY: [(&str, &str); 112] = [
         include_str!("../library/dejavu_sans.byn"),
     ),
     ("<std>/fft.byn", include_str!("../library/fft.byn")),
+    (
+        "<std>/fft_axes.byn",
+        include_str!("../library/fft_axes.byn"),
+    ),
+    (
+        "<std>/fft_engine.byn",
+        include_str!("../library/fft_engine.byn"),
+    ),
     ("<std>/figure.byn", include_str!("../library/figure.byn")),
     ("<std>/fits.byn", include_str!("../library/fits.byn")),
     ("<std>/font.byn", include_str!("../library/font.byn")),
