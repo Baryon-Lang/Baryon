@@ -62,7 +62,9 @@ for name in ["quad", "quad_inf", "simpson", "trapezoid", "rk45", "dop853"]:
     ours, theirs = 1e9, 1e9
     for _ in range(3):
         start = time.perf_counter()
-        run = subprocess.run(["./integrate-bench", name], capture_output=True, text=True, check=True)
+        run = subprocess.run(
+            ["./integrate-bench", name], capture_output=True, text=True, check=True
+        )
         ours = min(ours, time.perf_counter() - start)
     for _ in range(3):
         start = time.perf_counter()
