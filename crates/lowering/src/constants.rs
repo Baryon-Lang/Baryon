@@ -130,7 +130,16 @@ impl<'db> Builder<'db> {
         }
         let tree = self.db.parse(item.file(self.db)).tree();
         let (function, class) = crate::definition(tree, item.name(self.db))?;
-        let parameter = crate::defaults::parameters(tree, function).nth(position)?;
+        let text = item.file(self.db).source(self.db).text();
+        // `__init__`'s signature leaves out `self`, which its parameter list still has.
+        let skipped = usize::from(crate::initializers::is_initializer(
+            self.db,
+            tree,
+            text,
+            (function, class),
+            signature,
+        ));
+        let parameter = crate::defaults::parameters(tree, function).nth(position + skipped)?;
         let default = tree.child(parameter, Role::Default)?;
         let mut callee = Builder::new(
             self.db,

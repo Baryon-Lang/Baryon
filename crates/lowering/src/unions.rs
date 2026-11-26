@@ -32,11 +32,19 @@ impl<'db> Builder<'db> {
         call: (Vec<Argument<'db>>, Place, BlockId, Option<mir::ErrorEdge>),
         node: NodeId,
     ) -> bool {
-        // A method's receiver comes first; a function's first argument is not one.
-        let is_method = matches!(
-            crate::definition(self.db.parse(item.file(self.db)).tree(), item.name(self.db)),
-            Some((_, Some(_)))
-        );
+        // A method's receiver comes first; a function's first argument is not one, and
+        // neither is the first argument of `__init__`, which takes no receiver.
+        let tree = self.db.parse(item.file(self.db)).tree();
+        let is_method = match crate::definition(tree, item.name(self.db)) {
+            Some((function, class @ Some(_))) => {
+                let text = item.file(self.db).source(self.db).text();
+                !matches!(&self.db.declaration(item).declaration,
+                types::Declaration::Function(signature) if crate::initializers::is_initializer(
+                    self.db, tree, text, (function, class), signature,
+                ))
+            }
+            _ => false,
+        };
         let receiver = arguments.first().copied().flatten().filter(|_| is_method);
         if let Some(members) = receiver.and_then(|receiver| self.union_members(self.ty(receiver))) {
             return self.member_calls(item, members, call, node);

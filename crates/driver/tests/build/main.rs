@@ -62,6 +62,7 @@ mod gzip_open;
 mod h5by;
 mod hoisting;
 mod inflate;
+mod initializers;
 mod integrate;
 mod integrate_validation;
 mod interpolation;

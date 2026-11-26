@@ -30,7 +30,7 @@ impl<'db> Body<'db> {
                 self.interpolations(node);
                 Type::new(self.db, TypeKind::Str)
             }
-            SyntaxKind::Name => self.name(node, expected),
+            SyntaxKind::Name => self.receiver_or_name(node, expected),
             SyntaxKind::Attribute => self.attribute(node, expected),
             SyntaxKind::Subscript => self.subscript(node, expected),
             SyntaxKind::Call => {

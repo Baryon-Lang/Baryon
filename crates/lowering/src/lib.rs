@@ -324,6 +324,7 @@ mod frames;
 mod generics;
 mod h5by;
 mod in_place;
+mod initializers;
 mod iterators;
 mod lanes;
 mod lists;

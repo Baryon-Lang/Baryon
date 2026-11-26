@@ -27,6 +27,9 @@ impl<'db> Body<'db> {
                 self.expression(value, None);
                 return;
             }
+            if self.initializer_store(target, value) {
+                return;
+            }
             if self.header_store(target, value) {
                 return;
             }

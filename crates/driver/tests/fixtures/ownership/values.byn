@@ -191,3 +191,32 @@ def print_value():
 def fstring_value():
     a = NEW1
     print(f"{size(a)} {size(make(3))}")
+
+
+# site: initialized
+# A struct built by `__init__` (decision 0068): a field set twice, one moved in from an `Owned`
+# parameter, one set on two paths of which one returns early, then the struct moved and dropped.
+class InitializedHolder(Struct):
+    first: ITEM
+    second: ITEM
+
+    def __init__(self, given: Owned[ITEM], k: int):
+        self.first = make(k)
+        self.first = given
+        if k > 1:
+            self.second = make(k + 1)
+            return
+        self.second = make(k + 2)
+
+
+def initialized_keep(holder: Owned[InitializedHolder]) -> int:
+    show(holder.first)
+    show(holder.second)
+    return 1
+
+
+def initialized():
+    holder = InitializedHolder(NEW1, 1)
+    show(holder.second)
+    initialized_keep(holder)
+    initialized_keep(InitializedHolder(make(3), 2))
