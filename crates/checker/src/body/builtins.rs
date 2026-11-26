@@ -385,7 +385,7 @@ impl<'db> Body<'db> {
             (
                 _,
                 Some(Definition::Standard {
-                    module: module @ ("random" | "sys" | "os"),
+                    module: module @ ("random" | "sys" | "os" | "time"),
                     member: Some(member),
                 }),
             ) if !matches!(ty.kind(self.db), TypeKind::Unknown) => {

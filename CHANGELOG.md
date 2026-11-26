@@ -53,6 +53,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats
   took 110 s and now takes 0.13 s. A program holding a literal of 10,000 short lists went from
   260 s to 49 s, and is still slower than it should be.
+- A `time` module for timing a program's phases: `time.perf_counter()`, `time.monotonic()` and
+  `time.time()`, each an `f64` of seconds with Python's meaning ([Clocks](docs/reference/time.md)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
