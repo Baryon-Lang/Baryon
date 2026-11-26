@@ -108,6 +108,9 @@ impl<'db> Body<'db> {
                 return self.text_method(node, function, receiver, &callee, arguments);
             }
             TypeKind::Struct(nominal) => nominal.clone(),
+            TypeKind::Parameter { .. } if callee == "copy" => {
+                return self.parameter_copy(node, base, receiver, arguments);
+            }
             _ if self.has_no_members(base) => {
                 return self.no_method(function, base, &callee, arguments);
             }
@@ -355,6 +358,10 @@ impl<'db> Body<'db> {
         let package = self.lowerer.package;
         let available = traits::closure(self.db, package, [bound]);
         let Some((owner, item)) = traits::find_method(self.db, package, &available, callee) else {
+            if callee == "copy" {
+                let receiver = Passed { ..*receiver };
+                return self.parameter_copy(node, base, receiver, arguments);
+            }
             self.untyped(arguments);
             let message = format!("`{}` has no method `{callee}`", self.show(base));
             let hint = format!(

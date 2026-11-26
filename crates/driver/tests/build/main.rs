@@ -101,6 +101,7 @@ mod optional_text_comparisons;
 mod overflow;
 mod ownership;
 mod parallel;
+mod parameter_copies;
 mod parts;
 mod paths;
 mod plotting;

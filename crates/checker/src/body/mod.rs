@@ -94,6 +94,7 @@ mod optional_arrays;
 mod overloads;
 mod parallel;
 mod parameter_conversions;
+mod parameter_copies;
 mod paths;
 mod patterns;
 mod process;

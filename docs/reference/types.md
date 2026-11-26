@@ -1019,8 +1019,25 @@ an integer or a float of any width, as the number type it stands for would: `T(l
 ([decision 0066](../decisions/0066-converting-to-and-naming-type-parameters.md)). Under any other
 bound `T(0)` is an error. The reverse, a number conversion of a `T`'s value such as `f64(x)`,
 is not built yet and is a compile error; convert the other value to `T` instead, as in
-`x * T(k)`. A type parameter has no methods but its trait's, so `x.copy()` on an
-unbounded `T` is an error too. A number literal
+`x * T(k)`. A type parameter has no methods but its trait's, with one exception: under any
+bound, `x.copy()` on a `T` makes a new value that owns memory of its own (the 0066 amendment).
+Each copy for a type argument copies as that type does: a copy type is the value itself, a
+`str`, a list of copy types or `str`s and an array of copy types are new ones, and a struct
+that defines its own `copy` method calls it. A call that makes `T` a type with no copy, such
+as a tuple, a `T | None` or a struct without its own `copy`, is an error at that call, and so
+is one that makes it a `dict`, a frame, a text array, an array with missing values, a `Path` or
+a list of lists, which are not copied through a type parameter yet (idea I.76):
+
+```python
+def last[T](xs: list[T]) -> T:
+    return xs[len(xs) - 1].copy()
+
+
+def main():
+    print(last([1.5, 2.5]), last(["a", "b"]))  # 2.5 b
+```
+
+A number literal
 takes the type `T` under `Float`; under `Number` only an integer literal does, since `T` may be an
 integer type, so `x * 0.5` needs `[T: Float]`. Under `VectorSpace` a literal is an `f64`, which
 is what scales a vector.

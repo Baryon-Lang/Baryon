@@ -340,6 +340,7 @@ mod optional_masks;
 mod optional_selection;
 mod optional_text;
 mod parallel;
+mod parameter_copies;
 mod paths;
 mod patterns;
 mod process;

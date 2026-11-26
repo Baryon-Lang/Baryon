@@ -303,6 +303,20 @@ def generic_owned():
     show(keep(a))
 
 
+# site: generic_copy
+# `.copy()` on a type parameter (roadmap 1.9.60): the copy owns memory of its own, so both it
+# and the original are read and dropped. Kinds a type parameter cannot copy yet are skipped.
+def generic_copy_twin[U](x: U) -> U:
+    return x.copy()
+
+
+def generic_copy():
+    a = make(5)
+    b = generic_copy_twin(a)
+    show(a)
+    show(b)
+
+
 # site: callable_owned
 # A function passed as an argument, whose results are appended to a list.
 def callable_owned_apply(f: Callable[[int], ITEM], n: int) -> list[ITEM]:

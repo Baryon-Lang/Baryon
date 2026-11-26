@@ -76,6 +76,12 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - A generic function bounded by `VectorSpace` no longer frees an `Array` twice when it adds,
   scales or negates one, and no longer frees the caller's array that it only read.
 
+- A generic function can call `.copy()` on a value of its type parameter: `xs[-1].copy()` in
+  `def last[T](xs: list[T]) -> T`. It copies numbers, `bool`s, `str`s, lists and arrays of
+  those, and structs with their own `copy`. A call that makes `T` a type with no copy, such as
+  a tuple, is an error at that call naming the type
+  ([Generics](docs/reference/types.md#generics)).
+
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
 The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief
