@@ -75,6 +75,7 @@ impl<'db> Builder<'db> {
                 }
                 Some(base.project(Projection::Index(locals)))
             }
+            TypeKind::Parameter { .. } => Some(self.state_element(array, index, unchecked, node)),
             _ => {
                 self.unsupported(node, "indexing strings");
                 None
@@ -478,9 +479,7 @@ impl<'db> Builder<'db> {
         if self.optional_array_element(argument).is_some() {
             return self.optional_array_len(place, argument, node);
         }
-        if !self.is_array(ty)
-            && !matches!(ty.kind(self.db), TypeKind::List(_) | TypeKind::Dict { .. })
-        {
+        if !self.has_length(ty) {
             return self.unsupported(node, "`len` of this type");
         }
         let array = self.borrow(argument);

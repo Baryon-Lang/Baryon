@@ -49,6 +49,10 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
   archives, so trying the extension no longer needs Node.js
   ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).
+- A function generic over a `VectorSpace` state reads it by position: `len(y)` is its number of
+  elements and `y[i]` element `i`, an `f64`, so one function weighs every element of an `f64`,
+  a `Fixed` vector or an `Array`. An `f64` has length 1. Elements are only read
+  ([Generics](docs/reference/types.md#traits)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats

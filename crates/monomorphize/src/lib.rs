@@ -85,6 +85,7 @@
 mod callables;
 mod overflow;
 mod spread;
+mod states;
 mod substitution;
 mod unions;
 
@@ -160,6 +161,7 @@ pub fn instantiate<'db>(
     checked_arithmetic(db, &mut body, &integers);
     substitution.body(&mut body);
     spread::expand(db, &mut body);
+    states::read(db, &mut body);
     let received = parameters
         .iter()
         .zip(arguments)

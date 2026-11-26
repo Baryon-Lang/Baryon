@@ -73,7 +73,7 @@ impl<'db> Body<'db> {
                 self.print_target(node, arguments, keywords)
             }
             ("input", _) => self.input(node, arguments, &types),
-            ("len", [_]) => int,
+            ("len", [value]) => self.length_of(all[0], *value, int),
             ("round", [value]) if self.is_number(*value) => int,
             ("abs", [value]) => *value,
             ("round", [value, digits]) => {

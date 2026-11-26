@@ -118,3 +118,33 @@ in SciPy. `sol.sol(t)` calls the `OdeSolution` through `__call__`
 - Only the integrator a literal names is compiled, so code size grows with the methods a program
   uses, not with every method SciPy has. This matters more for `minimize` in row 3.20, which
   has about ten methods.
+
+## Amendment, 2026-11-20: reading a state by position
+
+The chief designer accepted this amendment on 2026-11-20 (card 60, "VectorSpace allows len and
+y[i]"). It amends point 1 and is built in roadmap row 3.19.7.1.
+
+Point 1 gives a `VectorSpace` state only arithmetic: `+` and `-` with itself, and `*` by an
+`f64`. `solve_ivp` needs more than that from its library code. Its error norm weighs every
+element of the state, and it copies each state into a column of `sol.y`. Neither can be written
+with arithmetic alone.
+
+### What is added
+
+- **`len(y)`** is the number of elements of a `VectorSpace` state `y`, an `i64`.
+- **`y[i]`** reads element `i` of the state as an `f64`, with the same bounds check as an
+  `Array`.
+- **An `f64` state acts as length 1.** `len(y)` is 1 and `y[0]` is the number itself.
+- **Elements are only read.** `y[i] = x` and `y[i] += x` are errors. A new state is built with
+  `+`, `-` and `*`, so every instance stays a whole-array expression.
+
+One index, an integer, is allowed: a slice or two indices are errors. A type parameter under any
+other bound has no length and cannot be indexed.
+
+### Alternatives considered
+
+- **A `y.to_array()` method.** Simpler, but it allocates on every step, and point 1 measured an
+  allocating state at 8.4 times slower.
+- **`Fixed` and `Array` overloads only.** This narrows `solve_ivp` to two state types through
+  overloading ([decision 0067](0067-library-overloading.md)) and drops the generic state of
+  point 1.

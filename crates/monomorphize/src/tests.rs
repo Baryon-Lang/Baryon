@@ -1,6 +1,7 @@
 //! Tests of instantiation: every place a type appears is substituted.
 
 mod callables;
+mod states;
 
 use crate::instantiate;
 use database::{Db, File, Package, ParsedFile, Resolution};
