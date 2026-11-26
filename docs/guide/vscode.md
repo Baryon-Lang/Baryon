@@ -55,8 +55,10 @@ with `$HOME/Baryon` replaced by wherever you cloned the repository.
 
 ## 3. Install the extension
 
-The extension is not on the Visual Studio Marketplace. If you were given `baryon-0.3.0.vsix`, skip
-to the second step. Otherwise package it from the clone:
+The extension is not on the Visual Studio Marketplace. From 0.4.0 on, every release on the
+[Releases page](https://github.com/Baryon-Lang/Baryon/releases) has it attached as
+`baryon-<version>.vsix`. If you downloaded it there, or were given `baryon-0.3.0.vsix`, skip to
+the second step. Otherwise package it from the clone:
 
 ```sh
 cd editors/vscode

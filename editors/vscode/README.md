@@ -12,7 +12,8 @@ its shape are in [decision 0025](../../docs/decisions/0025-vscode-extension.md).
 from building `baryon` to running a first program; this section is the short version.
 
 The extension is not on the Visual Studio Marketplace yet. Install it from a `.vsix` file, a
-packaged extension:
+packaged extension. From 0.4.0 on, the release workflow packages it and attaches it to every
+[release](https://github.com/Baryon-Lang/Baryon/releases), so you can skip step 1 and download it.
 
 1. Package it. This needs [Node.js](https://nodejs.org/) 18 or later, and only on the machine
    that packages it:
