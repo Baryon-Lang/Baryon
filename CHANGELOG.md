@@ -38,6 +38,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   values, from files compressed with Snappy, gzip, Zstandard or LZ4 or not at all. The reader is
   written in Baryon, so a program needs no other library. Dates, decimals and nested columns are
   not read yet ([Parquet files](docs/reference/parquet-files.md)).
+- Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
+  archives, so trying the extension no longer needs Node.js
+  ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats

@@ -231,6 +231,18 @@ pub enum Builtin {
     /// holds back and ends the program with the status, running nothing else on the way out. A
     /// status outside 0 to 255 panics.
     Exit,
+    /// `time.perf_counter()` and `time.monotonic()` (roadmap 1.13.19): no arguments; the
+    /// destination is an `f64`, seconds on a clock that never goes back and that a change of the
+    /// system's date does not move. Only the difference of two readings means anything, as in
+    /// Python. The clock is `CLOCK_MONOTONIC` on Linux, the one Python reads there, and
+    /// `CLOCK_UPTIME_RAW` (`mach_absolute_time`) on macOS; neither counts time the machine
+    /// sleeps. The call cannot fail.
+    MonotonicClock,
+    /// `time.time()` (roadmap 1.13.19): no arguments; the destination is an `f64`, the seconds
+    /// since 1970-01-01 00:00:00 UTC on the system's clock, as Python gives them. That clock can
+    /// jump when the system's date is set, so time a computation with
+    /// [`MonotonicClock`](Self::MonotonicClock) instead. The call cannot fail.
+    WallClock,
     /// Sorts a `list` in place, for `sorted(values)` (roadmap 1.13.13): two arguments, the list
     /// passed `InOut` and a `bool` passed `Owned`, set to sort from the largest; the destination
     /// has type `None`. The elements are numbers, `bool`s or `str`s, which Python orders: numbers
@@ -332,6 +344,8 @@ impl Builtin {
     /// assert_eq!(mir::Builtin::Text(mir::TextMethod::Split).name(), "str.split");
     /// assert_eq!(mir::Builtin::DictFind.name(), "dict lookup");
     /// assert_eq!(mir::Builtin::Exit.name(), "sys.exit");
+    /// assert_eq!(mir::Builtin::MonotonicClock.name(), "time.monotonic");
+    /// assert_eq!(mir::Builtin::WallClock.name(), "time.time");
     /// assert_eq!(mir::Builtin::Sort.name(), "sorted");
     /// assert_eq!(mir::Builtin::Copy.name(), "copy through a type parameter");
     /// assert_eq!(mir::Builtin::File(mir::FileMethod::Write).name(), "File.write");
@@ -372,6 +386,8 @@ impl Builtin {
             Self::EnvironmentGet => "os.environ.get",
             Self::EnvironmentEntries => "os.environ.copy",
             Self::Exit => "sys.exit",
+            Self::MonotonicClock => "time.monotonic",
+            Self::WallClock => "time.time",
             Self::Sort => "sorted",
             Self::Copy => "copy through a type parameter",
             Self::RoundDigits => "round",
