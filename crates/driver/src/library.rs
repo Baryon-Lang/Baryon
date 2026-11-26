@@ -176,6 +176,10 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
         include_str!("../library/linalg_common.byn"),
     ),
     (
+        "<std>/linalg_complex.byn",
+        include_str!("../library/linalg_complex.byn"),
+    ),
+    (
         "<std>/linalg_eig.byn",
         include_str!("../library/linalg_eig.byn"),
     ),

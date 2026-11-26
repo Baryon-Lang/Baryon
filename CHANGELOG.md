@@ -24,6 +24,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([`linalg.eig`](docs/reference/linear-algebra.md#linalgeig-and-linalgeigvals)).
 - `math.isnan`, `isinf` and `isfinite` of a value whose type is a `T: Float` parameter build at
   `f32`; the `f32` instance failed to compile.
+- `linalg.solve`, `lu_factor`, `lu_solve`, `det`, `inv`, `cholesky` and `qr` take `complex128`
+  matrices, with NumPy's results ([`linalg.solve`](docs/reference/linear-algebra.md#linalgsolve)).
 - The documentation has a website, the [Learn site](https://baryon-lang.github.io/Baryon/): every
   page of `docs/`, with a sidebar and search, opening on
   [Learn Baryon](docs/guide/learn.md), which says where each kind of reader should start. It is

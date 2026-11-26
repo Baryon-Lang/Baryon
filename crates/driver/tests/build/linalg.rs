@@ -4,6 +4,7 @@
 //! significant digits, since `LAPACK`, under `NumPy`, adds in its own order.
 
 mod blas;
+mod complex;
 
 use super::examples::prints;
 use super::{baryon_build, package, panic_report, stderr};
@@ -295,7 +296,7 @@ def main() -> Raises[None, LinAlgError]:
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: len(b) == a.shape[0], \"solve needs b as long as a has rows\"\n  \
-         --> <std>/linalg_factor.byn:84:5\n"
+         --> <std>/linalg_factor.byn:110:5\n"
     );
 }
 

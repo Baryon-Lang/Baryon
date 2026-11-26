@@ -1,10 +1,12 @@
 """Internal file of `linalg` (decision 0040): solving and factoring, `lu_factor`, `lu_solve`,
 `solve`, `det`, `inv`, `cholesky` and `qr`. `linalg` re-exports each (decision 0062); a program
-cannot import this file.
+cannot import this file. The `complex128` overloads call their bodies in `linalg_complex`.
 """
 
 from math import copysign, fabs, hypot, sqrt
 from linalg_common import LinAlgError
+from linalg_complex import complex_cholesky, complex_det, complex_inv, complex_lu_factor, complex_qr
+from linalg_complex import complex_lu_solve_matrix, complex_lu_solve_vector
 
 
 def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 1]], LinAlgError]:
@@ -43,6 +45,16 @@ def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 
     return lu, piv
 
 
+def lu_factor(
+    a: Array[complex128, 2],
+) -> Raises[tuple[Array[complex128, 2], Array[int, 1]], LinAlgError]:
+    """`lu_factor` of a `complex128` matrix, beside the generic one, whose `Float` bound excludes
+    complex numbers (decision 0067). The pivot is the entry with the largest `|re| + |im|`, as in
+    LAPACK's `zgetrf`.
+    """
+    return complex_lu_factor(a)
+
+
 def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]:
     """The vector `x` with `a @ x == b`, from `lu_factor(a)`'s `lu` and `piv`, as
     `scipy.linalg.lu_solve((lu, piv), b)`.
@@ -72,6 +84,20 @@ def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 2]) -> Array[f
 def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 2]) -> Array[f32, 2]:
     """`lu_solve` of an `f32` factorization and matrix, worked in `f32`."""
     return _lu_solve_matrix(lu, piv, b)
+
+
+def lu_solve(
+    lu: Array[complex128, 2], piv: Array[int, 1], b: Array[complex128, 1],
+) -> Array[complex128, 1]:
+    """`lu_solve` of a `complex128` factorization and vector."""
+    return complex_lu_solve_vector(lu, piv, b)
+
+
+def lu_solve(
+    lu: Array[complex128, 2], piv: Array[int, 1], b: Array[complex128, 2],
+) -> Array[complex128, 2]:
+    """`lu_solve` of a `complex128` factorization and matrix of right-hand sides."""
+    return complex_lu_solve_matrix(lu, piv, b)
 
 
 def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]:
@@ -111,6 +137,24 @@ def solve(a: Array[f32, 2], b: Array[f32, 2]) -> Raises[Array[f32, 2], LinAlgErr
     assert b.shape[0] == a.shape[0], "solve needs b with as many rows as a"
     lu, piv = lu_factor(a)
     return _lu_solve_matrix(lu, piv, b)
+
+
+def solve(
+    a: Array[complex128, 2], b: Array[complex128, 1],
+) -> Raises[Array[complex128, 1], LinAlgError]:
+    """`solve` of a `complex128` matrix and vector, as NumPy's `zgesv`."""
+    assert len(b) == a.shape[0], "solve needs b as long as a has rows"
+    lu, piv = complex_lu_factor(a)
+    return complex_lu_solve_vector(lu, piv, b)
+
+
+def solve(
+    a: Array[complex128, 2], b: Array[complex128, 2],
+) -> Raises[Array[complex128, 2], LinAlgError]:
+    """`solve` of a `complex128` matrix and a matrix of right-hand sides."""
+    assert b.shape[0] == a.shape[0], "solve needs b with as many rows as a"
+    lu, piv = complex_lu_factor(a)
+    return complex_lu_solve_matrix(lu, piv, b)
 
 
 def _lu_solve_vector[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]:
@@ -179,6 +223,11 @@ def det[T: Float](a: Array[T, 2]) -> T:
     return result
 
 
+def det(a: Array[complex128, 2]) -> complex128:
+    """`det` of a `complex128` matrix; a singular one gives `0j`."""
+    return complex_det(a)
+
+
 def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
     """The inverse of a square matrix `a`, as `numpy.linalg.inv`: `lu_solve` of each column of
     the identity. Prefer `solve(a, b)` to `inv(a) @ b`, which costs more and is less accurate.
@@ -197,6 +246,11 @@ def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
         for i in range(n):
             result[i, j] = x[i]
     return result
+
+
+def inv(a: Array[complex128, 2]) -> Raises[Array[complex128, 2], LinAlgError]:
+    """`inv` of a `complex128` matrix. Raises `LinAlgError` when it is singular."""
+    return complex_inv(a)
 
 
 def cholesky[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
@@ -224,6 +278,13 @@ def cholesky[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
                 total -= l[i, k] * l[j, k]
             l[i, j] = total / pivot
     return l
+
+
+def cholesky(a: Array[complex128, 2]) -> Raises[Array[complex128, 2], LinAlgError]:
+    """`cholesky` of a Hermitian positive definite `complex128` matrix: the lower triangular `l`
+    with `l @ lᴴ == a`, its diagonal real. Raises `LinAlgError` when `a` is not positive definite.
+    """
+    return complex_cholesky(a)
 
 
 def qr[T: Float](a: Array[T, 2]) -> tuple[Array[T, 2], Array[T, 2]]:
@@ -273,6 +334,13 @@ def qr[T: Float](a: Array[T, 2]) -> tuple[Array[T, 2], Array[T, 2]]:
         for row in range(i):
             q[row, i] = 0.0
     return q, r
+
+
+def qr(a: Array[complex128, 2]) -> tuple[Array[complex128, 2], Array[complex128, 2]]:
+    """`qr` of a `complex128` matrix: `q` with orthonormal columns, `qᴴ @ q` the identity, and
+    upper triangular `r` with a real diagonal, with LAPACK's phases so they match NumPy's.
+    """
+    return complex_qr(a)
 
 
 def _reflect[T: Float](matrix: InOut[Array[T, 2]], tau: T, i: int, start: int, stop: int):

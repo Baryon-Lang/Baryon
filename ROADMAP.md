@@ -311,8 +311,8 @@ and 3.25.
 | 3.10.5 | A mixed-radix FFT, from idea I.52: `fft` and the transforms built on it send a length whose prime factors are all 23 or less, such as 1000, 3072 or 10⁶, through a Stockham mixed-radix transform with radix-4, radix-2 and odd-prime passes, instead of Bluestein's algorithm at about six times the cost of a power of two. No API change | 0.25 | 3.10.4 | Done | Claude | [#518](https://github.com/Baryon-Lang/Baryon/pull/518) |
 | 3.10.6 | `fft.fftn` and `fft.ifftn` for ranks 1 to 4, as overloads (decision 0067, card 53), finishing what 3.10.4 moved to idea I.51: one-dimensional transforms along each axis in turn | 0.4 | 3.10.4, 1.7.16 | Done | Claude | [#600](https://github.com/Baryon-Lang/Baryon/pull/600) |
 | 3.10.7 | `linalg.eig` and `eigvals` of an `f32` matrix, giving `complex64` results as NumPy does, as overloads beside the `f64` ones over one generic real-valued helper (decision 0067, card 53) | 0.6 | 3.10, 1.7.16 | Done | Claude | [#602](https://github.com/Baryon-Lang/Baryon/pull/602) |
-| 3.10.8 | `complex128` matrices in `linalg.solve`, `lu_factor`, `lu_solve`, `det` and `inv`, as overloads (decision 0067, card 53) | 0.6 | 3.10.3, 1.7.16 | Planned | — | — |
-| 3.10.9 | `complex128` matrices in `linalg.cholesky` and `qr`, as overloads (decision 0067, card 53) | 0.6 | 3.10.8 | Planned | — | — |
+| 3.10.8 | `complex128` matrices in `linalg.solve`, `lu_factor`, `lu_solve`, `det` and `inv`, as overloads (decision 0067, card 53) | 0.6 | 3.10.3, 1.7.16 | Done | Claude | [#607](https://github.com/Baryon-Lang/Baryon/pull/607) |
+| 3.10.9 | `complex128` matrices in `linalg.cholesky` and `qr`, as overloads (decision 0067, card 53) | 0.6 | 3.10.8 | Done | Claude | [#607](https://github.com/Baryon-Lang/Baryon/pull/607) |
 | 3.10.10 | `complex128` Hermitian matrices in `linalg.eigh` and `eigvalsh`, as overloads (decision 0067, card 53) | 1 | 3.10.9 | Planned | — | — |
 | 3.11 | REPL on the Cranelift backend with persistent values | 4 | 2.1 | Planned | — | — |
 | 3.12 | Jupyter kernel | 1 | 3.11 | Planned | — | — |
