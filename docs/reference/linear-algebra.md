@@ -18,9 +18,14 @@ Every `linalg` function takes `f64` or `f32` matrices and computes in that type:
 gives an `f32` result, at half the memory and with about seven significant digits, as NumPy's
 `float32` does, and `eig` of an `f32` matrix gives `complex64`. Most functions are
 [generic](types.md#generics) over `T: Float`; the rest have one overload for each type
-([decision 0067](../decisions/0067-library-overloading.md)). Complex matrices are not built yet
-(roadmap 3.10.8 to 3.10.10). The tests compare `f32` results to NumPy's to 4
-significant digits.
+([decision 0067](../decisions/0067-library-overloading.md)). The tests compare `f32` results to
+NumPy's to 4 significant digits.
+
+`solve`, `lu_factor`, `lu_solve`, `det`, `inv`, `cholesky` and `qr` also take `complex128`
+matrices, NumPy's default complex type, through overloads beside the real ones, and compute in
+`complex128`. A complex column's pivot is the entry with the largest `|re| + |im|`, the size
+LAPACK compares, so the rows swap as in NumPy. `eigh`, `eigvalsh`, `svd` and `eig` do not take
+complex matrices yet (roadmap 3.10.10 for `eigh`), and no function takes `complex64` ones.
 
 The matrix product is the operator [`@`](arrays.md#the-matrix-product), not a function.
 
@@ -46,11 +51,13 @@ def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgErr
 def solve(a: Array[f64, 2], b: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]: ...
 def solve(a: Array[f32, 2], b: Array[f32, 1]) -> Raises[Array[f32, 1], LinAlgError]: ...
 def solve(a: Array[f32, 2], b: Array[f32, 2]) -> Raises[Array[f32, 2], LinAlgError]: ...
+def solve(a: Array[complex128, 2], b: Array[complex128, 1]) -> Raises[Array[complex128, 1], LinAlgError]: ...
+def solve(a: Array[complex128, 2], b: Array[complex128, 2]) -> Raises[Array[complex128, 2], LinAlgError]: ...
 ```
 
 The vector `x` with `a @ x == b`, for a square matrix `a`: Gaussian elimination with partial
 pivoting, which at each step swaps up the row with the largest entry in the column. `a` and `b`
-are left unchanged. `solve` has four overloads
+are left unchanged. `solve` has six overloads
 ([decision 0067](../decisions/0067-library-overloading.md)), so the call picks the one that fits
 its arguments:
 
@@ -59,6 +66,7 @@ its arguments:
   k right-hand sides cost about 2n³/3 + 2kn² multiply-adds, not k full solves, and each column
   gets the same bits it would get alone.
 - **`f32` matrices** are solved in `f32`, as NumPy does for `float32`.
+- **`complex128` matrices** are solved in `complex128`, as NumPy's `zgesv` does.
 
 - Raises `LinAlgError("Singular matrix")` when a pivot is exactly zero, as NumPy does. A matrix
   that is nearly singular gives a result with large error and no exception, as in NumPy.
@@ -95,18 +103,21 @@ prints
 [0.2 0.6 0.7]
 ```
 
-Differences from NumPy: `a` holds `f64` or `f32`, not complex numbers (roadmap 3.10.8), and a
-stack of matrices of three or more dimensions is not taken. NumPy converts an integer matrix to
+Differences from NumPy: `a` holds `f64`, `f32` or `complex128`, not `complex64`, and a stack
+of matrices of three or more dimensions is not taken. NumPy converts an integer matrix to
 `float64`; here it is a type error, since every conversion is a call.
 
 ## `linalg.lu_factor` and `linalg.lu_solve`
 
 ```python
 def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 1]], LinAlgError]: ...
+def lu_factor(a: Array[complex128, 2]) -> Raises[tuple[Array[complex128, 2], Array[int, 1]], LinAlgError]: ...
 def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]: ...
 def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 2]) -> Array[f64, 2]: ...
 def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 1]) -> Array[f32, 1]: ...
 def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 2]) -> Array[f32, 2]: ...
+def lu_solve(lu: Array[complex128, 2], piv: Array[int, 1], b: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def lu_solve(lu: Array[complex128, 2], piv: Array[int, 1], b: Array[complex128, 2]) -> Array[complex128, 2]: ...
 ```
 
 NumPy has no LU factorization, so these are SciPy's `scipy.linalg.lu_factor` and `lu_solve`.
@@ -137,12 +148,14 @@ returns factors with a zero on the diagonal.
 ```python
 def det[T: Float](a: Array[T, 2]) -> T: ...
 def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]: ...
+def det(a: Array[complex128, 2]) -> complex128: ...
+def inv(a: Array[complex128, 2]) -> Raises[Array[complex128, 2], LinAlgError]: ...
 ```
 
 `det(a)` is the determinant: the product of `U`'s diagonal, negated for each row swap. A singular
-matrix gives `0.0` and an empty one `1.0`, as in NumPy. `inv(a)` is the inverse, one `lu_solve`
-per column of the identity, and raises `LinAlgError("Singular matrix")` as `solve` does. Both
-cost about n³ operations and panic when `a` is not square.
+matrix gives `0.0`, or `0j` when it is complex, and an empty one `1.0`, as in NumPy. `inv(a)` is the
+inverse, one `lu_solve` per column of the identity, and raises `LinAlgError("Singular matrix")` as
+`solve` does. Both cost about n³ operations and panic when `a` is not square.
 
 To apply an inverse, call `solve(a, b)` rather than `inv(a) @ b`: it does a third of the work
 and rounds less.
@@ -151,6 +164,7 @@ and rounds less.
 
 ```python
 def cholesky[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]: ...
+def cholesky(a: Array[complex128, 2]) -> Raises[Array[complex128, 2], LinAlgError]: ...
 ```
 
 The lower triangular matrix `l` with `l @ lᵀ == a`, for a symmetric positive definite `a`, such
@@ -158,16 +172,25 @@ as a covariance or a stiffness matrix. It reads only `a`'s lower triangle, as Nu
 costs about n³/3 multiply-adds, half of `lu_factor`'s. Raises
 `LinAlgError("Matrix is not positive definite")` when `a` is not; panics when `a` is not square.
 
+A complex `a` must be Hermitian, equal to its conjugate transpose, and positive definite; then
+`l @ lᴴ == a`, where `lᴴ` is `l`'s conjugate transpose, and `l`'s diagonal is real. The imaginary
+parts of `a`'s diagonal are not read, as in LAPACK.
+
 ## `linalg.qr`
 
 ```python
 def qr[T: Float](a: Array[T, 2]) -> tuple[Array[T, 2], Array[T, 2]]: ...
+def qr(a: Array[complex128, 2]) -> tuple[Array[complex128, 2], Array[complex128, 2]]: ...
 ```
 
 `q, r = qr(a)` factors an m × n matrix as `q @ r`, NumPy's default `mode="reduced"`: `q` is
 m × k with orthonormal columns and `r` is k × n and upper triangular, for k the smaller of m and
 n. It uses Householder reflections with LAPACK's signs, so `q` and `r` match NumPy's entry by
 entry, not only up to sign. It never fails. Cost: about 4mn² - 4n³/3 multiply-adds.
+
+For a complex `a`, `q`'s columns are orthonormal in the complex sense, `qᴴ @ q` being the
+identity, and `r`'s diagonal is real. The reflections are made as LAPACK's `zlarfg` makes them,
+so `q` and `r` match NumPy's with their phases.
 
 QR is the stable way to fit least squares: for a tall `a`, the `x` that minimizes the length of
 `a @ x - b` solves `r @ x == qᵀ b`, with no squaring of `a`'s condition number.
@@ -298,6 +321,7 @@ for those working on the library. A panic inside a function names the file it is
 | --- | --- |
 | `linalg_common` | `LinAlgError`, and `epsilon`, the machine epsilon of a float type, which the iterations of `eigh` and `svd` stop at |
 | `linalg_factor` | `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
+| `linalg_complex` | The bodies of the `complex128` overloads of `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
 | `linalg_symmetric` | `eigh` and `eigvalsh`: Householder tridiagonalization and the implicit QL iteration |
 | `linalg_svd` | `svd` and `svdvals`: one-sided Jacobi rotations |
 | `linalg_eig` | `eig` and `eigvals`: balancing and Hessenberg reduction |
