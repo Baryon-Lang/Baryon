@@ -202,7 +202,8 @@ def _result[S: VectorSpace](
         times[j] = ts[j]
         for i in range(n):
             states[i, j] = ys[j][i]
-    return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), None, status == 0)
+    success = status == 0
+    return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), None, success)
 
 
 def solve_ivp[S: VectorSpace, *Ts](
@@ -296,4 +297,5 @@ def solve_ivp[S: VectorSpace, *Ts](
         if not accepted:
             message = "Required step size is less than spacing between numbers."
             return _result(ts, ys, n, nfev, -1, message)
-    return _result(ts, ys, n, nfev, 0, "The solver successfully reached the end of the integration interval.")
+    message = "The solver successfully reached the end of the integration interval."
+    return _result(ts, ys, n, nfev, 0, message)

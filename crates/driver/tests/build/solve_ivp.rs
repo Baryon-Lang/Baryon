@@ -57,7 +57,8 @@ def blowup(t: f64, y: f64) -> f64:
 
 def show(r: OdeResult):
     steps = len(r.t)
-    print(r.status, r.nfev, steps, r.y.shape[0], r.t.sum(), r.y.sum(), r.t[steps - 1], r.y[0, steps - 1])
+    last = r.y[0, steps - 1]
+    print(r.status, r.nfev, steps, r.y.shape[0], r.t.sum(), r.y.sum(), r.t[steps - 1], last)
 
 
 def main():
