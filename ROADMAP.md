@@ -61,6 +61,7 @@ procedure on paper.
 | 0.8.11 | Worked examples on the Learn site in physics, mathematics and data, each timed against the same program in Python, with only measured numbers and how they were measured | 1 | 0.8.9 | Planned | — | — |
 | 0.9 | Cut CI's Actions minutes without weakening the merge gate: macOS only with the `ready-to-merge` label and on `main`, the build skipped for Markdown-only changes, a build cache, and the benchmark kernels only when they change | — | 0.4 | Done | Claude | [#98](https://github.com/Baryon-Lang/Baryon/pull/98) |
 | 0.9.1 | One CI concurrency group per pull request, so a push after the `ready-to-merge` label cancels the macOS run of the commit before it; the label's run covers both systems so no commit keeps a cancelled check | — | 0.9 | Done | Claude | [#101](https://github.com/Baryon-Lang/Baryon/pull/101) |
+| 0.10 | Remove a merge-conflict hotspot: `LIBRARY` in crates/driver/src/library.rs becomes a slice, so its length is no longer typed by hand; no behavior change | 0.05 | — | Done | Claude | [#604](https://github.com/Baryon-Lang/Baryon/pull/604) |
 
 ## Phase 1: MVP compiler
 
