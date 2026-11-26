@@ -2,7 +2,8 @@
 //! and run. `sep=` is the character between fields: a file split by `;` or a tab is read as
 //! `pandas.read_csv(path, sep=...)` reads it, and written with the bytes
 //! `pandas.DataFrame.to_csv(path, index=False, sep=...)` writes. `na_values=` names more cells
-//! to read as missing, and `na_rep=` is the text written for a missing value.
+//! to read as missing, and `na_rep=` is the text written for a missing value. `skiprows=`
+//! passes over lines before the header and `nrows=` stops after so many rows.
 //!
 //! What each test expects was checked against pandas 3.0.5 on the same bytes.
 
@@ -202,5 +203,75 @@ fn missing_values_are_spelled_as_asked() {
              ,{cell},{cell},-999.0,{cell},{cell},{cell}\n\
              C, NA,2.5,{cell},7,{cell},False\n"
         )
+    );
+}
+
+/// The program of `a_part_of_a_file_is_read`: a file with two lines and a blank one before
+/// its header and a row too long at its end, read with several `skiprows=` and `nrows=`,
+/// and a file whose first record holds a line end in quotes.
+const PART: &str = r##"
+class Pair(Struct):
+    a: i64
+    b: i64 | None
+
+
+def show(skip: int, rows: int) -> Raises[None, OSError]:
+    try:
+        frame: DataFrame[Pair] = DataFrame.read_csv("in.csv", skiprows=skip, nrows=rows)
+        print(skip, rows, frame.a, frame.b)
+    except ValueError as error:
+        print(skip, rows, error.message)
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    with open("in.csv", "w") as out:
+        out.write("# made by x\n\nunits,m\na,b\n1,2\n\n3,\n5,6,7,8\n")
+    with open("quoted.csv", "w") as out:
+        out.write("\"x\ny\",z\r\na,b\r\n1,2\r\n")
+    show(3, 2)
+    show(3, 0)
+    show(3, 3)
+    show(3, 100)
+    show(2, 2)
+    show(-1, 2)
+    show(3, -1)
+    show(100, 1)
+    show(7, 1)
+    skipped: DataFrame[Pair] = DataFrame.read_csv("quoted.csv", skiprows=1)
+    print(skipped)
+    first: DataFrame[Pair] = DataFrame.read_csv("quoted.csv", skiprows=1, nrows=1, sep=",")
+    print(len(first))
+"##;
+
+/// `skiprows=` counts every line before the header, a blank one too, and a record whose
+/// quotes hold a line end as one; a negative count skips nothing. `nrows=` stops after so
+/// many data rows, so a bad row after them is no error, 0 gives an empty frame, a count
+/// past the end reads what there is, and a negative one is a `ValueError`. Each case is
+/// what pandas 3.0.5 does, where it raises `ParserError` and `EmptyDataError` for the
+/// `ValueError`s here.
+#[test]
+fn a_part_of_a_file_is_read() {
+    let directory = package("frame_csv_part", &[("main.byn", PART)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&executable)
+        .current_dir(directory.join("package"))
+        .output()
+        .unwrap();
+    assert_eq!(stderr(&ran), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "3 2 [1 3] [2 None]\n\
+         3 0 [] []\n\
+         3 3 in.csv: expected 2 fields in row 3, saw 4\n\
+         3 100 in.csv: expected 2 fields in row 3, saw 4\n\
+         2 2 in.csv: the header has no column 'a'\n\
+         -1 2 in.csv: the header has no column 'a'\n\
+         3 -1 in.csv: nrows is -1, and it cannot be less than 0\n\
+         100 1 in.csv: no columns to read after skipping 100 lines\n\
+         7 1 in.csv: the header has no column 'a'\n   \
+         a  b\n\
+         0  1  2\n\
+         1\n"
     );
 }

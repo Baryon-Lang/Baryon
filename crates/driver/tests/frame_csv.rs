@@ -88,7 +88,7 @@ def unhandled():
    |
 12 |     trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", usecols=["price"])
    |                                                                 ^^^^^^^ not built yet
-   = note: this version takes the path, `sep=` and `na_values=`, for a file with a header row
+   = note: this version takes the path, `sep=`, `na_values=`, `nrows=` and `skiprows=`, for a file with a header row
 
 error: `DataFrame.read_csv` needs the frame's type from the context
   --> main.byn:13:15
@@ -333,6 +333,53 @@ error: `DataFrame.read_csv` does not take `na_rep` yet
    |
 18 |     wrong: DataFrame[Trade] = DataFrame.read_csv("trades.csv", na_rep="NA")
    |                                                                ^^^^^^ not built yet
-   = note: this version takes the path, `sep=` and `na_values=`, for a file with a header row"#;
+   = note: this version takes the path, `sep=`, `na_values=`, `nrows=` and `skiprows=`, for a file with a header row"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// `nrows=` and `skiprows=` of `read_csv` each check as an `int`, written out or worked out
+/// (roadmap 3.14.4.2). A float, a list of lines to skip and a `bool` are reported at the
+/// value, and `to_csv` has neither.
+#[test]
+fn the_rows_to_read_are_whole_numbers() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    count = 10
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.csv", nrows=100, skiprows=2)
+    some: DataFrame[Trade] = DataFrame.read_csv("trades.csv", skiprows=count - 1, nrows=count)
+    half: DataFrame[Trade] = DataFrame.read_csv("trades.csv", nrows=1.5)
+    lines: DataFrame[Trade] = DataFrame.read_csv("trades.csv", skiprows=[0, 2])
+    flag: DataFrame[Trade] = DataFrame.read_csv("trades.csv", nrows=True)
+    trades.to_csv("out.csv", nrows=5)
+"#;
+    let expected = r#"error: expected `i64`, found `f64`
+  --> main.byn:10:69
+   |
+10 |     half: DataFrame[Trade] = DataFrame.read_csv("trades.csv", nrows=1.5)
+   |                                                                     ^^^ `nrows` is `i64`
+
+error: expected `i64`, found `list[i64]`
+  --> main.byn:11:73
+   |
+11 |     lines: DataFrame[Trade] = DataFrame.read_csv("trades.csv", skiprows=[0, 2])
+   |                                                                         ^^^^^^ `skiprows` is `i64`
+
+error: expected `i64`, found `bool`
+  --> main.byn:12:69
+   |
+12 |     flag: DataFrame[Trade] = DataFrame.read_csv("trades.csv", nrows=True)
+   |                                                                     ^^^^ `nrows` is `i64`
+
+error: `to_csv` does not take `nrows` yet
+  --> main.byn:13:30
+   |
+13 |     trades.to_csv("out.csv", nrows=5)
+   |                              ^^^^^ not built yet
+   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column"#;
     assert_eq!(check_one(program), expected);
 }
