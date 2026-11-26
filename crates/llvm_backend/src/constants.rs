@@ -1,6 +1,7 @@
 //! The module's shared constants: one per distinct message, file name, source location, format
-//! specification and `dict` layout, written once however many places use it. Failed checks
-//! (see the `panic` module), formatting and `dict`s refer to them by name. The same value also
+//! specification, `dict` layout and table of list elements, written once however many places
+//! use it. Failed checks (see the `panic` module), formatting, `dict`s and list literals refer
+//! to them by name. The same value also
 //! holds the module's debug information and loop metadata, which share its numbering.
 
 use crate::debug::{Debug, FIRST_SUBPROGRAM};
@@ -20,6 +21,8 @@ enum Key {
     Spec(String),
     /// A `dict` layout: the entry size, the key size, then each key part's offset and kind.
     Dict(Vec<u64>),
+    /// A table of list elements, by its LLVM type and initializer.
+    Table(String),
     /// The location of the byte at `offset` in `file`.
     Location {
         /// The file.
@@ -257,6 +260,28 @@ impl<'a> Constants<'a> {
             "@baryon.dict.parts.{number} = private unnamed_addr constant [{count} x {{ i64, i64 }}]              [{}]\n{name} = private unnamed_addr constant {{ i64, i64, i64, ptr }}              {{ i64 {entry_size}, i64 {key_size}, i64 {count}, ptr @baryon.dict.parts.{number} }}",
             items.join(", ")
         );
+        self.push(key, definition);
+        name
+    }
+
+    /// The constant array of `values`, each a constant of the LLVM type `llvm`, as
+    /// `@baryon.table.N`, made the first time it is asked for. A list literal whose elements
+    /// are all constants copies its elements from it in one `llvm.memcpy`: storing them one by
+    /// one makes a basic block as long as the literal, and LLVM's instruction selection takes
+    /// time that grows faster than linearly in a block's length, minutes for 10,000 elements
+    /// (roadmap 1.9.74).
+    pub(crate) fn table(&mut self, llvm: &str, values: &[String]) -> String {
+        let items: Vec<String> = values
+            .iter()
+            .map(|value| format!("{llvm} {value}"))
+            .collect();
+        let initializer = format!("[{} x {llvm}] [{}]", values.len(), items.join(", "));
+        let key = Key::Table(initializer.clone());
+        if let Some(&number) = self.numbers.get(&key) {
+            return format!("@baryon.table.{number}");
+        }
+        let name = format!("@baryon.table.{}", self.definitions.len());
+        let definition = format!("{name} = private unnamed_addr constant {initializer}");
         self.push(key, definition);
         name
     }

@@ -19,7 +19,7 @@
 use crate::Unsupported;
 use crate::function::{Function, block_label};
 use crate::panic::Failure;
-use mir::{Argument, BlockId, Local, Operand, Place};
+use mir::{Argument, BlockId, ConstantValue, Local, Operand, Place};
 use types::{Layout, Type, TypeKind};
 
 /// The LLVM type of every list's header.
@@ -27,7 +27,10 @@ pub(crate) const HEADER: &str = "{ ptr, i64, i64 }";
 
 impl<'db> Function<'_, '_, 'db> {
     /// A new list of type `ty` holding `elements`, in a buffer with room for exactly them: one
-    /// allocation, then a store of each element.
+    /// allocation, then a store of each element. When every element is a number, `bool` or
+    /// optional constant of the element type, the elements are instead copied in one
+    /// `llvm.memcpy` from a [table](crate::constants::Constants::table) of them, so a long
+    /// literal does not make a basic block as long as itself (roadmap 1.9.74).
     pub(crate) fn new_list(
         &mut self,
         ty: Type<'db>,
@@ -37,6 +40,60 @@ impl<'db> Function<'_, '_, 'db> {
         let llvm = self.types.value(element)?;
         let count = elements.len();
         let data = self.allocate_elements(&count.to_string(), layout);
+        if let Some(values) = self.constant_elements(element, elements)? {
+            let table = self.constants.table(&llvm, &values);
+            self.declare(
+                "llvm.memcpy.p0.p0.i64",
+                "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)",
+            );
+            self.line(&format!(
+                "call void @llvm.memcpy.p0.p0.i64(ptr {data}, ptr {table}, i64 {}, i1 false)",
+                layout.size() * count as u64
+            ));
+        } else {
+            self.store_elements(&llvm, &data, elements)?;
+        }
+        let value = self.emit(&format!("insertvalue {HEADER} poison, ptr {data}, 0"));
+        let value = self.emit(&format!("insertvalue {HEADER} {value}, i64 {count}, 1"));
+        Ok(self.emit(&format!("insertvalue {HEADER} {value}, i64 {count}, 2")))
+    }
+
+    /// The constant text of each of `elements`, when there is at least one and each is a number,
+    /// `bool` or optional constant of type `element`, whose text is a constant LLVM can put in a
+    /// table; `None` otherwise. A `str` constant is left out: its value is built from another
+    /// constant.
+    fn constant_elements(
+        &mut self,
+        element: Type<'db>,
+        elements: &[Operand<'db>],
+    ) -> Result<Option<Vec<String>>, Unsupported> {
+        let optional = matches!(element.kind(self.types.db), TypeKind::Optional(_));
+        let tabulable = !elements.is_empty()
+            && elements.iter().all(|operand| match operand {
+                Operand::Constant(constant) if constant.ty == element => match constant.value {
+                    ConstantValue::Str(_) => false,
+                    ConstantValue::None => optional,
+                    _ => true,
+                },
+                _ => false,
+            });
+        if !tabulable {
+            return Ok(None);
+        }
+        let mut values = Vec::with_capacity(elements.len());
+        for operand in elements {
+            values.push(self.value(operand)?.0);
+        }
+        Ok(Some(values))
+    }
+
+    /// Stores each of `elements`, of the LLVM type `llvm`, at its position in the buffer `data`.
+    fn store_elements(
+        &mut self,
+        llvm: &str,
+        data: &str,
+        elements: &[Operand<'db>],
+    ) -> Result<(), Unsupported> {
         for (position, operand) in elements.iter().enumerate() {
             let (value, _) = self.value(operand)?;
             let at = self.emit(&format!(
@@ -44,9 +101,7 @@ impl<'db> Function<'_, '_, 'db> {
             ));
             self.line(&format!("store {llvm} {value}, ptr {at}"));
         }
-        let value = self.emit(&format!("insertvalue {HEADER} poison, ptr {data}, 0"));
-        let value = self.emit(&format!("insertvalue {HEADER} {value}, i64 {count}, 1"));
-        Ok(self.emit(&format!("insertvalue {HEADER} {value}, i64 {count}, 2")))
+        Ok(())
     }
 
     /// Writes `list.append(value)`, the list `InOut` and the value `Owned`, and goes to `target`.

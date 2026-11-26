@@ -190,9 +190,9 @@ dictionaries, made 69 MB.
   and `BYTE_STREAM_SPLIT`, which some writers use when asked for the format's version 2, and
   the Brotli, LZO and older LZ4 codecs.
 - Reading some of the row groups, or a file larger than memory.
-- pyarrow has not read a file written here yet, and no test reads a file pyarrow wrote: two
-  written by pyarrow 26.0.1 were read by hand, with the right values. The tests read files
-  written by polars and files built by hand from the specification, and polars reads the
-  files written here. Files from Apache's `parquet-testing` collection, written by Impala, by
-  parquet-mr and by Arrow's C++ library, were read by hand with the values polars reads from
-  them.
+- Tests with pyarrow. Two files written by pyarrow 26.0.1 were read here, and pyarrow read a
+  file written here with every value matching, but both were checked by hand and not in the
+  tests. The tests read files written by polars and files built by hand from the
+  specification, and polars reads the files written here. Files from Apache's
+  `parquet-testing` collection, written by Impala, by parquet-mr and by Arrow's C++ library,
+  were read by hand with the values polars reads from them.

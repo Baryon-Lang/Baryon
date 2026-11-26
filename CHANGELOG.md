@@ -42,6 +42,14 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   readers open with the same columns and types, compressed with Snappy. Values are stored
   plainly, with no dictionaries or statistics yet
   ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).
+- Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
+  archives, so trying the extension no longer needs Node.js
+  ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).
+
+- A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
+  its elements are copied from one table, not stored one by one. A literal of 100,000 floats
+  took 110 s and now takes 0.13 s. A program holding a literal of 10,000 short lists went from
+  260 s to 49 s, and is still slower than it should be.
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
