@@ -47,6 +47,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Data files](data-files.md) | Text tables, NumPy's `.npy` files, FITS, NetCDF and HDF5, each with its Python library's names: `Array.loadtxt`, `Array.save`, `fits.getdata`, `netCDF4.Dataset` and `h5by.File` |
 | [Plotting](plotting.md) | The `byplot` and `ticker` modules: line, scatter, bar, histogram, image and contour plots with matplotlib's names and look, saved as SVG, PNG or PDF |
 | [Compression](compression.md) | `zlib`, `gzip`, `compression.zstd`, `bz2` and `lzma`, with Python's names, on byte arrays |
+| [`lzma`](lzma.md) | xz and `.lzma` files: `lzma.decompress`, `lzma.compress` and `lzma.open` |
 | [Differences from Python](differences-from-python.md) | Every place a Python programmer will be surprised, with the reason |
 | [The `baryon` command](commands.md) | Every command of the `baryon` tool: what it needs, what it prints, and its exit status |
 | [What builds today](status.md) | Which of the above the compiler builds into a working program today, and what it still rejects |
