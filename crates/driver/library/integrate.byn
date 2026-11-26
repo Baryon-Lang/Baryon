@@ -9,11 +9,16 @@ test can compare a result with SciPy's using `==`.
 Samples that do not fit the rule, such as `x` of another length than `y`, are a mistake in the
 program and panic, where SciPy raises `ValueError` (decision 0042 point 5 for `stats`, and
 decision 0040 for shapes).
+
+It also holds `_solve_ivp_named`, which picks `solve_ivp`'s integrator at run time when its
+`method` is held in a variable, since it calls both `integrate_ivp` and `integrate_dop853`.
 """
 
 import math
+from math import inf
 from integrate_ivp import OdeResult as OdeResult, OdeSolution as OdeSolution
 from integrate_ivp import solve_ivp as solve_ivp
+from integrate_dop853 import solve_ivp_dop853
 from integrate_quad import IntegrationError as IntegrationError, quad as quad
 
 
@@ -166,3 +171,29 @@ def romb(y: Array[f64, 1], dx: f64 = 1.0) -> f64:
         rows.append(row)
         h /= 2.0
     return rows[k][k]
+
+
+def _solve_ivp_named[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t_span: tuple[f64, f64],
+    y0: S,
+    method: str = "RK45",
+    t_eval: Array[f64, 1] | None = None,
+    args: tuple[*Ts] = (),
+    first_step: f64 | None = None,
+    max_step: f64 = inf,
+    rtol: f64 = 1e-3,
+    atol: f64 = 1e-6,
+) -> Raises[OdeResult, ValueError]:
+    """`solve_ivp` with its `method` held in a variable, picked at run time (decision 0065 point
+    2): the checker sends such a call here. Both integrators are compiled for `fun`. Raises
+    `ValueError` for a name that is not a method built, where a literal is a compile error.
+    It lives here, not with either integrator, because it calls both. Each call names its method
+    as a literal, so the checker sends it to that integrator and not back here."""
+    if method == "DOP853":
+        return solve_ivp_dop853(
+            fun, t_span, y0, "DOP853", t_eval, args, first_step, max_step, rtol, atol
+        )
+    if method != "RK45":
+        raise ValueError("`method` must be one of {'RK45', 'DOP853'} or OdeSolver class.")
+    return solve_ivp(fun, t_span, y0, "RK45", t_eval, args, first_step, max_step, rtol, atol)
