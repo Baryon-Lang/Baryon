@@ -1,8 +1,8 @@
 # Example programs
 
-Eight small physics and mathematics programs written in the language as currently designed. They
+Nine small physics and mathematics programs written in the language as currently designed. They
 are roadmap item 0.2: the way to test the design on real code before any compiler exists. The
-compiler now builds and runs all eight, and a test checks what each prints;
+compiler now builds and runs all nine, and a test checks what each prints;
 [What builds today](../reference/status.md#the-example-programs) says so. `baryon run` runs a
 program from a directory holding it as `main.byn`.
 
@@ -21,8 +21,9 @@ Baryon source files end in `.byn` ([decision 0023](../decisions/0023-language-na
 | [`rod_boundaries.byn`](rod_boundaries.byn) | 1D heat equation with a different boundary condition at each end | a union of structs as a sum type, class patterns in `match` ([decision 0032](../decisions/0032-sum-types-are-unions-of-structs.md)) |
 | [`energy_audit.byn`](energy_audit.byn) | Energy drift of a harmonic oscillator under leapfrog steps | a context manager, a class with `__enter__` and `__exit__` in a `with` block, and an iterator, a class with `__next__` in a `for` loop ([decision 0053](../decisions/0053-with-and-for-on-user-classes.md)) |
 | [`flight_log.byn`](flight_log.byn) | Flight of a ball thrown upward, with and without air drag | a class with `__del__`, which reports a log when its owner drops it ([decision 0063](../decisions/0063-drop-hooks.md)) |
+| [`spring_fit.byn`](spring_fit.byn) | Hooke's law: a spring constant from a least-squares line through measured extensions | a struct built by its `__init__`, which computes every field from the data ([decision 0068](../decisions/0068-struct-init.md)) |
 
-The design plan calls for 20 programs before the Phase 0 gate; these are the first eight.
+The design plan calls for 20 programs before the Phase 0 gate; these are the first nine.
 
 ## Where the design got in the way
 

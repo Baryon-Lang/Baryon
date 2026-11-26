@@ -61,6 +61,9 @@ impl<'db> Body<'db> {
             return self.untyped(arguments);
         };
         let callee = self.tree.text(attribute, self.text).to_owned();
+        if callee == "__init__" {
+            return self.called_initializer(function, arguments);
+        }
         if let Some(result) = self
             .class_function(node, (value, attribute), &callee, arguments, expected)
             .or_else(|| self.h5by_attrs_method(node, value, &callee, arguments))

@@ -271,6 +271,9 @@ impl<'db> Builder<'db> {
             {
                 self.column(node)
             }
+            SyntaxKind::Attribute if self.initializer_field(node).is_some() => {
+                self.initializer_field(node).map(Place::from)
+            }
             SyntaxKind::Attribute => {
                 let value = self.tree.child(node, Role::Value)?;
                 let fields = self.field(value, node)?;

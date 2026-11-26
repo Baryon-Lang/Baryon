@@ -75,6 +75,7 @@ mod frames;
 mod generics;
 mod h5by;
 mod indices;
+mod initializers;
 mod integrate;
 mod interpolation;
 mod library;
@@ -167,13 +168,22 @@ pub(crate) fn check<'db>(
         kept: BTreeSet::new(),
         typed: TypedBody::default(),
         in_message: false,
+        initializer: None,
     };
     let mut bound = BTreeSet::new();
     body.statement_bindings(entry.statement, &mut bound);
     body.bound = bound;
-    body.parameters(entry.statement);
+    let initializer = crate::initializers::is_initializer(db, file, entry);
+    body.parameters(entry.statement, initializer);
+    if let (true, Some(class)) = (initializer, entry.class) {
+        body.start_initializer(entry.statement, class);
+    }
     if body.block(entry.statement, Role::Body) {
-        body.missing_return(entry.name);
+        if initializer {
+            body.initializer_end(entry.name);
+        } else {
+            body.missing_return(entry.name);
+        }
     }
     body.lent_conditionals();
     if entry.class.is_none() {
@@ -263,11 +273,14 @@ struct Body<'db> {
     /// Whether an `assert` message is being checked. Lowering does not compute one yet, so
     /// what only lowering lacks, such as `!r` in an f-string, is not reported inside it.
     in_message: bool,
+    /// Inside `__init__`, the struct it builds and its `self` (the `initializers` module).
+    initializer: Option<initializers::Initializer<'db>>,
 }
 
 impl<'db> Body<'db> {
     /// Binds each parameter to its declared type, and checks each default value against it.
-    fn parameters(&mut self, function: NodeId) {
+    /// An `initializer`'s signature leaves out `self`, which `start_initializer` binds.
+    fn parameters(&mut self, function: NodeId, initializer: bool) {
         let nodes: Vec<NodeId> = self
             .tree
             .child(function, Role::Parameters)
@@ -275,6 +288,7 @@ impl<'db> Body<'db> {
             .flat_map(|parameters| self.tree.children(parameters))
             .filter(|&parameter| self.tree.kind(parameter) == SyntaxKind::Parameter)
             .filter(|&parameter| self.tree.child(parameter, Role::Name).is_some())
+            .skip(usize::from(initializer))
             .collect();
         let parameters: Vec<(Type<'db>, types::Mode)> = self
             .signature
@@ -361,6 +375,17 @@ impl<'db> Body<'db> {
     /// `return value`, checked against the function's return type. In a function that returns
     /// `Raises[T, E]`, a `return` gives the `T`.
     fn return_statement(&mut self, statement: NodeId) {
+        if self.initializer.is_some() {
+            if let Some(value) = self.tree.child(statement, Role::Value) {
+                self.lowerer.error(
+                    value,
+                    "`__init__` returns nothing",
+                    "a value",
+                    Some("calling the class gives the struct; write `return` alone"),
+                );
+            }
+            return self.initializer_end(statement);
+        }
         let expected = match self.signature.returns.kind(self.db) {
             TypeKind::Fallible { value, .. } => *value,
             _ => self.signature.returns,

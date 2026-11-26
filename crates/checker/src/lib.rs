@@ -163,6 +163,7 @@ mod destructors;
 mod embed;
 mod forms;
 mod frames;
+mod initializers;
 mod lower;
 mod outline;
 mod packs;

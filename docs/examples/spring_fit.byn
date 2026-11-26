@@ -1,0 +1,53 @@
+"""Hooke's law from measurements: a least-squares line through a spring's extension.
+
+A spring is loaded with masses and its extension measured. Hooke's law says the force,
+`m * g`, grows linearly with the extension, so the slope of the best line through the points
+is the spring constant. `LineFit` is built by calling the class with the data, as SciPy's
+`CubicSpline(x, y)` is: its `__init__` computes every field from the arrays (decision 0068),
+and the program never sees a half-built fit.
+"""
+
+G: Final = 9.81
+
+
+class LineFit(Struct):
+    """The least-squares line `y = slope * x + intercept` through points `(x[i], y[i])`."""
+
+    slope: f64
+    intercept: f64
+    r_squared: f64
+    points: int
+
+    def __init__(self, x: Array[f64, 1], y: Array[f64, 1]):
+        assert len(x) == len(y), "x and y need one value each per point"
+        assert len(x) >= 2, "a line needs at least two points"
+        n = len(x)
+        mean_x = x.sum() / f64(n)
+        mean_y = y.sum() / f64(n)
+        sxx = 0.0
+        sxy = 0.0
+        syy = 0.0
+        for i in range(n):
+            dx = x[i] - mean_x
+            dy = y[i] - mean_y
+            sxx += dx * dx
+            sxy += dx * dy
+            syy += dy * dy
+        self.points = n
+        self.slope = sxy / sxx
+        self.intercept = mean_y - self.slope * mean_x
+        self.r_squared = sxy * sxy / (sxx * syy)
+
+    def at(self, x: f64) -> f64:
+        """The line's value at `x`."""
+        return self.slope * x + self.intercept
+
+
+def main():
+    masses = Array([0.05, 0.10, 0.15, 0.20, 0.25, 0.30])
+    extension = Array([0.0196, 0.0402, 0.0597, 0.0805, 0.0998, 0.1203])
+    force = masses * G
+    fit = LineFit(extension, force)
+    print(f"{fit.points} points, R^2 = {fit.r_squared:.6f}")
+    print(f"spring constant k = {fit.slope:.2f} N/m")
+    print(f"force at 15 cm: {fit.at(0.15):.3f} N")

@@ -61,7 +61,7 @@ impl<'db> Body<'db> {
     /// Moves the value of the expression `node`, of type `ty`, when it is not a copy type:
     /// records its variable as moved, or reports a value that cannot be moved.
     pub(super) fn consume(&mut self, node: NodeId, ty: Type<'db>) {
-        if !self.moves(ty) {
+        if !self.moves(ty) || self.initializer_field_moved(node) {
             return;
         }
         match self.tree.kind(node) {

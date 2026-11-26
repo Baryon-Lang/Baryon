@@ -211,6 +211,9 @@ impl<'db> Body<'db> {
         else {
             return self.untyped(arguments);
         };
+        if let Some(initializer) = self.initializer(&kind, file, name) {
+            return self.initialized(node, callee, initializer, arguments);
+        }
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let declaration = self.db.declaration(item).declaration.clone();
         match (kind, declaration) {
