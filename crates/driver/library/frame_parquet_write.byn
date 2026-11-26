@@ -38,6 +38,7 @@ from frame_parquet_dictionary import (
     parquet_code_bits,
     parquet_codes,
     parquet_distinct,
+    parquet_distinct_numbers,
     parquet_entries,
 )
 from frame_parquet_statistics import parquet_statistics
@@ -58,7 +59,8 @@ def _page_rows() -> int:
 
 def _dictionary_bytes() -> int:
     """The longest dictionary page written, before compression: 1,048,576 bytes, as in
-    pyarrow. A row group of text with more distinct bytes than that is written plainly."""
+    pyarrow. A row group with more distinct bytes than that is written plainly; so is one of
+    numbers whose distinct values pass half the bytes of all its values."""
     return 1048576
 
 
@@ -179,12 +181,22 @@ def parquet_chunks(
         plain = 0
         codes = Array.fill((0,), 0)
         bits = 0
-        if base == 11:
+        if base != 0:
             held = _count(valid, start, stop) if optional else stop - start
-            found = parquet_distinct(raw, ends, spent, held, _dictionary_bytes(), codes)
+            limit = _dictionary_bytes()
+            if base != 11:
+                limit = min(limit, held * width // 2)
+            found: list[int] = []
+            if base == 11:
+                found = parquet_distinct(raw, ends, spent, held, limit, codes)
+            else:
+                found = parquet_distinct_numbers(raw, width, spent, held, limit, codes)
             if len(found) > 0:
                 bits = parquet_code_bits(len(found))
-                entries = parquet_entries(raw, ends, found)
+            if base != 11 and len(found) * width + (held * bits + 7) // 8 >= held * width:
+                bits = 0
+            if bits > 0:
+                entries = parquet_entries(raw, ends, width, found)
                 packed = snappy_compress(entries)
                 head = _dictionary_header(len(entries), len(packed), len(found))
                 used = _put(out, used, head, packed)

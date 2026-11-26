@@ -23,7 +23,8 @@ only; polars reads from them the values the tests expect.
 - `types_written.parquet` is what `to_parquet` wrote for the frame read from
   `types_snappy.parquet`, less `extra`. polars 2.1.0 reads it as a table equal to that one,
   with the same type for every column and every float the same bit for bit. Its two columns
-  of text, `w` and `x`, each have a dictionary page, and the statistics of every column
+  of text, `w` and `x`, and four of its columns of numbers each have a dictionary page, the
+  others being too varied to gain from one, and the statistics of every column
   are those polars writes for the same table. The test that
   writes the frame again compares its bytes with this file, so a change to the writer shows.
   After a change that is meant, write the file again with the test's program and check it
