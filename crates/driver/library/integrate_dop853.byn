@@ -17,6 +17,7 @@ from math import fabs, inf, sqrt
 from integrate_dop853_tableau import ROW_B, ROW_C, ROW_D, ROW_E3, ROW_E5, STAGES
 from integrate_dop853_tableau import STAGES_EXTENDED, tableau
 from integrate_ivp import OdeResult, checked_times, initial_step, ode_result, spacing
+from integrate_solution import DOP853_INTERPOLANT, OdeSolution, ode_solution
 
 # The rounding of an `f64`, SciPy's `EPS`, below which `rtol` is raised to 100 times it.
 _EPSILON: Final = 2.220446049250313e-16
@@ -137,6 +138,7 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
     y0: S,
     method: str = "DOP853",
     t_eval: Array[f64, 1] | None = None,
+    dense_output: bool = False,
     args: tuple[*Ts] = (),
     first_step: f64 | None = None,
     max_step: f64 = inf,
@@ -145,8 +147,9 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
 ) -> OdeResult:
     """`solve_ivp` with `method="DOP853"`, which the checker sends here: the same parameters,
     checks, result and failure as RK45's `solve_ivp`, with DOP853's steps. `method` is not read.
-    Keeps one state per step, or per time of `t_eval`, and builds a step's interpolant only when
-    it covers a time of `t_eval`."""
+    Keeps one state per step, or per time of `t_eval`, and builds a step's interpolant, three
+    more calls of `fun`, only when it covers a time of `t_eval` or `dense_output` keeps it, as
+    SciPy does."""
     t0, t_bound = t_span
     assert max_step > 0.0, "`max_step` must be positive."
     assert atol >= 0.0, "`atol` must be positive."
@@ -179,6 +182,11 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
     position = 0
     ts: list[f64] = []
     ys: list[S] = []
+    # With `dense_output`, the times between the steps, the state at each step's start and each
+    # step's seven interpolant coefficients, for `sol`.
+    steps: list[f64] = [t0]
+    starts: list[S] = []
+    polynomials: list[S] = []
     if every_step:
         ts.append(t0)
         ys.append(y * 1.0)
@@ -193,6 +201,12 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
                 ts.append(wanted[position])
                 ys.append(y * 1.0)
                 position += 1
+            if dense_output:
+                # SciPy's constant interpolant for a step of no length.
+                steps.append(t)
+                starts.append(y * 1.0)
+                for _ in range(7):
+                    polynomials.append(y * 0.0)
             finished = True
             continue
         min_step = 10.0 * spacing(t, direction)
@@ -218,7 +232,7 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
                     factor = min(1.0, factor)
                 h_abs *= factor
                 covered = position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0
-                if covered:
+                if covered or dense_output:
                     step = (t, h)
                     coefficients = _dop853_interpolant(fun, step, y, y_new, stages, args, table)
                     nfev += 3
@@ -226,6 +240,11 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
                         ys.append(_dop853_dense(step, y, coefficients, wanted[position]))
                         ts.append(wanted[position])
                         position += 1
+                    if dense_output:
+                        steps.append(t_new)
+                        starts.append(y * 1.0)
+                        for coefficient in coefficients:
+                            polynomials.append(coefficient * 1.0)
                 t = t_new
                 y = y_new
                 f = f_new
@@ -239,6 +258,17 @@ def solve_ivp_dop853[S: VectorSpace, *Ts](
                 rejected = True
         if not accepted:
             message = "Required step size is less than spacing between numbers."
-            return ode_result(ts, ys, n, nfev, -1, message)
+            sol = _solution(dense_output, steps, starts, polynomials, n)
+            return ode_result(ts, ys, n, (nfev, -1), message, sol)
     message = "The solver successfully reached the end of the integration interval."
-    return ode_result(ts, ys, n, nfev, 0, message)
+    sol = _solution(dense_output, steps, starts, polynomials, n)
+    return ode_result(ts, ys, n, (nfev, 0), message, sol)
+
+
+def _solution[S: VectorSpace](
+    dense_output: bool, steps: list[f64], starts: list[S], polynomials: list[S], n: int
+) -> OdeSolution | None:
+    """DOP853's `OdeSolution` of the steps a run kept, or `None` without `dense_output`."""
+    if not dense_output:
+        return None
+    return ode_solution(steps, starts, polynomials, (n, 7), DOP853_INTERPOLANT)

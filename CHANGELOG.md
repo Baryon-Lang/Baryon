@@ -69,8 +69,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   `first_step=` and `max_step=`, and with `t_eval=` for the state at chosen times. `method=` is
   chosen when compiling: an unknown name written as a literal is a compile error. It takes
   SciPy's steps and returns an `OdeResult` with SciPy's fields. `method="DOP853"` runs SciPy's
-  eighth-order method for tight tolerances, with SciPy's steps too. Dense output and events
-  come later
+  eighth-order method for tight tolerances, with SciPy's steps too. `dense_output=True` keeps
+  each step's interpolant, so `result.sol(t)` gives the state at any time. Events come later
   ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
