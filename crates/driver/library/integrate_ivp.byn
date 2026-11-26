@@ -42,14 +42,13 @@ class OdeSolution(Struct):
 
 class OdeResult(Struct):
     """What `solve_ivp` returns, with the 11 fields of SciPy's `OdeResult` (decision 0065 point
-    4). They are read as attributes; SciPy's dict form is not built."""
+    4). They are read as attributes; SciPy's dict form is not built. The fields are declared in
+    the order that packs them tightest, not SciPy's."""
 
     # The times of the steps, from the start of `t_span` to where the run stopped.
     t: Array[f64, 1]
     # The state at each time, one column per entry of `t`: shape `(len(y0), len(t))`.
     y: Array[f64, 2]
-    # The continuous solution, `None` unless `dense_output=True` (row 3.19.8).
-    sol: OdeSolution | None
     # The times each event occurred, `None` with no `events=` (row 3.19.9).
     t_events: list[Array[f64, 1]] | None
     # The state at each event, `None` with no `events=` (row 3.19.9).
@@ -64,6 +63,8 @@ class OdeResult(Struct):
     status: int
     # SciPy's text for `status`.
     message: str
+    # The continuous solution, `None` unless `dense_output=True` (row 3.19.8).
+    sol: OdeSolution | None
     # Whether `status` is 0 or more.
     success: bool
 
@@ -201,7 +202,7 @@ def _result[S: VectorSpace](
         times[j] = ts[j]
         for i in range(n):
             states[i, j] = ys[j][i]
-    return OdeResult(times, states, None, None, None, nfev, 0, 0, status, message.copy(), status == 0)
+    return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), None, status == 0)
 
 
 def solve_ivp[S: VectorSpace, *Ts](
