@@ -68,6 +68,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   260 s to 49 s, and is still slower than it should be.
 - A `time` module for timing a program's phases: `time.perf_counter()`, `time.monotonic()` and
   `time.time()`, each an `f64` of seconds with Python's meaning ([Clocks](docs/reference/time.md)).
+- A generic function bounded by `VectorSpace` no longer frees an `Array` twice when it adds,
+  scales or negates one, and no longer frees the caller's array that it only read.
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

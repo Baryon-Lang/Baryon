@@ -64,11 +64,15 @@ impl<'db> Builder<'db> {
         };
         let left = if scaling(self, left) {
             self.operand(left)
+        } else if generic {
+            self.parameter_operand(left)
         } else {
             self.operand_as(left, ty)
         };
         let right = if scaling(self, right) {
             self.operand(right)
+        } else if generic {
+            self.parameter_operand(right)
         } else {
             self.operand_as(right, ty)
         };
@@ -77,10 +81,29 @@ impl<'db> Builder<'db> {
             // instance's integer arithmetic by its destination and check it for overflow.
             let result = self.temporary(ty, node);
             self.arithmetic(Place::from(result), operator, (left, right), ty, node);
-            let result = Operand::Copy(Place::from(result));
+            // Moved, not copied: an instance that owns memory, such as an array for a
+            // `VectorSpace`, would otherwise be dropped twice, once from each local.
+            let result = Operand::Move(Place::from(result));
             return self.assign(place, Rvalue::Use(result), node);
         }
         self.arithmetic(place, operator, (left, right), ty, node);
+    }
+
+    /// An operand of a type parameter's arithmetic that reads `node` without taking it. A
+    /// variable, field or element is read where it is, as an array is in a whole-array
+    /// expression: moving it would let an instance whose type owns memory, such as an `Array`
+    /// for a `VectorSpace`, free the operand once the arithmetic is done, though the program
+    /// still holds it. Any other expression is a new value, moved in and dropped after use.
+    fn parameter_operand(&mut self, node: NodeId) -> Operand<'db> {
+        if matches!(
+            self.tree.kind(node),
+            SyntaxKind::Name | SyntaxKind::Attribute | SyntaxKind::Subscript
+        ) && !self.is_selection(node)
+            && let Some(place) = self.place(node)
+        {
+            return Operand::Copy(place);
+        }
+        self.operand(node)
     }
 
     /// `place = left op right` on two operands of type `ty`, after the divisor check integer
@@ -200,16 +223,18 @@ impl<'db> Builder<'db> {
             let operand = self.operand(value);
             return self.checked(place, BinaryOperator::Subtract, (zero, operand), ty, node);
         }
-        let operand = self.operand(value);
         if generic && operator == Operator::Negate {
+            let operand = self.parameter_operand(value);
             // As for `+`, `-` and `*` on a parameter: a local of its type, which
             // monomorphization checks when the instance's type is a signed integer.
             let result = self.temporary(ty, node);
             let negated = Rvalue::Unary(UnaryOperator::Negate, operand);
             self.assign(Place::from(result), negated, node);
-            let result = Operand::Copy(Place::from(result));
+            // Moved for the same reason as the binary operators' result.
+            let result = Operand::Move(Place::from(result));
             return self.assign(place, Rvalue::Use(result), node);
         }
+        let operand = self.operand(value);
         let rvalue = match operator {
             Operator::Negate => Rvalue::Unary(UnaryOperator::Negate, operand),
             Operator::Not => Rvalue::Unary(UnaryOperator::Not, operand),

@@ -74,7 +74,7 @@ def array_caller(a: Array[f64, 1]) -> f64:
 
 /// A generic body keeps its type parameters: `+`, `-` and `*` on `T` are the instance's
 /// arithmetic, computed into a local of type `T` that monomorphization checks for overflow
-/// when `T` is an integer, a literal of type `T` keeps the value written, and a call of a
+/// when `T` is an integer and then moved out of it (roadmap 1.9.75), a literal of type `T` keeps the value written, and a call of a
 /// generic function names its type arguments. `//` depends on whether `T` is an integer, so it
 /// waits.
 #[test]
@@ -106,9 +106,9 @@ def halve[T: Number](x: T) -> T:
 
     bb1: {
         _4 = Multiply(copy _3, 2_T);
-        _2 = copy _4;
+        _2 = move _4;
         _5 = Subtract(copy _2, copy _1);
-        _0 = copy _5;
+        _0 = move _5;
         return;
     }
 }
