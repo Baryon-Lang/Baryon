@@ -111,8 +111,7 @@ def _decode(data: Array[u8, 1], output: InOut[Array[u8, 1]]) -> int:
                 position += extra
             if position + run > count or length + run > expected:
                 return 1
-            for k in range(run):
-                result[length + k] = data[position + k]
+            _move(result, length, data, position, run)
             position += run
             length += run
         else:
@@ -135,6 +134,17 @@ def _decode(data: Array[u8, 1], output: InOut[Array[u8, 1]]) -> int:
             length += run
     output = result
     return 0 if length == expected else 1
+
+
+def _move(into: InOut[Array[u8, 1]], at: int, source: Array[u8, 1], start: int, count: int) -> None:
+    """Copies `count` bytes of `source` from `start` to `into` from `at`. Both ranges lie
+    inside their arrays. A long run is one move of memory; a short one, which is most of
+    them, costs less a byte at a time."""
+    if count >= 32:
+        into[at : at + count] = source[start : start + count]
+    else:
+        for k in range(count):
+            into[at + k] = source[start + k]
 
 
 def _load(data: Array[u8, 1], at: int) -> int:
@@ -164,8 +174,7 @@ def _literal(
         output[length + 1] = u8(less & 255)
         output[length + 2] = u8(less >> 8)
         length += 3
-    for k in range(run):
-        output[length + k] = data[start + k]
+    _move(output, length, data, start, run)
     return length + run
 
 

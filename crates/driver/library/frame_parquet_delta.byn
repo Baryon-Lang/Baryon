@@ -25,6 +25,15 @@ never a read outside the page.
 """
 
 
+def parquet_copy(
+    into: InOut[Array[u8, 1]], at: int, source: Array[u8, 1], start: int, count: int
+) -> None:
+    """Copies `count` bytes of `source` from `start` to `into` from `at`, as one move of
+    memory and not a byte at a time. Both ranges lie inside their arrays."""
+    if count > 0:
+        into[at : at + count] = source[start : start + count]
+
+
 def parquet_grow(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
     """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
     is replaced by an array twice as long as is needed, holding the same first bytes, so
@@ -32,8 +41,7 @@ def parquet_grow(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
     if used + more <= len(raw):
         return
     longer = Array.zeros(2 * (used + more), u8)
-    for at in range(used):
-        longer[at] = raw[at]
+    parquet_copy(longer, 0, raw, 0, used)
     raw = longer
 
 
