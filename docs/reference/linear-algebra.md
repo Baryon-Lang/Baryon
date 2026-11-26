@@ -231,14 +231,14 @@ def eigvals(a: Array[f32, 2]) -> Raises[Array[complex64, 1], LinAlgError]: ...
 ```
 
 `w, v = eig(a)` gives the eigenvalues of a square matrix that need not be symmetric, and as the
-columns of `v` their eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. Both are complex, since a
-real matrix can have complex eigenvalues: `complex128` for an `f64` matrix and `complex64`, the
-complex number of two `f32` parts, for an `f32` one, as in NumPy. The eigenvalues come in
-conjugate pairs, the one with positive imaginary part first. Each eigenvector has length 1 and its
-largest entry real, as LAPACK's `geev` returns them. `eigvals(a)` gives `w` alone. Use them for the stability of a
-linear system, a Markov chain's stationary distribution, or the roots of a polynomial, which are
-the eigenvalues of its companion matrix. For a symmetric matrix call [`eigh`](#linalgeigh-and-linalgeigvalsh),
-which is faster and returns real values in order.
+columns of `v` their eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. Both are complex, since a real
+matrix can have complex eigenvalues: `complex128` for an `f64` matrix and `complex64`, the complex
+number of two `f32` parts, for an `f32` one, as in NumPy. The eigenvalues come in conjugate pairs,
+the one with positive imaginary part first. Each eigenvector has length 1 and its largest entry
+real, as LAPACK's `geev` returns them. `eigvals(a)` gives `w` alone. Use them for the stability of a
+linear system, a Markov chain's stationary distribution, or the roots of a polynomial, which are the
+eigenvalues of its companion matrix. For a symmetric matrix call
+[`eigh`](#linalgeigh-and-linalgeigvalsh), which is faster and returns real values in order.
 
 ```python
 from linalg import LinAlgError, eigvals, svdvals
