@@ -1,4 +1,4 @@
-//! The standard `sys` and `os` modules' view of the running process (decision 0036), each a
+//! The standard `sys`, `os` and `time` modules' view of the running process (decision 0036), each a
 //! call of a [`Builtin`] that the backend hands to the runtime:
 //!
 //! - `sys.argv` is a new `list[str]`, built by appending [`Builtin::Argument`] for each of the
@@ -6,6 +6,8 @@
 //! - `sys.exit(status)` is a call of [`Builtin::Exit`], which never returns.
 //! - `os.getenv(name)` and `os.environ.get(name)`, with or without a default, are a call of
 //!   [`Builtin::EnvironmentGet`] and a branch on whether the variable is set.
+//! - `time.perf_counter()` and `time.monotonic()` are a call of [`Builtin::MonotonicClock`],
+//!   and `time.time()` one of [`Builtin::WallClock`] (roadmap 1.13.19).
 //!
 //! [`Builder::standard_call`] also sends the calls of `random` and the `File` methods to their
 //! modules, so the one match over built-ins in `calls` stays short.
@@ -221,10 +223,11 @@ impl<'db> Builder<'db> {
         self.assign(place, rvalue, node);
     }
 
-    /// A call of a built-in of `random`, `sys` or `os`, or of a `Philox` method, named
-    /// `owner.member`, into `place`: `random.Philox`, `Philox.uniform`, `sys.exit` and
-    /// `os.getenv`, which `os.environ.get` is recorded as, and a `File` method. Any other, or the wrong number of
-    /// arguments, is reported as not lowered yet.
+    /// A call of a built-in of `random`, `sys`, `os` or `time`, or of a `Philox` method, named
+    /// `owner.member`, into `place`: `random.Philox`, `Philox.uniform`, `sys.exit`, the clocks
+    /// `time.perf_counter` and `time.monotonic`, which read one clock, and `time.time`,
+    /// `os.getenv`, which `os.environ.get` is recorded as, and a `File` method. Any other, or the
+    /// wrong number of arguments, is reported as not lowered yet.
     pub(crate) fn standard_call(
         &mut self,
         place: Place,
@@ -243,6 +246,12 @@ impl<'db> Builder<'db> {
             }
             (("Philox", "uniform"), [generator]) => self.uniform(place, *generator, node),
             (("sys", "exit"), [] | [_]) => self.exit(place, arguments.first().copied(), node),
+            (("time", "perf_counter" | "monotonic"), []) => {
+                self.call_builtin(Builtin::MonotonicClock, Vec::new(), place, node);
+            }
+            (("time", "time"), []) => {
+                self.call_builtin(Builtin::WallClock, Vec::new(), place, node);
+            }
             (("os", "getenv"), [name, rest @ ..]) if rest.len() <= 1 => {
                 self.getenv(place, *name, rest.first().copied(), node);
             }

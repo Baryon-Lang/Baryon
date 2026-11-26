@@ -43,6 +43,7 @@ chapter, which features `baryon build` compiles into a working program and which
 | [Tests](tests.md) | `@test` functions and how `baryon test` runs and reports them |
 | [Linear algebra and FFT](linear-algebra.md) | `linalg` and `fft`: solving systems, factoring matrices and Fourier transforms, with NumPy's names, and `LinAlgError` |
 | [Files and processes](files-and-processes.md) | Command-line arguments, the exit status and environment variables: `sys` and `os` |
+| [Clocks: `time`](time.md) | `time.perf_counter`, `time.monotonic` and `time.time`, for timing a program's phases |
 | [CSV files](csv-files.md) | `DataFrame.read_csv(path)` and `df.to_csv(path)`: a CSV file read into a `DataFrame` whose type the program names, how each type of column reads its cells, empty cells as `None`, a frame written as pandas writes it, the seven keywords built, from `sep=` to `columns=`, the errors, and the differences from pandas |
 | [Parquet files](parquet-files.md) | `DataFrame.read_parquet(path)`: a Parquet file read into a `DataFrame` whose type the program names, which of the file's types each field reads, the codecs and encodings the reader has, the errors, the cost, and the differences from pandas |
 | [Data files](data-files.md) | Text tables, NumPy's `.npy` files, FITS, NetCDF and HDF5, each with its Python library's names: `Array.loadtxt`, `Array.save`, `fits.getdata`, `netCDF4.Dataset` and `h5by.File` |

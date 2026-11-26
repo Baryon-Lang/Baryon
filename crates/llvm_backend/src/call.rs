@@ -217,15 +217,14 @@ impl<'db> Function<'_, '_, 'db> {
             Builtin::EnvironmentGet => self.environment_get(arguments, destination, target),
             Builtin::EnvironmentEntries => self.environment_entries(arguments, destination, target),
             Builtin::Exit => self.system_exit(arguments),
+            Builtin::MonotonicClock => self.clock(false, arguments, destination, target),
+            Builtin::WallClock => self.clock(true, arguments, destination, target),
             Builtin::Sort => self.list_sort(arguments, target),
             Builtin::RoundDigits => self.round_digits(arguments, destination, target),
             Builtin::MatrixProduct => self.matrix_product(arguments, target),
             // `File`, `ArrayFile`, `Path`, `Run` and `Input` can fail, so `call` sends them to
-            // `raising_builtin` with their error edge. The clocks cannot fail, but lowering makes
-            // no call of them yet: the `time` module is the next step of roadmap 1.13.19.
-            Builtin::MonotonicClock
-            | Builtin::WallClock
-            | Builtin::File(_)
+            // `raising_builtin` with their error edge.
+            Builtin::File(_)
             | Builtin::ArrayFile(_)
             | Builtin::Run
             | Builtin::Input
