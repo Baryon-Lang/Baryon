@@ -12,7 +12,7 @@
 //! | --- | --- | --- |
 //! | `Number` | every number type | `+ - * / // % **`, `-x` and ordering with itself, and integer literals |
 //! | `Float` | `f32`, `f64` | the same as `Number`, and float literals too |
-//! | `VectorSpace` | `f64`, and `Fixed` and `Array` arrays of `f64` | `+` and `-` with itself, `-x`, and `*` by an `f64` on either side |
+//! | `VectorSpace` | `f64`, and `Fixed` and `Array` arrays of `f64` | `+` and `-` with itself, `-x`, `*` by an `f64` on either side, and reading `len(y)` and `y[i]` (card 60, in `states`) |
 //! | `Copy` | copy types | copying |
 //! | a user trait, `class Body(Protocol)` | structs that name it, or a trait that requires it, among their bases (decision 0031) | calling the methods it and the traits it requires list |
 

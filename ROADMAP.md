@@ -380,10 +380,13 @@ and 3.25.
 | 3.19.2 | Variadic generics: `*Ts` in a type parameter list, in a `Callable` and in `tuple[*Ts]`, and `f(*args)` on a tuple, so a callback takes SciPy's `args=` one by one; amends decision 0026 (chief designer, card 42) | 2.5 | 3.19.1 | Done | Claude | [#533](https://github.com/Baryon-Lang/Baryon/pull/533), [#538](https://github.com/Baryon-Lang/Baryon/pull/538) |
 | 3.19.3 | Fixed rules on arrays, with no callbacks: `trapezoid`, `simpson`, `cumulative_trapezoid` and `romb` | 1.5 | 3.19 | Done | Claude | [#475](https://github.com/Baryon-Lang/Baryon/pull/475) |
 | 3.19.4 | `quad` on finite intervals in QUADPACK's manner (QAGS: 21-point Gauss-Kronrod with Wynn's epsilon algorithm), with `points=` | 4 | 3.19.2 | Done | Claude | [#545](https://github.com/Baryon-Lang/Baryon/pull/545) |
-| 3.19.5 | `quad` on infinite intervals (QAGI) and with `weight=` (QAWO, QAWF, QAWC, QAWS) | 4 | 3.19.4 | In progress | Claude | [#554](https://github.com/Baryon-Lang/Baryon/pull/554) |
+| 3.19.5 | `quad` on infinite intervals (QAGI) and with `weight=` (QAWO, QAWF, QAWC, QAWS). QAGI is built (#554); `weight=` is parked until it is scheduled again | 4 | 3.19.4 | Planned | — | [#554](https://github.com/Baryon-Lang/Baryon/pull/554) |
 | 3.19.6 | `fixed_quad`, `dblquad`, `tplquad` and `nquad` | 3 | 3.19.4 | Planned | — | — |
-| 3.19.7 | `solve_ivp` with RK45: step-size control, `t_eval` and `OdeResult` | 3 | 3.19.2 | Planned | — | — |
-| 3.19.8 | DOP853, and dense output for both methods, `sol.sol(t)`, through `__call__` on structs (decision 0058, chief designer, card 43). `__call__` is built first | 3.5 | 3.19.7 | In progress | Claude | [#466](https://github.com/Baryon-Lang/Baryon/pull/466) |
+| 3.19.7 | `solve_ivp` with RK45: step-size control, `t_eval` and `OdeResult`. Built in the sub-rows below | 3 | 3.19.2 | In progress | Claude | — |
+| 3.19.7.1 | Reading a `VectorSpace` state by position, `len(y)` and `y[i]`, read only, an `f64` acting as length 1; amends decision 0065 point 1 (chief designer, card 60) | 1 | 3.19.2 | Done | Claude | this pull request |
+| 3.19.7.2 | `solve_ivp` with RK45 and SciPy's step-size control, returning `OdeResult` with SciPy's 11 fields; `t_events`, `y_events` and `sol` are `None` | 2 | 3.19.7.1 | Planned | — | — |
+| 3.19.7.3 | `t_eval=`, and `method=` routed when compiling from a literal (decision 0065 point 2) | 1 | 3.19.7.2 | Planned | — | — |
+| 3.19.8 | DOP853, and dense output for both methods, `sol.sol(t)`, through `__call__` on structs (decision 0058, chief designer, card 43). `__call__` is built first (#466) | 3.5 | 3.19.7 | Planned | — | [#466](https://github.com/Baryon-Lang/Baryon/pull/466) |
 | 3.19.9 | `events=` for `solve_ivp`, in the shape a later card chooses: SciPy keeps the functions in a list, which version 0 cannot hold | 2 | 3.19.7 | Planned | — | — |
 | 3.19.10 | Validation against values recorded from SciPy and mpmath, the transition guide's entries with differences flagged, and a benchmark against SciPy | 1 | 3.19.8 | Planned | — | — |
 | 3.20 | Optimization and root finding as `scipy.optimize` has them: Levenberg-Marquardt least squares and curve fitting, Nelder-Mead, constrained minimization (SLSQP), and bracketing and Newton root finders. A base library; AstroPy relies on it (chief designer, 2026-11-10) | 35 | 3.10 | Planned | — | — |
