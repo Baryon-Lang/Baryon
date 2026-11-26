@@ -20,7 +20,7 @@ impl<'db> Builder<'db> {
         index: NodeId,
         unchecked: bool,
         node: NodeId,
-    ) -> Option<Place> {
+    ) -> Place {
         let ty = self.ty(array);
         let base = self.borrow(array);
         let position = self.index(&base, ty, 0, index, unchecked);
@@ -28,7 +28,7 @@ impl<'db> Builder<'db> {
         let temporary = self.temporary(element, node);
         let read = Operand::Copy(base.project(Projection::Index(vec![position])));
         self.assign(Place::from(temporary), Rvalue::Use(read), node);
-        Some(Place::from(temporary))
+        Place::from(temporary)
     }
 
     /// Whether `len` of a value of type `ty` lowers to [`Rvalue::Length`]: an array, a list, a

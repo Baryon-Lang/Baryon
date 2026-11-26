@@ -75,7 +75,7 @@ impl<'db> Builder<'db> {
                 }
                 Some(base.project(Projection::Index(locals)))
             }
-            TypeKind::Parameter { .. } => self.state_element(array, index, unchecked, node),
+            TypeKind::Parameter { .. } => Some(self.state_element(array, index, unchecked, node)),
             _ => {
                 self.unsupported(node, "indexing strings");
                 None
