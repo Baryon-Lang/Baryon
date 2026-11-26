@@ -22,7 +22,8 @@ only; polars reads from them the values the tests expect.
   with `to_csv`, with it byte for byte.
 - `types_written.parquet` is what `to_parquet` wrote for the frame read from
   `types_snappy.parquet`, less `extra`. polars 2.1.0 reads it as a table equal to that one,
-  with the same type for every column and every float the same bit for bit. The test that
+  with the same type for every column and every float the same bit for bit. Its two columns
+  of text, `w` and `x`, each have a dictionary page. The test that
   writes the frame again compares its bytes with this file, so a change to the writer shows.
   After a change that is meant, write the file again with the test's program and check it
   with polars: `a.equals(b, null_equal=True)` and `a.schema == b.schema`, where `a` is
