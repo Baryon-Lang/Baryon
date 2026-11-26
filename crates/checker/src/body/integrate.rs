@@ -11,16 +11,16 @@ use super::calls::Arguments;
 use database::File;
 use syntax::NodeId;
 
-/// The methods `solve_ivp` builds, in SciPy's spelling, and the library function of
+/// The methods `solve_ivp` builds, in `SciPy`'s spelling, and the library function of
 /// `<std>/integrate_ivp.byn` each one is checked as. RK45 is `solve_ivp` itself.
 const METHODS: [(&str, &str); 1] = [("RK45", "solve_ivp")];
 
-impl<'db> Body<'db> {
+impl Body<'_> {
     /// The function a call of the library function `name` of `file` is checked as: for
     /// `solve_ivp`, the integrator its `method=` names when that is a literal, or
     /// `_solve_ivp_named` when it is held in a variable, after reporting an unknown literal; the
     /// function itself for any other call. The method is the fourth argument, by position or as
-    /// `method=`, as in SciPy.
+    /// `method=`, as in `SciPy`.
     pub(super) fn ode_method(
         &mut self,
         file: File,
