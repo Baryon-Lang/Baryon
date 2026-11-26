@@ -34,6 +34,7 @@ mod frame_arguments;
 mod frame_benchmark;
 mod frame_columns;
 mod frame_csv;
+mod frame_csv_decimals;
 mod frame_csv_keywords;
 mod frame_distinct;
 mod frame_group_counts;

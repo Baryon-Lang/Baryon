@@ -24,8 +24,9 @@ and `na_values=` names more cells to read as empty ones.
 `skiprows=` passes over lines before the header and `nrows=` stops after so many rows.
 
 Cost: the whole file is held in memory while its columns are built, with 16 bytes for each
-cell of a wanted column. A whole number of digits alone is read where it lies; any other
-cell of a number is copied once to be read (roadmap 3.14.4.3).
+cell of a wanted column. A whole number of digits alone and a float written as a plain
+decimal of up to about sixteen digits are read where they lie; any other cell of a number
+is copied once to be read (roadmap 3.14.4.3 and 3.14.4.4).
 """
 
 from math import nan
@@ -254,6 +255,50 @@ def csv_empty(name: str, row: int) -> str:
     return where + ": the cell is empty, and the column's type has no None"
 
 
+def _tens() -> Array[f64, 1]:
+    """The powers of ten from 1 to 10 to the 22, each of which an `f64` holds exactly."""
+    table = Array.fill((23,), 1.0)
+    for power in range(1, 23):
+        table[power] = table[power - 1] * 10.0
+    return table
+
+
+def _decimal(data: Array[u8, 1], start: int, end: int, tens: Array[f64, 1]) -> f64:
+    """The float the bytes of `data` from `start` to `end` write when they are a plain
+    decimal, an optional `-`, then digits with at most one point among them, whose digits
+    make a whole number of at most 2 to the 53, and NaN otherwise. `tens` is `_tens()`.
+
+    Such a cell is read here with no copy: its digits as a whole number, which an `f64`
+    holds exactly, divided by a power of ten, which it also holds exactly, so the one
+    rounding of the division gives the float nearest the text, the same `float` gives.
+    `csv_floats_as` reads any other cell the slow way, through `float`: an exponent,
+    spaces, `inf`, `nan`, more digits than fit. No cell read here is NaN, so NaN can mean
+    "not read". 48 is the byte `0`, 46 the point and 45 the minus sign."""
+    at = start
+    if at < end and data[at] == u8(45):
+        at += 1
+    if end == at:
+        return nan
+    digits = 0
+    places = -1
+    for spot in range(at, end):
+        digit = int(data[spot]) - 48
+        if digit == -2 and places < 0:
+            places = 0
+        elif digit < 0 or digit > 9 or digits > 9007199254740992:
+            return nan
+        else:
+            digits = digits * 10 + digit
+            if places >= 0:
+                places += 1
+    if digits > 9007199254740992 or places > 22 or end - at == 1 + places:
+        return nan
+    value = float(digits)
+    if places > 0:
+        value = value / tens[places]
+    return -value if at > start else value
+
+
 def csv_floats_as(
     data: Array[u8, 1],
     bounds: list[int],
@@ -270,11 +315,16 @@ def csv_floats_as(
     and `nan` are numbers, as in pandas."""
     rows = len(bounds) // (2 * columns)
     result = Array.fill((rows,), 0.0)
+    tens = _tens()
     for row in range(rows):
         at = 2 * (row * columns + column)
         if bounds[at] == bounds[at + 1]:
             if not optional:
                 result[row] = nan
+            continue
+        plain = _decimal(data, bounds[at], bounds[at + 1], tens)
+        if plain == plain:
+            result[row] = plain
             continue
         # `float` skips the spaces around a number itself, so the cell is stripped only to
         # be named in an error.
