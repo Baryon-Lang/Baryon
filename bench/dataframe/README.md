@@ -67,7 +67,7 @@ merge          0.926     0.782    absent  identical
 missing        0.215     0.150    absent  identical
 counts         1.544     1.622    absent  identical
 write         24.915    29.302    absent  identical
-read           3.938     2.515    absent  identical
+read           3.957     2.910    absent  identical
 ```
 
 What they say:
@@ -89,11 +89,17 @@ What they say:
   needs only the groups. How the time divides between them has not been measured.
 - `write` is ahead of pandas and writes the same bytes, 20 million floats among them, each
   in its shortest text that reads back exactly.
-- `read` is 1.6 times behind pandas. It was 2.6 times behind, 7.659 s against 2.909 s, on
+- `read` is 1.4 times behind pandas. It was 2.6 times behind, 7.659 s against 2.909 s, on
   2026-11-19 before roadmap 3.14.4.3, which stopped copying each cell of a whole
-  number and stopped `float` and `int` allocating for text without underscores. What is left
-  is one copy of each cell of a float, made so that `float` can read it as text, and the index
-  of the cells the reader builds before the columns.
+  number and stopped `float` and `int` allocating for text without underscores, and 1.6
+  times behind after it. Roadmap 3.14.4.4 then read a float written as a plain decimal
+  whose digits fit 2 to the 53 where it lies, with no copy. The `read` row above is from
+  2026-11-26, the same machine type on another day: 4.738 s before that change, 3.957 s
+  after, against 2.910 s for pandas. About a third of this file's floats have more digits
+  than the quick way takes, seventeen as a rule, and still take one copy each, made so
+  that `float` can read the cell as text; a file of prices or measurements written with
+  fewer digits gains more. The rest of the gap is that copy and the index of the cells
+  the reader builds before the columns.
 
 ### With Polars, 2026-11-18
 
