@@ -1,11 +1,14 @@
 name: Release
 
 # Builds the prebuilt `baryon` archives a user downloads instead of building from source (roadmap
-# R.2.6), tests each on a fresh machine with no Rust toolchain (R.2.7), and, for a version tag,
-# attaches them to a draft GitHub release. Nothing is ever published: a person reads the draft
+# R.2.6), tests each on a fresh machine with no Rust toolchain (R.2.7), packages the VS Code
+# extension as a `.vsix` file (decision 0057), and, for a version tag, attaches all of them to the
+# GitHub release for that tag (R.7.5). The workflow never publishes: a person reads the release
 # and publishes it (R.2.5).
 #
-# - A `v*` tag, such as `v0.2.0`, runs everything and fills the draft release for that tag.
+# - A `v*` tag, such as `v0.2.0`, runs everything. If no release exists for the tag, the files go
+#   to a new draft. If the release was already published, for example from the GitHub website,
+#   which creates the tag when it publishes, the files are added to it.
 # - Run by hand (Actions, Release, Run workflow) for a dry run: the archives are built and tested
 #   and kept as workflow artifacts, and no release is touched.
 # - A pull request that changes this workflow or its script runs the dry run too, so a broken
@@ -124,9 +127,43 @@ jobs:
           clang --version
           sh .github/release/clean-machine-test.sh dist/*.tar.gz .
 
+  extension:
+    name: package the VS Code extension
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the extension's version
+        # Each release ships the extension under its own version, so a user can tell which
+        # `baryon` an extension was released with. A tag stops here when the two disagree; a dry
+        # run only warns, since `main` may sit between releases.
+        run: |
+          extension=$(node -p "require('./editors/vscode/package.json').version")
+          workspace=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          echo "extension $extension, workspace $workspace"
+          if [ "$extension" != "$workspace" ]; then
+            if [ "$GITHUB_REF_TYPE" = tag ]; then
+              echo "::error::editors/vscode/package.json is at $extension but the release is $workspace: raise the extension's version in the release pull request"
+              exit 1
+            fi
+            echo "::warning::editors/vscode/package.json is at $extension and the workspace at $workspace"
+          fi
+      - name: Package the .vsix
+        # `npm ci` installs the language server client at the versions package-lock.json pins.
+        # `vsce` is pinned too, so a new release of it cannot change what users install.
+        working-directory: editors/vscode
+        run: |
+          npm ci
+          npx --yes @vscode/vsce@4.1.1 package
+          ls -l ./*.vsix
+      - uses: actions/upload-artifact@v5
+        with:
+          name: vscode-extension
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+
   release:
-    name: attach to the draft release
-    needs: clean-machine
+    name: attach to the release
+    needs: [clean-machine, extension]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
@@ -137,23 +174,32 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Create the draft, or add to the draft already there
-        # Only ever a draft. A release already published, for example one made and published in
-        # the GitHub UI, which also pushes the tag, is never changed: its downloads may already be
-        # in users' hands, and replacing them would change files people checked against a
-        # published SHA-256. The job fails instead, and says how to proceed.
+      - name: Create the draft, or add to the release already there
+        # A draft takes every file, replacing any of the same name, so re-running the job after a
+        # fix is safe. A release already published only gains the files it lacks: one it already
+        # holds is never replaced, since its download may be in users' hands and checked against
+        # a published SHA-256.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           tag="$GITHUB_REF_NAME"
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [ "$draft" != true ]; then
-              echo "::error::release $tag is already published; the workflow uploads only to a draft. Attach the archives of this run by hand, or turn the release back into a draft and re-run this job."
-              exit 1
+            if [ "$draft" = true ]; then
+              gh release upload "$tag" dist/* --clobber
+            else
+              attached=$(gh release view "$tag" --json assets --jq '.assets[].name')
+              for file in dist/*; do
+                name=$(basename "$file")
+                if grep -qxF "$name" <<< "$attached"; then
+                  echo "::notice::release $tag is published and already holds $name; left as it is"
+                else
+                  gh release upload "$tag" "$file"
+                fi
+              done
             fi
           else
             gh release create "$tag" --draft --verify-tag --title "Baryon ${tag#v}" \
               --notes "Draft made by the release workflow. The release notes are in CHANGELOG.md; paste them here before publishing."
+            gh release upload "$tag" dist/* --clobber
           fi
-          gh release upload "$tag" dist/* --clobber

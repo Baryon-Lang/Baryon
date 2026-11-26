@@ -33,6 +33,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   the text written for a missing value, `header=False`, to write the rows alone, and `columns=`,
   the columns to write and their order
   ([CSV files](docs/reference/csv-files.md#keywords)).
+- Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
+  archives, so trying the extension no longer needs Node.js
+  ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
