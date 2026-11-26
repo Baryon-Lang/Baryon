@@ -1,0 +1,198 @@
+"""The coefficients of DOP853 (roadmap 3.19.8), Dormand and Prince's explicit Runge-Kutta method
+of order 8 with error estimators of orders 5 and 3, as Hairer's Fortran `dop853.f` gives them and
+`scipy.integrate._ivp.dop853_coefficients` 1.18 holds them. Each number is the `f64` nearest to
+SciPy's decimal, so the steps are SciPy's.
+
+The compiler reads this file for `integrate_dop853`; a program cannot import it.
+"""
+
+# The row of the table that holds each part: the stage weights `A` take rows 0 to 15, one row a
+# stage, then the fifth-order solution's weights `B`, the stage times `C`, the two error
+# estimators `E5` and `E3`, and the four rows `D` of the seventh-order interpolant.
+ROW_B: Final = 16
+ROW_C: Final = 17
+ROW_E5: Final = 18
+ROW_E3: Final = 19
+ROW_D: Final = 20
+# How many stages a step takes, the twelfth being the slope at the new state, and how many the
+# interpolant takes, three more.
+STAGES: Final = 12
+STAGES_EXTENDED: Final = 16
+
+
+def tableau() -> Array[f64, 2]:
+    """DOP853's coefficients as one table of 24 rows of 16, laid out as the `ROW_` constants say:
+    `table[s, j]` is the weight of stage `j` in stage `s`, SciPy's `A[s, j]`, and
+    `table[ROW_C, s]` is stage `s`'s time as a fraction of the step, SciPy's `C[s]`. Entries
+    SciPy leaves 0 stay 0. Built once a run."""
+    table: Array[f64, 2] = Array.zeros((24, 16))
+    table[1, 0] = 0.05260015195876773
+    table[2, 0] = 0.0197250569845379
+    table[2, 1] = 0.0591751709536137
+    table[3, 0] = 0.02958758547680685
+    table[3, 2] = 0.08876275643042054
+    table[4, 0] = 0.2413651341592667
+    table[4, 2] = -0.8845494793282861
+    table[4, 3] = 0.924834003261792
+    table[5, 0] = 0.037037037037037035
+    table[5, 3] = 0.17082860872947386
+    table[5, 4] = 0.12546768756682242
+    table[6, 0] = 0.037109375
+    table[6, 3] = 0.17025221101954405
+    table[6, 4] = 0.06021653898045596
+    table[6, 5] = -0.017578125
+    table[7, 0] = 0.03709200011850479
+    table[7, 3] = 0.17038392571223998
+    table[7, 4] = 0.10726203044637328
+    table[7, 5] = -0.015319437748624402
+    table[7, 6] = 0.008273789163814023
+    table[8, 0] = 0.6241109587160757
+    table[8, 3] = -3.3608926294469414
+    table[8, 4] = -0.868219346841726
+    table[8, 5] = 27.59209969944671
+    table[8, 6] = 20.154067550477894
+    table[8, 7] = -43.48988418106996
+    table[9, 0] = 0.47766253643826434
+    table[9, 3] = -2.4881146199716677
+    table[9, 4] = -0.590290826836843
+    table[9, 5] = 21.230051448181193
+    table[9, 6] = 15.279233632882423
+    table[9, 7] = -33.28821096898486
+    table[9, 8] = -0.020331201708508627
+    table[10, 0] = -0.9371424300859873
+    table[10, 3] = 5.186372428844064
+    table[10, 4] = 1.0914373489967295
+    table[10, 5] = -8.149787010746927
+    table[10, 6] = -18.52006565999696
+    table[10, 7] = 22.739487099350505
+    table[10, 8] = 2.4936055526796523
+    table[10, 9] = -3.0467644718982196
+    table[11, 0] = 2.273310147516538
+    table[11, 3] = -10.53449546673725
+    table[11, 4] = -2.0008720582248625
+    table[11, 5] = -17.9589318631188
+    table[11, 6] = 27.94888452941996
+    table[11, 7] = -2.8589982771350235
+    table[11, 8] = -8.87285693353063
+    table[11, 9] = 12.360567175794303
+    table[11, 10] = 0.6433927460157636
+    table[12, 0] = 0.054293734116568765
+    table[12, 5] = 4.450312892752409
+    table[12, 6] = 1.8915178993145003
+    table[12, 7] = -5.801203960010585
+    table[12, 8] = 0.3111643669578199
+    table[12, 9] = -0.1521609496625161
+    table[12, 10] = 0.20136540080403034
+    table[12, 11] = 0.04471061572777259
+    table[13, 0] = 0.056167502283047954
+    table[13, 6] = 0.25350021021662483
+    table[13, 7] = -0.2462390374708025
+    table[13, 8] = -0.12419142326381637
+    table[13, 9] = 0.15329179827876568
+    table[13, 10] = 0.00820105229563469
+    table[13, 11] = 0.007567897660545699
+    table[13, 12] = -0.008298
+    table[14, 0] = 0.03183464816350214
+    table[14, 5] = 0.028300909672366776
+    table[14, 6] = 0.053541988307438566
+    table[14, 7] = -0.05492374857139099
+    table[14, 10] = -0.00010834732869724932
+    table[14, 11] = 0.0003825710908356584
+    table[14, 12] = -0.00034046500868740456
+    table[14, 13] = 0.1413124436746325
+    table[15, 0] = -0.42889630158379194
+    table[15, 5] = -4.697621415361164
+    table[15, 6] = 7.683421196062599
+    table[15, 7] = 4.06898981839711
+    table[15, 8] = 0.3567271874552811
+    table[15, 12] = -0.0013990241651590145
+    table[15, 13] = 2.9475147891527724
+    table[15, 14] = -9.15095847217987
+    table[ROW_B, 0] = 0.054293734116568765
+    table[ROW_B, 5] = 4.450312892752409
+    table[ROW_B, 6] = 1.8915178993145003
+    table[ROW_B, 7] = -5.801203960010585
+    table[ROW_B, 8] = 0.3111643669578199
+    table[ROW_B, 9] = -0.1521609496625161
+    table[ROW_B, 10] = 0.20136540080403034
+    table[ROW_B, 11] = 0.04471061572777259
+    table[ROW_C, 1] = 0.05260015195876773
+    table[ROW_C, 2] = 0.0789002279381516
+    table[ROW_C, 3] = 0.1183503419072274
+    table[ROW_C, 4] = 0.2816496580927726
+    table[ROW_C, 5] = 0.3333333333333333
+    table[ROW_C, 6] = 0.25
+    table[ROW_C, 7] = 0.3076923076923077
+    table[ROW_C, 8] = 0.6512820512820513
+    table[ROW_C, 9] = 0.6
+    table[ROW_C, 10] = 0.8571428571428571
+    table[ROW_C, 11] = 1.0
+    table[ROW_C, 12] = 1.0
+    table[ROW_C, 13] = 0.1
+    table[ROW_C, 14] = 0.2
+    table[ROW_C, 15] = 0.7777777777777778
+    table[ROW_E5, 0] = 0.01312004499419488
+    table[ROW_E5, 5] = -1.2251564463762044
+    table[ROW_E5, 6] = -0.4957589496572502
+    table[ROW_E5, 7] = 1.6643771824549864
+    table[ROW_E5, 8] = -0.35032884874997366
+    table[ROW_E5, 9] = 0.3341791187130175
+    table[ROW_E5, 10] = 0.08192320648511571
+    table[ROW_E5, 11] = -0.022355307863886294
+    table[ROW_E3, 0] = -0.18980075407240762
+    table[ROW_E3, 5] = 4.450312892752409
+    table[ROW_E3, 6] = 1.8915178993145003
+    table[ROW_E3, 7] = -5.801203960010585
+    table[ROW_E3, 8] = -0.4226823213237919
+    table[ROW_E3, 9] = -0.1521609496625161
+    table[ROW_E3, 10] = 0.20136540080403034
+    table[ROW_E3, 11] = 0.02265179219836082
+    table[ROW_D, 0] = -8.428938276109013
+    table[ROW_D, 5] = 0.5667149535193777
+    table[ROW_D, 6] = -3.0689499459498917
+    table[ROW_D, 7] = 2.38466765651207
+    table[ROW_D, 8] = 2.117034582445028
+    table[ROW_D, 9] = -0.871391583777973
+    table[ROW_D, 10] = 2.2404374302607883
+    table[ROW_D, 11] = 0.6315787787694688
+    table[ROW_D, 12] = -0.08899033645133331
+    table[ROW_D, 13] = 18.148505520854727
+    table[ROW_D, 14] = -9.194632392478356
+    table[ROW_D, 15] = -4.436036387594894
+    table[ROW_D + 1, 0] = 10.427508642579134
+    table[ROW_D + 1, 5] = 242.28349177525817
+    table[ROW_D + 1, 6] = 165.20045171727028
+    table[ROW_D + 1, 7] = -374.5467547226902
+    table[ROW_D + 1, 8] = -22.113666853125306
+    table[ROW_D + 1, 9] = 7.733432668472264
+    table[ROW_D + 1, 10] = -30.674084731089398
+    table[ROW_D + 1, 11] = -9.332130526430229
+    table[ROW_D + 1, 12] = 15.697238121770845
+    table[ROW_D + 1, 13] = -31.139403219565178
+    table[ROW_D + 1, 14] = -9.35292435884448
+    table[ROW_D + 1, 15] = 35.81684148639408
+    table[ROW_D + 2, 0] = 19.985053242002433
+    table[ROW_D + 2, 5] = -387.0373087493518
+    table[ROW_D + 2, 6] = -189.17813819516758
+    table[ROW_D + 2, 7] = 527.8081592054236
+    table[ROW_D + 2, 8] = -11.57390253995963
+    table[ROW_D + 2, 9] = 6.8812326946963
+    table[ROW_D + 2, 10] = -1.0006050966910838
+    table[ROW_D + 2, 11] = 0.7777137798053443
+    table[ROW_D + 2, 12] = -2.778205752353508
+    table[ROW_D + 2, 13] = -60.19669523126412
+    table[ROW_D + 2, 14] = 84.32040550667716
+    table[ROW_D + 2, 15] = 11.99229113618279
+    table[ROW_D + 3, 0] = -25.69393346270375
+    table[ROW_D + 3, 5] = -154.18974869023643
+    table[ROW_D + 3, 6] = -231.5293791760455
+    table[ROW_D + 3, 7] = 357.6391179106141
+    table[ROW_D + 3, 8] = 93.40532418362432
+    table[ROW_D + 3, 9] = -37.45832313645163
+    table[ROW_D + 3, 10] = 104.0996495089623
+    table[ROW_D + 3, 11] = 29.8402934266605
+    table[ROW_D + 3, 12] = -43.53345659001114
+    table[ROW_D + 3, 13] = 96.32455395918828
+    table[ROW_D + 3, 14] = -39.17726167561544
+    table[ROW_D + 3, 15] = -149.72683625798564
+    return table
