@@ -9,6 +9,7 @@ mod debug;
 mod dicts;
 mod errors;
 mod files;
+mod lists;
 mod math;
 mod pairwise;
 mod panics;
