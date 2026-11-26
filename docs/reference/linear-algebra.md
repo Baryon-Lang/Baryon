@@ -40,16 +40,27 @@ with `try` or lists it in its own `Raises`.
 ## `linalg.solve`
 
 ```python
-def solve[T: Float](a: Array[T, 2], b: Array[T, 1]) -> Raises[Array[T, 1], LinAlgError]: ...
+def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]: ...
+def solve(a: Array[f64, 2], b: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]: ...
+def solve(a: Array[f32, 2], b: Array[f32, 1]) -> Raises[Array[f32, 1], LinAlgError]: ...
+def solve(a: Array[f32, 2], b: Array[f32, 2]) -> Raises[Array[f32, 2], LinAlgError]: ...
 ```
 
 The vector `x` with `a @ x == b`, for a square matrix `a`: Gaussian elimination with partial
 pivoting, which at each step swaps up the row with the largest entry in the column. `a` and `b`
-are left unchanged.
+are left unchanged. `solve` has four overloads
+([decision 0067](../decisions/0067-library-overloading.md)), so the call picks the one that fits
+its arguments:
+
+- **A matrix `b` of several right-hand sides**, k columns, gives a matrix `x` of k columns, as
+  in NumPy: each column of `x` solves `a` against that column of `b`. `a` is factored once, so
+  k right-hand sides cost about 2n³/3 + 2kn² multiply-adds, not k full solves, and each column
+  gets the same bits it would get alone.
+- **`f32` matrices** are solved in `f32`, as NumPy does for `float32`.
 
 - Raises `LinAlgError("Singular matrix")` when a pivot is exactly zero, as NumPy does. A matrix
   that is nearly singular gives a result with large error and no exception, as in NumPy.
-- Panics when `a` is not square, or `b`'s length is not `a`'s number of rows.
+- Panics when `a` is not square, or `b` has not as many rows as `a`.
 - Cost: about 2n³/3 multiply-adds, and a copy of `a` and `b`; about 0.05 s for n = 600 on one core.
   To solve many systems with one matrix, factor it once with [`lu_factor`](#linalglu_factor-and-linalglu_solve).
 
@@ -82,23 +93,26 @@ prints
 [0.2 0.6 0.7]
 ```
 
-Differences from NumPy: `b` is one vector, not a matrix of several right-hand sides (roadmap
-3.10.3), and `a` holds `f64` or `f32`, not complex numbers. NumPy converts an integer matrix to
+Differences from NumPy: `a` holds `f64` or `f32`, not complex numbers (roadmap 3.10.8), and a
+stack of matrices of three or more dimensions is not taken. NumPy converts an integer matrix to
 `float64`; here it is a type error, since every conversion is a call.
 
 ## `linalg.lu_factor` and `linalg.lu_solve`
 
 ```python
 def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 1]], LinAlgError]: ...
-def lu_solve[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]: ...
+def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]: ...
+def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 2]) -> Array[f64, 2]: ...
+def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 1]) -> Array[f32, 1]: ...
+def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 2]) -> Array[f32, 2]: ...
 ```
 
 NumPy has no LU factorization, so these are SciPy's `scipy.linalg.lu_factor` and `lu_solve`.
 `lu_factor(a)` returns `(lu, piv)`, the factors `solve` computes: `lu` holds the lower triangle
 `L`, whose diagonal of ones is not stored, below its diagonal, and the upper triangle `U` on and
 above it; at step `k`, row `k` was swapped with row `piv[k]`. `lu_solve(lu, piv, b)` then solves
-`a @ x == b` in about 2n² multiply-adds instead of 2n³/3, so a time-stepping loop with a fixed
-matrix factors it once:
+`a @ x == b` in about 2n² multiply-adds instead of 2n³/3, for each column when `b` is a matrix,
+so a time-stepping loop with a fixed matrix factors it once:
 
 ```python
 from linalg import LinAlgError, lu_factor, lu_solve
