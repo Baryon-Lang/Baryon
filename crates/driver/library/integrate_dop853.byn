@@ -1,0 +1,244 @@
+"""DOP853 for `solve_ivp` (roadmap 3.19.8): Dormand and Prince's explicit Runge-Kutta method of
+order 8, SciPy's `method="DOP853"`, for problems that need tight tolerances.
+
+Each step takes twelve new values of the right-hand side. Its error is measured by two
+estimators, of orders 5 and 3, blended as Hairer's `dop853.f` and SciPy blend them, and the step
+size is controlled as RK45's is, with the exponent `-1 / 8`. The constants, the first step, the
+stopping rules and the interpolant are those of `scipy.integrate.DOP853` 1.18, so a run takes
+SciPy's steps and calls `fun` as many times as SciPy does. With `t_eval`, a step that covers a
+time asked for calls `fun` three more times to build its seventh-order interpolant, as in SciPy.
+
+The coefficients are in `integrate_dop853_tableau.byn`. The checker sends a call of
+`solve_ivp` with `method="DOP853"` here (decision 0065 point 2); a program cannot import this
+file.
+"""
+
+from math import fabs, inf, sqrt
+from integrate_dop853_tableau import ROW_B, ROW_C, ROW_D, ROW_E3, ROW_E5, STAGES
+from integrate_dop853_tableau import STAGES_EXTENDED, tableau
+from integrate_ivp import OdeResult, checked_times, initial_step, ode_result, spacing
+
+# The rounding of an `f64`, SciPy's `EPS`, below which `rtol` is raised to 100 times it.
+_EPSILON: Final = 2.220446049250313e-16
+# SciPy's step-size controls, shared with RK45, and `-1 / (order + 1)` for DOP853's
+# seventh-order error estimate.
+_SAFETY: Final = 0.9
+_MIN_FACTOR: Final = 0.2
+_MAX_FACTOR: Final = 10.0
+_ERROR_EXPONENT: Final = -1.0 / 8.0
+
+
+def _stage[S: VectorSpace](stages: list[S], table: Array[f64, 2], row: int, count: int) -> S:
+    """The first `count` stages weighted by the row `row` of the table,
+    `sum(table[row, j] * stages[j])`, added in order as SciPy's `np.dot(K[:s].T, A[s, :s])`
+    writes it."""
+    total = stages[0] * table[row, 0]
+    for j in range(1, count):
+        total = total + stages[j] * table[row, j]
+    return total
+
+
+def _dop853_step[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t: f64,
+    y: S,
+    f: S,
+    h: f64,
+    args: tuple[*Ts],
+    table: Array[f64, 2],
+) -> tuple[S, S, list[S]]:
+    """One DOP853 step of `h` from the time `t`, state `y` and slope `f`, SciPy's `rk_step`: the
+    eighth-order state at `t + h`, its slope, and the thirteen stages from `f` to that slope,
+    which the error estimate and the interpolant read. Calls `fun` twelve times."""
+    stages: list[S] = [f * 1.0]
+    for s in range(1, STAGES):
+        stage = fun(t + table[ROW_C, s] * h, y + _stage(stages, table, s, s) * h, *args)
+        stages.append(stage)
+    y_new = y + h * _stage(stages, table, ROW_B, STAGES)
+    f_new = fun(t + h, y_new, *args)
+    stages.append(f_new * 1.0)
+    return (y_new, f_new, stages)
+
+
+def _dop853_error_norm[S: VectorSpace](
+    stages: list[S], h: f64, y: S, y_new: S, tolerances: tuple[f64, f64], table: Array[f64, 2]
+) -> f64:
+    """SciPy's error norm of a DOP853 step, with `tolerances` as `(rtol, atol)`: the fifth- and
+    third-order estimates, each scaled by `atol + rtol * max(|y|, |y_new|)` elementwise, blended
+    as `|h| * e5**2 / sqrt((e5**2 + 0.01 * e3**2) * n)` from the squares of their Euclidean
+    norms. 0 when both estimates are 0."""
+    rtol, atol = tolerances
+    norm5 = 0.0
+    norm3 = 0.0
+    for i in range(len(y)):
+        scale = atol + max(fabs(y[i]), fabs(y_new[i])) * rtol
+        error5 = 0.0
+        error3 = 0.0
+        for j in range(STAGES + 1):
+            error5 += stages[j][i] * table[ROW_E5, j]
+            error3 += stages[j][i] * table[ROW_E3, j]
+        norm5 += (error5 / scale) * (error5 / scale)
+        norm3 += (error3 / scale) * (error3 / scale)
+    if norm5 == 0.0 and norm3 == 0.0:
+        return 0.0
+    return fabs(h) * norm5 / sqrt((norm5 + 0.01 * norm3) * f64(len(y)))
+
+
+def _dop853_interpolant[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    step: tuple[f64, f64],
+    y_old: S,
+    y: S,
+    stages: list[S],
+    args: tuple[*Ts],
+    table: Array[f64, 2],
+) -> list[S]:
+    """The seven coefficients of the seventh-order interpolant of a step, SciPy's
+    `_dense_output_impl`, for the step `(t_old, h)` from `y_old` to `y` whose thirteen
+    `stages` run from the old slope to the new one. Calls `fun` three times for the extra
+    stages."""
+    t_old, h = step
+    extended: list[S] = []
+    for stage in stages:
+        extended.append(stage * 1.0)
+    for s in range(STAGES + 1, STAGES_EXTENDED):
+        extra = fun(t_old + table[ROW_C, s] * h, y_old + _stage(extended, table, s, s) * h, *args)
+        extended.append(extra)
+    delta = y - y_old
+    coefficients: list[S] = [delta * 1.0]
+    coefficients.append(h * extended[0] - delta)
+    coefficients.append(2.0 * delta - h * (extended[STAGES] + extended[0]))
+    for row in range(4):
+        coefficients.append(h * _stage(extended, table, ROW_D + row, STAGES_EXTENDED))
+    return coefficients
+
+
+def _dop853_dense[S: VectorSpace](
+    step: tuple[f64, f64], y_old: S, coefficients: list[S], t: f64
+) -> S:
+    """The state at `t` within the step `(t_old, h)` from `y_old`, SciPy's `Dop853DenseOutput`:
+    the coefficients from the last to the first, each added and the sum multiplied by `x` and
+    `1 - x` in turn, with `x = (t - t_old) / h`."""
+    t_old, h = step
+    x = (t - t_old) / h
+    total = coefficients[6] * x
+    for i in range(1, 7):
+        total = total + coefficients[6 - i]
+        if i % 2 == 0:
+            total = total * x
+        else:
+            total = total * (1.0 - x)
+    return total + y_old
+
+
+def solve_ivp_dop853[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t_span: tuple[f64, f64],
+    y0: S,
+    method: str = "DOP853",
+    t_eval: Array[f64, 1] | None = None,
+    args: tuple[*Ts] = (),
+    first_step: f64 | None = None,
+    max_step: f64 = inf,
+    rtol: f64 = 1e-3,
+    atol: f64 = 1e-6,
+) -> OdeResult:
+    """`solve_ivp` with `method="DOP853"`, which the checker sends here: the same parameters,
+    checks, result and failure as RK45's `solve_ivp`, with DOP853's steps. `method` is not read.
+    Keeps one state per step, or per time of `t_eval`, and builds a step's interpolant only when
+    it covers a time of `t_eval`."""
+    t0, t_bound = t_span
+    assert max_step > 0.0, "`max_step` must be positive."
+    assert atol >= 0.0, "`atol` must be positive."
+    tolerances = (max(rtol, 100.0 * _EPSILON), atol)
+    table = tableau()
+    direction = 1.0
+    if t_bound < t0:
+        direction = -1.0
+    n = len(y0)
+    t = t0
+    y = y0 * 1.0
+    f = fun(t, y, *args)
+    nfev = 1
+    h_abs = 0.0
+    if first_step is not None:
+        assert first_step > 0.0, "`first_step` must be positive."
+        assert first_step <= fabs(t_bound - t0), "`first_step` exceeds bounds."
+        h_abs = first_step
+    elif n > 0 and t_bound != t0:
+        bounds = (t_bound, max_step, direction)
+        h_abs = initial_step(fun, t, y, f, args, bounds, tolerances, 0.125)
+        nfev += 1
+    # The times of `t_eval` in the order of the run and the next one to report, as in RK45.
+    wanted: Array[f64, 1] = Array.zeros(0)
+    if t_eval is not None:
+        checked = checked_times(t_eval, t0, t_bound)
+        if t_bound != t0:
+            wanted = checked
+    every_step = t_eval is None
+    position = 0
+    ts: list[f64] = []
+    ys: list[S] = []
+    if every_step:
+        ts.append(t0)
+        ys.append(y * 1.0)
+    finished = False
+    while not finished:
+        if n == 0 or t == t_bound:
+            t = t_bound
+            if every_step:
+                ts.append(t)
+                ys.append(y * 1.0)
+            while position < len(wanted) and direction * (wanted[position] - t) <= 0.0:
+                ts.append(wanted[position])
+                ys.append(y * 1.0)
+                position += 1
+            finished = True
+            continue
+        min_step = 10.0 * spacing(t, direction)
+        h_abs = min(h_abs, max_step)
+        if h_abs < min_step:
+            h_abs = min_step
+        rejected = False
+        accepted = False
+        while not accepted and h_abs >= min_step:
+            t_new = t + h_abs * direction
+            if direction * (t_new - t_bound) > 0.0:
+                t_new = t_bound
+            h = t_new - t
+            h_abs = fabs(h)
+            y_new, f_new, stages = _dop853_step(fun, t, y, f, h, args, table)
+            nfev += 12
+            error_norm = _dop853_error_norm(stages, h, y, y_new, tolerances, table)
+            if error_norm < 1.0:
+                factor = _MAX_FACTOR
+                if error_norm != 0.0:
+                    factor = min(_MAX_FACTOR, _SAFETY * error_norm**_ERROR_EXPONENT)
+                if rejected:
+                    factor = min(1.0, factor)
+                h_abs *= factor
+                covered = position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0
+                if covered:
+                    step = (t, h)
+                    coefficients = _dop853_interpolant(fun, step, y, y_new, stages, args, table)
+                    nfev += 3
+                    while position < len(wanted) and direction * (wanted[position] - t_new) <= 0.0:
+                        ys.append(_dop853_dense(step, y, coefficients, wanted[position]))
+                        ts.append(wanted[position])
+                        position += 1
+                t = t_new
+                y = y_new
+                f = f_new
+                if every_step:
+                    ts.append(t)
+                    ys.append(y * 1.0)
+                accepted = True
+                finished = direction * (t - t_bound) >= 0.0
+            else:
+                h_abs *= max(_MIN_FACTOR, _SAFETY * error_norm**_ERROR_EXPONENT)
+                rejected = True
+        if not accepted:
+            message = "Required step size is less than spacing between numbers."
+            return ode_result(ts, ys, n, nfev, -1, message)
+    message = "The solver successfully reached the end of the integration interval."
+    return ode_result(ts, ys, n, nfev, 0, message)

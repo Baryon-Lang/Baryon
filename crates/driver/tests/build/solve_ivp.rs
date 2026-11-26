@@ -35,9 +35,9 @@ const SCIPY: &str = "\
 -1 632 67 1 63.883757720511255 1165736867277266.5 0.9999286400563746 480848617754195.6";
 
 /// Asserts that each line `output` begins with matches `SciPy`'s line in `expected`: the four
-/// counts exactly and the numbers to a relative 1e-10, only the times for a failed run. Returns
-/// the lines after them.
-fn agree<'a>(expected: &str, output: &'a str) -> Vec<&'a str> {
+/// counts exactly and the numbers to a relative `tolerance`, only the times for a failed run.
+/// Returns the lines after them.
+pub(super) fn agree<'a>(expected: &str, output: &'a str, tolerance: f64) -> Vec<&'a str> {
     let mut lines = output.lines();
     for (expected, found) in expected.lines().zip(&mut lines) {
         let expected: Vec<&str> = expected.split(' ').collect();
@@ -55,7 +55,7 @@ fn agree<'a>(expected: &str, output: &'a str) -> Vec<&'a str> {
                 found[column].parse().unwrap_or(f64::NAN),
             );
             assert!(
-                (want - got).abs() <= 1e-10 * want.abs(),
+                (want - got).abs() <= tolerance * want.abs(),
                 "{want} {got}\n{output}"
             );
         }
@@ -107,7 +107,7 @@ def main():
     assert!(ran.status.success(), "{}", stderr(&ran));
     let output = String::from_utf8_lossy(&ran.stdout);
     assert_eq!(
-        agree(SCIPY, &output),
+        agree(SCIPY, &output, 1e-10),
         [
             "False Required step size is less than spacing between numbers. 0 0 True",
             "True True"
@@ -163,7 +163,7 @@ def main():
     let expected = "\
 0 158 9 3 9.0 129.40540591863066 2.0 -8.167936673944695
 0 26 4 1 8.4 54.22261829822385 0.0 24.365664492751193";
-    assert_eq!(agree(expected, &output), ["1 0 (1, 0)"]);
+    assert_eq!(agree(expected, &output, 1e-10), ["1 0 (1, 0)"]);
 }
 
 /// A `max_step` that is not positive is a mistake in the program and panics with `SciPy`'s
@@ -190,7 +190,7 @@ def main():
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: max_step > 0.0, \"`max_step` must be positive.\"\n  \
-         --> <std>/integrate_ivp.byn:317:5\n"
+         --> <std>/integrate_ivp.byn:319:5\n"
     );
 }
 
@@ -226,7 +226,7 @@ def main():
     assert!(ran.status.success(), "{}", stderr(&ran));
     assert_eq!(
         String::from_utf8_lossy(&ran.stdout),
-        "14\n14\n14\n`method` must be one of {'RK45'} or OdeSolver class.\n"
+        "14\n14\n14\n`method` must be one of {'RK45', 'DOP853'} or OdeSolver class.\n"
     );
 }
 
@@ -256,7 +256,7 @@ error: `RK54` is not a method of `solve_ivp`
   |
 9 |     result = solve_ivp(decay, (0.0, 1.0), 1.0, method=\"RK54\")
   |                                                       ^^^^^^ unknown method
-  = note: the methods built are \"RK45\"
+  = note: the methods built are \"RK45\", \"DOP853\"
 
 "
     );
@@ -300,5 +300,5 @@ def main():
     let expected = "\
 0 158 23 3 19.180155390411677 467.17867364382965 2.0 -8.167936673944697
 0 158 9 3 9.0 129.40540591863066 2.0 -8.167936673944695";
-    assert_eq!(agree(expected, &output), ["[1. 1. 1.]"]);
+    assert_eq!(agree(expected, &output, 1e-10), ["[1. 1. 1.]"]);
 }

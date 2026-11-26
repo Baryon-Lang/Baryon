@@ -68,7 +68,7 @@ class OdeResult(Struct):
     success: bool
 
 
-def _spacing(t: f64, direction: f64) -> f64:
+def spacing(t: f64, direction: f64) -> f64:
     """The gap from `t` to the next `f64` in the direction of the sign of `direction`, SciPy's
     `abs(np.nextafter(t, direction * inf) - t)`: 2**-52 times the power of two at or below |t|,
     half that when stepping from a power of two toward zero, and the smallest float below the
@@ -97,7 +97,7 @@ def _scaled_norm[S: VectorSpace](values: S, y: S, tolerances: tuple[f64, f64]) -
     return sqrt(total) / sqrt(f64(len(values)))
 
 
-def _initial_step[S: VectorSpace, *Ts](
+def initial_step[S: VectorSpace, *Ts](
     fun: Callable[[f64, S, *Ts], S],
     t0: f64,
     y0: S,
@@ -105,10 +105,12 @@ def _initial_step[S: VectorSpace, *Ts](
     args: tuple[*Ts],
     bounds: tuple[f64, f64, f64],
     tolerances: tuple[f64, f64],
+    exponent: f64,
 ) -> f64:
     """The size of the first step, SciPy's `select_initial_step`, from the time `t0`, state `y0`
-    and slope `f0`, with `bounds` as `(t_bound, max_step, direction)`. Calls `fun` once, and is
-    called only when the interval is not empty and the state has elements."""
+    and slope `f0`, with `bounds` as `(t_bound, max_step, direction)` and `exponent` as
+    `1 / (order + 1)` for the method's error estimator: 0.2 for RK45, 0.125 for DOP853. Calls
+    `fun` once, and is called only when the interval is not empty and the state has elements."""
     t_bound, max_step, direction = bounds
     interval_length = fabs(t_bound - t0)
     d0 = _scaled_norm(y0, y0, tolerances)
@@ -122,7 +124,7 @@ def _initial_step[S: VectorSpace, *Ts](
     d2 = _scaled_norm(f1 - f0, y0, tolerances) / h0
     h1 = max(1e-6, h0 * 1e-3)
     if d1 > 1e-15 or d2 > 1e-15:
-        h1 = (0.01 / max(d1, d2)) ** (1.0 / 5.0)
+        h1 = (0.01 / max(d1, d2)) ** exponent
     return min(min(100.0 * h0, h1), min(interval_length, max_step))
 
 
@@ -252,7 +254,7 @@ def _error_norm[S: VectorSpace](error: S, y: S, y_new: S, tolerances: tuple[f64,
     return sqrt(total) / sqrt(f64(len(error)))
 
 
-def _result[S: VectorSpace](
+def ode_result[S: VectorSpace](
     ts: list[f64], ys: list[S], n: int, nfev: int, status: int, message: str
 ) -> OdeResult:
     """The `OdeResult` of a run that kept the times `ts` and the states `ys`, each state a
@@ -267,7 +269,7 @@ def _result[S: VectorSpace](
     return OdeResult(times, states, None, None, nfev, 0, 0, status, message.copy(), None, success)
 
 
-def _checked_times(t_eval: Array[f64, 1], t0: f64, t_bound: f64) -> Array[f64, 1]:
+def checked_times(t_eval: Array[f64, 1], t0: f64, t_bound: f64) -> Array[f64, 1]:
     """`t_eval`, after SciPy's checks: every time within `t_span`, and in the direction of the
     run, each strictly after the one before. Panics with SciPy's message where SciPy raises
     `ValueError`."""
@@ -303,8 +305,8 @@ def solve_ivp[S: VectorSpace, *Ts](
 
     With `t_eval`, `t` holds those times instead, and `y` the state at each, read from the
     interpolant of the step that covers it; an empty `t_span` reports none. `method` is
-    `"RK45"`: the checker sends a call whose method is held in a variable to
-    `_solve_ivp_named`, and reports any other literal (decision 0065 point 2).
+    `"RK45"` here: the checker sends `"DOP853"` to `solve_ivp_dop853`, a method held in a
+    variable to `_solve_ivp_named`, and reports any other literal (decision 0065 point 2).
 
     A run that cannot go on, because a step would be smaller than ten times the spacing of
     floats at `t`, stops with `status` -1, `success` False and SciPy's `message`, and returns
@@ -332,7 +334,7 @@ def solve_ivp[S: VectorSpace, *Ts](
         h_abs = first_step
     elif n > 0 and t_bound != t0:
         bounds = (t_bound, max_step, direction)
-        h_abs = _initial_step(fun, t, y, f, args, bounds, tolerances)
+        h_abs = initial_step(fun, t, y, f, args, bounds, tolerances, 0.2)
         nfev += 1
     # The times `t_eval` asks for, in the order of the run, and the next one to report; with no
     # `t_eval` the run reports every step instead, starting with `t0`.
@@ -340,7 +342,7 @@ def solve_ivp[S: VectorSpace, *Ts](
     # and stepping forwards finds nothing.
     wanted: Array[f64, 1] = Array.zeros(0)
     if t_eval is not None:
-        checked = _checked_times(t_eval, t0, t_bound)
+        checked = checked_times(t_eval, t0, t_bound)
         if t_bound != t0:
             wanted = checked
     every_step = t_eval is None
@@ -365,7 +367,7 @@ def solve_ivp[S: VectorSpace, *Ts](
                 position += 1
             finished = True
             continue
-        min_step = 10.0 * _spacing(t, direction)
+        min_step = 10.0 * spacing(t, direction)
         h_abs = min(h_abs, max_step)
         if h_abs < min_step:
             h_abs = min_step
@@ -405,26 +407,7 @@ def solve_ivp[S: VectorSpace, *Ts](
                 rejected = True
         if not accepted:
             message = "Required step size is less than spacing between numbers."
-            return _result(ts, ys, n, nfev, -1, message)
+            return ode_result(ts, ys, n, nfev, -1, message)
     message = "The solver successfully reached the end of the integration interval."
-    return _result(ts, ys, n, nfev, 0, message)
+    return ode_result(ts, ys, n, nfev, 0, message)
 
-
-def _solve_ivp_named[S: VectorSpace, *Ts](
-    fun: Callable[[f64, S, *Ts], S],
-    t_span: tuple[f64, f64],
-    y0: S,
-    method: str = "RK45",
-    t_eval: Array[f64, 1] | None = None,
-    args: tuple[*Ts] = (),
-    first_step: f64 | None = None,
-    max_step: f64 = inf,
-    rtol: f64 = 1e-3,
-    atol: f64 = 1e-6,
-) -> Raises[OdeResult, ValueError]:
-    """`solve_ivp` with its `method` held in a variable, picked at run time (decision 0065 point
-    2): the checker sends such a call here. Raises `ValueError` for a name that is not a method
-    built, where a literal is a compile error."""
-    if method != "RK45":
-        raise ValueError("`method` must be one of {'RK45'} or OdeSolver class.")
-    return solve_ivp(fun, t_span, y0, "RK45", t_eval, args, first_step, max_step, rtol, atol)

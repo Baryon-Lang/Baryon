@@ -11,9 +11,12 @@ use super::calls::Arguments;
 use database::File;
 use syntax::NodeId;
 
-/// The methods `solve_ivp` builds, in `SciPy`'s spelling, and the library function of
-/// `<std>/integrate_ivp.byn` each one is checked as. RK45 is `solve_ivp` itself.
-const METHODS: [(&str, &str); 1] = [("RK45", "solve_ivp")];
+/// The methods `solve_ivp` builds, in `SciPy`'s spelling, and the library module and function
+/// each one is checked as. RK45 is `solve_ivp` itself.
+const METHODS: [(&str, &str, &str); 2] = [
+    ("RK45", "integrate_ivp", "solve_ivp"),
+    ("DOP853", "integrate_dop853", "solve_ivp_dop853"),
+];
 
 impl Body<'_> {
     /// The function a call of the library function `name` of `file` is checked as: for
@@ -40,24 +43,26 @@ impl Body<'_> {
         let Some(method) = method else {
             return (file, name);
         };
-        let routed = match super::files::literal(self.tree, self.text, method) {
+        let (module, routed) = match super::files::literal(self.tree, self.text, method) {
             Some(written) => {
-                let found = METHODS.iter().find(|&&(method, _)| method == written);
+                let found = METHODS.iter().find(|&&(method, _, _)| method == written);
                 if found.is_none() {
                     let names: Vec<String> = METHODS
                         .iter()
-                        .map(|(method, _)| format!("\"{method}\""))
+                        .map(|(method, _, _)| format!("\"{method}\""))
                         .collect();
                     let message = format!("`{written}` is not a method of `solve_ivp`");
                     let note = format!("the methods built are {}", names.join(", "));
                     self.lowerer
                         .error(method, &message, "unknown method", Some(&note));
                 }
-                found.map_or("solve_ivp", |&(_, function)| function)
+                found.map_or(("integrate_ivp", "solve_ivp"), |&(_, module, function)| {
+                    (module, function)
+                })
             }
-            None => "_solve_ivp_named",
+            None => ("integrate", "_solve_ivp_named"),
         };
-        self.library_function("integrate_ivp", routed)
+        self.library_function(module, routed)
             .unwrap_or((file, name))
     }
 }

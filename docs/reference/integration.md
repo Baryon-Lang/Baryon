@@ -201,7 +201,7 @@ step counts SciPy gives for the same call.
 | `fun` | The right-hand side, `fun(t, y, *args)`, returning `dy/dt` as the same type as `y` | |
 | `t_span` | `(t0, t_bound)`, a `tuple[f64, f64]`; `t_bound < t0` integrates backwards | |
 | `y0` | The starting state, an `f64`, a `Fixed` vector of `f64` or an `Array[f64, 1]` | |
-| `method` | The integrator, in SciPy's spelling; only `"RK45"` is built (see below) | `"RK45"` |
+| `method` | The integrator, in SciPy's spelling: `"RK45"` or `"DOP853"` (see below) | `"RK45"` |
 | `t_eval` | The times to report the state at, an `Array[f64, 1]` within `t_span` and in the run's direction; `None` reports every step | `None` |
 | `args` | A tuple passed on to `fun` after `t` and `y` | `()` |
 | `first_step` | The size of the first step; `None` picks it by SciPy's rule | `None` |
@@ -215,7 +215,7 @@ The result is an `OdeResult` with SciPy's 11 fields, read as attributes:
 | `t` | The times of the steps, an `Array[f64, 1]`, from `t0` to where the run stopped; with `t_eval`, the times of `t_eval` the run reached |
 | `y` | The state at each time, an `Array[f64, 2]` of shape `(len(y0), len(t))`; an `f64` state has length 1 |
 | `nfev` | How many times `fun` was called |
-| `njev`, `nlu` | Jacobians computed and LU factorizations made: 0 for RK45 |
+| `njev`, `nlu` | Jacobians computed and LU factorizations made: 0 for RK45 and DOP853 |
 | `status`, `success`, `message` | 0, `True` and SciPy's text when the run reached `t_bound`; -1 and `False` when it failed |
 | `sol` | The continuous solution: `None`, since `dense_output=` is not built yet (roadmap 3.19.8) |
 | `t_events`, `y_events` | `None`, since `events=` is not built yet (roadmap 3.19.9) |
@@ -231,7 +231,22 @@ Written as a literal, or left out, it picks the integrator at compile time, and 
 compiled; a literal that names no method built, such as `"RK54"`, is a compile error that lists
 the methods. A method held in a variable is picked at run time: the call then raises
 `ValueError` for an unknown name, so it needs a `try` or a `Raises` like any call that raises.
-Only RK45 is built so far; DOP853 is roadmap 3.19.8.
+Both methods are then compiled for `fun`.
+
+`method="DOP853"` is Dormand and Prince's method of order 8, SciPy's choice for tight
+tolerances. Each step calls `fun` twelve times, twice RK45's six, but its steps are far longer
+when `rtol` is small. For the spring above with `rtol=1e-10` and `atol=1e-12`,
+
+```python
+result = solve_ivp(
+    spring, (0.0, 10.0), State(1.0, 0.0), "DOP853", args=(2.0,), rtol=1e-10, atol=1e-12
+)
+```
+
+takes 66 steps and 782 calls of `spring` to reach `x(10) = 0.4080820619`, where RK45 takes 635
+steps and 3878 calls for `0.4080820617`; the exact value is `0.4080820618`. Both counts are
+SciPy's. With `t_eval`, a step that covers a time asked for calls `fun` three more times to
+build DOP853's seventh-order interpolant, as SciPy's does.
 
 A run fails, as SciPy's does, when a step would have to be shorter than ten times the spacing of
 floats at `t`, as near a singularity: `dy/dt = y * y` from `y(0) = 1` stops just before
@@ -243,7 +258,9 @@ and panics with SciPy's message, where SciPy raises `ValueError`.
 `solve_ivp` takes SciPy's steps and calls `fun` as many times. SciPy forms its sums with BLAS,
 whose rounding depends on the processor, so a step's size can differ from SciPy's in its last
 bits; over a run the results agree with SciPy's to about ten significant digits, fewer near a
-singularity. Each step keeps one state; the result stores `len(t)` states.
+singularity. DOP853's error estimate is a sum of thirteen terms that nearly cancel, so its
+rounding moves a step's size more: its results agree to about eight digits. Each step keeps
+one state; the result stores `len(t)` states.
 
 ## Differences from SciPy
 
@@ -258,7 +275,7 @@ singularity. Each step keeps one state; the result stores `len(t)` states.
 - `solve_ivp` takes an `f64`, a `Fixed` or an `Array[f64, 1]` state; SciPy also takes a list.
   SciPy's other parameters, `dense_output=`, `events=`, `vectorized=` and an array `atol`, are
   not built yet (roadmap 3.19.8 and 3.19.9; ideas I.64 and I.77), and `method=` takes only
-  `"RK45"`.
+  `"RK45"` and `"DOP853"`.
 - `method=` held in a variable raises `ValueError` with a message that lists only the methods
   built, where SciPy's lists every method it has.
 - With `t_eval` and an empty `t_span`, `y` is an array of shape `(len(y0), 0)`, where SciPy
