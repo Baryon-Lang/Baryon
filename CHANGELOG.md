@@ -12,8 +12,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - A struct can define `__init__`, as a Python class does: `Line(x0, y0, x1, y1)` runs it, and it
   sets each field through `self`. Every field must be set on every path, and `self` is used only
   through its fields until `__init__` ends, so a half-built struct is never seen
-  ([`__init__`](docs/reference/types.md#__init__), decision 0068). Generic structs cannot have
-  one yet.
+  ([`__init__`](docs/reference/types.md#__init__), decision 0068). A generic struct's
+  `__init__` finds the class's type arguments from its arguments, `Grid(xs)`, or takes them
+  written, `Grid[f64]([])`.
 - `linalg.solve(a, b)` and `lu_solve` take a matrix `b` of several right-hand sides, as NumPy and
   SciPy do, factoring `a` once for all its columns
   ([`linalg.solve`](docs/reference/linear-algebra.md#linalgsolve)).

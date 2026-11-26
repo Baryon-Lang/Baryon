@@ -591,8 +591,33 @@ print(line.slope, line.offset, line.side)   # 2.0 1.0 right
 - Only the class calls it: `line.__init__(...)` is an error.
 - A `Copy` struct can have one, and so can a struct with `__del__`, which runs once, for the
   struct `__init__` built.
-- Not built yet: `__init__` on a generic struct, and setting a field of `self` inside a
-  `prange` loop.
+- A generic struct's `__init__` is generic in the class's type parameters. Calling the class
+  finds them from the arguments, as a generic function's call does, or takes them written on
+  the class:
+
+  ```python
+  class Grid[T: Number](Struct):
+      values: list[T]
+      total: T
+
+      def __init__(self, values: list[T], scale: T):
+          self.values = []
+          self.total = T(0)
+          for v in values:
+              self.values.append(v * scale)
+              self.total = self.total + v * scale
+
+
+  g = Grid([1.0, 2.0], 10.0)  # a Grid[f64], T found from the arguments
+  e = Grid[f32]([], 1)        # a Grid[f32], T written; the 1 becomes an f32
+  ```
+
+  A class type parameter no argument fixes is an error that asks for it to be written: for
+  `class Holder[T]` whose `__init__` takes only `self`, `Holder()` is an error and
+  `Holder[f64]()` builds one.
+- Not built yet: setting a field of `self` inside a `prange` loop, and leaving out an
+  argument whose default's type names a type parameter, such as `scale: T = T(1)`, as for any
+  generic function (roadmap 1.7.18).
 
 ### Field layout
 

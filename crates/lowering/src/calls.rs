@@ -357,10 +357,11 @@ impl<'db> Builder<'db> {
     /// generic body, which monomorphization replaces. They come from the value before the dot,
     /// which for a call through the class, `Pair.both(1.5)` or `Pair[f64].both(1.5)`, the
     /// checker types as the class with its type arguments, or else from the receiver, the
-    /// first of `arguments`. Empty for a function and for a method of a class with no type
-    /// parameters. `None` when the class has type parameters but neither is a struct of that
-    /// class, such as a method an embedded generic struct provides (decision 0031), which is
-    /// not built yet.
+    /// first of `arguments`. A call of the class that runs its `__init__`, `Grid(xs)`, has
+    /// neither: they come from the struct the call gives. Empty for a function and for a
+    /// method of a class with no type parameters. `None` when the class has type parameters
+    /// but neither is a struct of that class, such as a method an embedded generic struct
+    /// provides (decision 0031), which is not built yet.
     fn class_arguments(
         &self,
         item: Item<'db>,
@@ -380,7 +381,12 @@ impl<'db> Builder<'db> {
             .child(node, Role::Function)
             .filter(|&function| self.tree.kind(function) == SyntaxKind::Attribute)
             .and_then(|function| self.tree.child(function, Role::Value));
-        let receiver = arguments.first().copied().flatten();
+        let text = item.file(self.db).source(self.db).text();
+        let receiver = if tree.text(item.name(self.db), text) == "__init__" {
+            Some(node)
+        } else {
+            arguments.first().copied().flatten()
+        };
         before_dot.into_iter().chain(receiver).find_map(|value| {
             match self.ty(value).kind(self.db) {
                 TypeKind::Struct(nominal)

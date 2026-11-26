@@ -75,6 +75,7 @@ mod frames;
 mod generics;
 mod h5by;
 mod indices;
+mod initializer_calls;
 mod initializers;
 mod integrate;
 mod interpolation;
