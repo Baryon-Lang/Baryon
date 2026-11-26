@@ -37,10 +37,13 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   the program as for `read_csv`: columns of floats, whole numbers, `bool` and `str`, with missing
   values, from files compressed with Snappy, gzip, Zstandard or LZ4 or not at all. The reader is
   written in Baryon, so a program needs no other library. Dates, decimals and nested columns are
-  not read yet ([Parquet files](docs/reference/parquet-files.md)).
+  not read yet. The encodings writers choose for the format's version 2 are read too: packed
+  differences, text as lengths or shared prefixes, and split byte streams
+  ([Parquet files](docs/reference/parquet-files.md)).
 - `df.to_parquet(path)` writes a DataFrame as a Parquet file that pandas, polars and other
-  readers open with the same columns and types, compressed with Snappy. Values are stored
-  plainly, with no dictionaries or statistics yet
+  readers open with the same columns and types, compressed with Snappy. Text is written
+  through a dictionary, as those libraries write it; numbers are stored plainly, and no
+  statistics are written yet
   ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).
 - Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
   archives, so trying the extension no longer needs Node.js
@@ -50,6 +53,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats
   took 110 s and now takes 0.13 s. A program holding a literal of 10,000 short lists went from
   260 s to 49 s, and is still slower than it should be.
+- A `time` module for timing a program's phases: `time.perf_counter()`, `time.monotonic()` and
+  `time.time()`, each an `f64` of seconds with Python's meaning ([Clocks](docs/reference/time.md)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

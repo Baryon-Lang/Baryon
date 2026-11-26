@@ -130,8 +130,9 @@ impl<'db> Body<'db> {
         self.typed.calls.insert(Key(node), call);
     }
 
-    /// `module.member(arguments)` for the `sys` or `os` module: `sys.exit(status)` with an
-    /// optional `int` status, or `os.getenv(name)` and `os.getenv(name, default)` with `str`s.
+    /// `module.member(arguments)` for the `sys`, `os` or `time` module: `sys.exit(status)` with
+    /// an optional `int` status, `os.getenv(name)` and `os.getenv(name, default)` with `str`s,
+    /// or one of the clocks of `time` (the `clock` module).
     pub(super) fn process_call(
         &mut self,
         node: NodeId,
@@ -142,6 +143,10 @@ impl<'db> Body<'db> {
         match (module, member) {
             ("sys", "exit") => self.exit(node, arguments),
             ("os", "getenv") => self.getenv(node, "`os.getenv`", arguments),
+            ("time", clock) if super::clock::is_clock(clock) => {
+                self.clock_call(node, clock, arguments)
+            }
+            ("time", _) => self.missing_member(node, (module, member), arguments),
             ("os", "putenv" | "unsetenv") => {
                 self.untyped(arguments);
                 self.read_only_environment(node)

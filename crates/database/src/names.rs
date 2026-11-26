@@ -102,8 +102,9 @@ pub const BUILTINS: [&str; 61] = [
 /// [`library_module`](crate::library_module) gives its dotted name. `bz2` is roadmap 3.27.9's
 /// bzip2 streams, named as Python's `bz2` is, and `lzma` roadmap 3.27.10's xz files, named as
 /// Python's `lzma` is. `integrate` is roadmap 3.19's numerical integration, named as `SciPy`'s
-/// `scipy.integrate` is (decision 0054).
-pub const STANDARD_MODULES: [&str; 21] = [
+/// `scipy.integrate` is (decision 0054). `time` is roadmap 1.13.19's clocks, named as Python's
+/// `time` is.
+pub const STANDARD_MODULES: [&str; 22] = [
     "math",
     "random",
     "sys",
@@ -125,6 +126,7 @@ pub const STANDARD_MODULES: [&str; 21] = [
     "compression.zstd",
     "bz2",
     "lzma",
+    "time",
 ];
 
 /// What a name refers to.

@@ -8,6 +8,9 @@ use mir::{Argument, Callee, Operand, Place, Projection, Rvalue, TerminatorKind};
 use syntax::{NodeId, Role, SyntaxKind};
 use types::{Declaration, Item, Mode, Type, TypeKind};
 
+/// The modules and classes whose built-ins [`Builder::standard_call`] lowers: `random`,
+/// `Philox`, `sys`, `os`, `time`, `File` and `Path`.
+const STANDARD_OWNERS: [&str; 7] = ["random", "Philox", "sys", "os", "time", "File", "Path"];
 impl<'db> Builder<'db> {
     /// The call `node`, its result written into `place`.
     pub(crate) fn call(&mut self, place: Place, node: NodeId) {
@@ -226,7 +229,7 @@ impl<'db> Builder<'db> {
                 self.array_method(place, method, arguments, node);
             }
             (Some(("math", member)), _) => self.math_function(place, member, arguments, node),
-            (Some((owner @ ("random" | "Philox" | "sys" | "os" | "File" | "Path"), member)), _) => {
+            (Some((owner, member)), _) if STANDARD_OWNERS.contains(&owner) => {
                 self.standard_call(place, (owner, member), arguments, node);
             }
             _ => self.unsupported(node, &format!("the built-in `{name}`")),

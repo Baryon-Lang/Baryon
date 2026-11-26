@@ -1,5 +1,6 @@
 //! `sys` and `os` (decision 0036), built and run: the program gets its arguments and its
 //! environment, and ends with the status `sys.exit` gives, after writing out what `print` held.
+//! Also the clocks of `time` (roadmap 1.13.19).
 
 use super::{baryon_build, package, panic_report};
 use std::process::Command;
@@ -116,5 +117,93 @@ def main() -> Raises[None, OSError]:
         String::from_utf8_lossy(&run.stderr),
         "error: OSError(kind=ErrorKind.OTHER, errno=13, strerror='Permission denied', \
          filename='data.txt')\n"
+    );
+}
+
+/// `time.perf_counter()` and `time.monotonic()` never go back and count the seconds a busy loop
+/// takes, and `time.time()` is the date the test reads from the system too, within a minute.
+/// Each is imported both ways, as a module and by name.
+#[test]
+fn the_clocks_of_time_read_seconds() {
+    let program = "\
+import time
+from time import monotonic, perf_counter
+
+
+def main():
+    wall = time.time()
+    start = perf_counter()
+    first = time.monotonic()
+    total = 0.0
+    for i in range(20000000):
+        total += f64(i) * 0.5
+    elapsed = time.perf_counter() - start
+    print(elapsed > 0.0, elapsed < 60.0, monotonic() >= first, total > 0.0)
+    print(int(wall))
+";
+    let directory = package("clocks", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let run = Command::new(&executable).output().unwrap();
+    assert!(run.status.success(), "{run:?}");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next(), Some("True True True True"));
+    let wall: u64 = lines.next().unwrap().parse().unwrap();
+    assert!(
+        wall >= before && wall < before + 60,
+        "{wall} against {before}"
+    );
+}
+
+/// A clock with an argument, and a member of `time` that is not built, are compile errors.
+#[test]
+fn the_clocks_take_no_arguments() {
+    let program = "\
+import time
+
+
+def main():
+    print(time.perf_counter(1))
+    time.sleep(1.0)
+";
+    let directory = package("clock_errors", &[("main.byn", program)]).unwrap();
+    let (output, _) = baryon_build(&directory).unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "error: `time.perf_counter` takes no arguments\n --> main.byn:5:11\n  |\n\
+         5 |     print(time.perf_counter(1))\n  |           ^^^^^^^^^^^^^^^^^^^^ wrong arguments\n\
+         \x20 = note: call it as `time.perf_counter()`\n\n\
+         error: `time.sleep` is not in Baryon yet\n --> main.byn:6:5\n  |\n\
+         6 |     time.sleep(1.0)\n  |     ^^^^^^^^^^^^^^^ not built\n\
+         \x20 = note: the language reference lists what `time` has; the roadmap's Ideas table \
+         is the place to ask for more\n\n"
+    );
+}
+
+/// The `time` page's example, read from the page itself, prints the sum the page shows and a
+/// time.
+#[test]
+fn the_reference_s_clock_example_runs() {
+    let page = include_str!("../../../../docs/reference/time.md");
+    let block = page.split("```python\n").nth(1).unwrap_or_default();
+    let program = &block[..block.find("```").unwrap_or_default()];
+    let directory = package("clock_example", &[("main.byn", program)]).unwrap();
+    let (output, executable) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let run = Command::new(&executable).output().unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    let seconds = stdout
+        .strip_prefix("sum 1.644934 in ")
+        .and_then(|rest| rest.strip_suffix(" s\n"))
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(
+        seconds.parse::<f64>().is_ok_and(|seconds| seconds >= 0.0),
+        "{stdout}"
     );
 }

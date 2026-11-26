@@ -38,6 +38,7 @@ mod calls;
 mod captures;
 mod class_functions;
 mod class_patterns;
+mod clock;
 mod collections;
 mod complex;
 mod conditionals;

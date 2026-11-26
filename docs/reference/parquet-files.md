@@ -74,6 +74,10 @@ The reader has what the common writers use by default:
   files with none, through the codecs of [Compression](compression.md);
 - values stored plainly (`PLAIN`), through a dictionary (`RLE_DICTIONARY` and the older
   `PLAIN_DICTIONARY`), and booleans stored as runs (`RLE`);
+- the encodings writers choose for the format's version 2: whole numbers as packed
+  differences (`DELTA_BINARY_PACKED`), text as lengths then bytes or as shared prefixes
+  (`DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`), and numbers as split byte streams
+  (`BYTE_STREAM_SPLIT`);
 - data pages of version 1 and version 2.
 
 ## Writing a file
@@ -106,12 +110,18 @@ the same types:
 - **The rows are cut into row groups** of 1,048,576 rows, which is what pyarrow writes, and
   each column of a group into pages of 65,536 rows. A frame of no rows writes a file with
   the schema and no row group.
+- **Text is written through a dictionary**, as pandas and polars write it: each distinct
+  text of a row group once, and the column as small numbers that point at them
+  (`RLE_DICTIONARY`). A column of symbols or of country names then takes a few bits for
+  each row. A row group whose distinct texts would take more than 1,048,576 bytes, pyarrow's
+  limit, is written plainly, so a column of names that are all different costs nothing
+  more.
 
 The writer has columns of `f64` and `f32`, of every whole number type, of `bool` and of
 `str`, and each of them with `| None`. A column of another type, such as complex numbers, is
-a compile error that names it. Values are stored plainly: no dictionaries and no statistics
-are written yet, so a file with a column of few distinct texts is larger than the one pandas
-writes.
+a compile error that names it. Numbers and booleans are stored plainly: only text has a
+dictionary so far, and no statistics are written yet, so a file with a column of few distinct
+numbers is larger than the one pandas writes.
 
 ## Errors
 
@@ -134,7 +144,7 @@ lists them in its `Raises`, as with any [error](errors.md).
   | has a missing value where the field has no `None` | `trades.parquet: column 'volume', row 2: the value is missing, and the column's type has no None` |
   | holds a date, a time, a timestamp or a decimal | `trades.parquet: the column 'when' holds a date, a time, a decimal or another kind of value that is not read yet` |
   | holds a list, a map or a struct | `trades.parquet: the column 'items' is nested, which is not read yet` |
-  | uses an encoding or a codec the reader lacks | `trades.parquet: the column 'price' uses the encoding 5, which is not read yet` |
+  | uses a codec the reader lacks | `trades.parquet: the file is compressed with Brotli, which is not read yet` |
   | is damaged | `trades.parquet: the metadata of the file is damaged`, or `the pages of the column 'price' are damaged` |
 
   Rows count from 1. A damaged file is an error and never a read outside the file's bytes,
@@ -148,17 +158,17 @@ decoded, one at a time, and the file's bytes are freed before `read_parquet` ret
 column is decoded its values are held twice. The columns of the frame are as large as the
 same columns built any other way.
 
-A file of one million rows and fifteen columns, one of each type the reader has, took 1.9 s
-to read with no compression on the development machine, 2.2 s with Snappy, 2.0 s with LZ4,
-2.7 s with Zstandard and 3.1 s with gzip, where polars 2.1.0 took 0.04 to 0.07 s. The reader
-has not been tuned yet: it decodes on one thread and rebuilds each float from its bytes by
-arithmetic.
+A file of one million rows and fifteen columns of random values, one of each type the
+reader has, took 0.40 s to read with no compression on the development machine, 0.46 s with
+LZ4, 0.50 s with Snappy, 0.85 s with Zstandard and 0.93 s with gzip, in a program built with
+`--release`, where polars 2.1.0 took 0.02 to 0.05 s. The reader has not been tuned yet: it
+decodes on one thread and rebuilds each float from its bytes by arithmetic. Built without
+`--release` the same program takes about four times as long.
 
 `to_parquet` holds each column as plain bytes and again as compressed pages before it puts
 the file together, about twice the frame's size besides the frame, and frees it all before
-it returns. Writing the same fifteen columns took about 3.3 s for each million rows, where
-polars took 0.13 s, and the file of 2.3 million rows was 92 MB, where polars, which writes
-dictionaries, made 69 MB.
+it returns. Writing the same million rows took about 0.8 s, built with `--release`, where
+polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB.
 
 ## Differences from pandas
 
@@ -182,17 +192,15 @@ dictionaries, made 69 MB.
 
 ## Not built yet
 
-- Writing with another codec than Snappy, with dictionaries or with statistics.
+- Writing with another codec than Snappy, with dictionaries for numbers or with statistics.
 - Columns of dates, times, timestamps and decimals, and of bytes that are not text: a frame
   has no column type for them yet.
 - Nested columns: lists, maps and structs.
-- The delta encodings (`DELTA_BINARY_PACKED`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`)
-  and `BYTE_STREAM_SPLIT`, which some writers use when asked for the format's version 2, and
-  the Brotli, LZO and older LZ4 codecs.
+- The Brotli, LZO and older LZ4 codecs.
+- A column whose name cannot be a field's name, such as one with a space or a colon in it.
 - Reading some of the row groups, or a file larger than memory.
 - Tests with pyarrow. Two files written by pyarrow 26.0.1 were read here, and pyarrow read a
   file written here with every value matching, but both were checked by hand and not in the
-  tests. The tests read files written by polars and files built by hand from the
-  specification, and polars reads the files written here. Files from Apache's
-  `parquet-testing` collection, written by Impala, by parquet-mr and by Arrow's C++ library,
-  were read by hand with the values polars reads from them.
+  tests. The tests read files written by polars, files built by hand from the specification
+  and ten files of Apache's `parquet-testing` collection, written by Impala, by parquet-mr
+  and by Arrow's C++ library, and polars reads the files written here.

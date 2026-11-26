@@ -1,6 +1,6 @@
 //! What a program reads from, and gives back to, the process that runs it (decision 0036): the
-//! command-line arguments, an environment variable and the exit status, each a call of the
-//! runtime.
+//! command-line arguments, an environment variable, the exit status and the clocks of `time`
+//! (roadmap 1.13.19), each a call of the runtime.
 //!
 //! | Built-in | Runtime call |
 //! | --- | --- |
@@ -9,6 +9,8 @@
 //! | [`EnvironmentGet`](mir::Builtin::EnvironmentGet) | `baryon_rt_environment_get(name, length, found)`, a new owned `str` |
 //! | [`EnvironmentEntries`](mir::Builtin::EnvironmentEntries) | `baryon_rt_environment_entries(out)`, a new `list[str]` |
 //! | [`Exit`](mir::Builtin::Exit) | `baryon_rt_exit(status, location)`, which never returns |
+//! | [`MonotonicClock`](mir::Builtin::MonotonicClock) | `baryon_rt_monotonic_clock()`, an `f64` |
+//! | [`WallClock`](mir::Builtin::WallClock) | `baryon_rt_wall_clock()`, an `f64` |
 
 use crate::Unsupported;
 use crate::function::{Function, block_label};
@@ -16,6 +18,31 @@ use crate::text::TEXT;
 use mir::{Argument, BlockId, Place};
 
 impl<'db> Function<'_, '_, 'db> {
+    /// Writes `destination = time.monotonic()`, or `time.time()` when `wall` is set, an `f64`
+    /// of seconds, and goes to `target`.
+    pub(crate) fn clock(
+        &mut self,
+        wall: bool,
+        arguments: &[Argument<'db>],
+        destination: &Place,
+        target: BlockId,
+    ) -> Result<(), Unsupported> {
+        if !arguments.is_empty() {
+            return Err(Unsupported::new("a clock of `time` with arguments"));
+        }
+        let name = if wall {
+            "baryon_rt_wall_clock"
+        } else {
+            "baryon_rt_monotonic_clock"
+        };
+        self.declare(name, &format!("declare double @{name}() nounwind"));
+        let seconds = self.emit(&format!("call double @{name}()"));
+        let (address, _) = self.place(destination)?;
+        self.line(&format!("store double {seconds}, ptr {address}"));
+        self.line(&format!("br label %{}", block_label(target)));
+        Ok(())
+    }
+
     /// Writes `destination = len(sys.argv)` and goes to `target`.
     pub(crate) fn argument_count(
         &mut self,

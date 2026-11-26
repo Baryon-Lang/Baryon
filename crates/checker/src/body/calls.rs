@@ -83,7 +83,7 @@ impl<'db> Body<'db> {
                 member: Some(member),
             }) if member == "Philox" => self.philox(node, &arguments),
             Some(Definition::Standard {
-                module: module @ ("sys" | "os"),
+                module: module @ ("sys" | "os" | "time"),
                 member: Some(member),
             }) => {
                 let (module, member) = (*module, member.clone());
