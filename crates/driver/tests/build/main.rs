@@ -62,6 +62,7 @@ mod interpolation;
 mod kernels;
 mod linalg;
 mod list_choosers;
+mod list_literals;
 mod list_slices;
 mod lz4;
 mod lzma;

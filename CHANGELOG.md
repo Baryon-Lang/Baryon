@@ -29,6 +29,11 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   the text written for a missing value
   ([CSV files](docs/reference/csv-files.md#keywords)).
 
+- A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
+  its elements are copied from one table, not stored one by one. A literal of 100,000 floats
+  took 110 s and now takes 0.13 s. A program holding a literal of 10,000 short lists went from
+  260 s to 49 s, and is still slower than it should be.
+
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 
 The first release since 0.1.0 to be published: 0.2.0 was prepared but never published, and the chief

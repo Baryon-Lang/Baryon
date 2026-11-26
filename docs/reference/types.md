@@ -325,6 +325,12 @@ with a step, `values[::2] = more`, cannot be assigned to yet. A list is for buil
 unknown length; convert it to an `Array` with `Array(values)` for numeric work. An empty list
 needs its type written: `columns: list[i64] = []`.
 
+A list display of numbers or `bool`s written out, such as a table of 100,000 measured values,
+compiles to one constant table that is copied into each new list it makes, so its build time
+grows only with its length: 100,000 floats take about 0.1 s of machine code with `--release`. A
+long display of other values, such as 10,000 short lists, still builds slowly with `--release`,
+49 s for that one ([roadmap](../../ROADMAP.md) idea I.75).
+
 A list's items share one type, so `[1, "a"]` is a compile error. `None` is the one exception:
 items of one type `T` and `None` make a `list[T | None]`, a list of
 [optional values](#optional-values), with no annotation. `[1.5, None, 2.5]` is a
