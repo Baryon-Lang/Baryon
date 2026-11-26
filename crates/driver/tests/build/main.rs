@@ -120,6 +120,7 @@ mod shown_holders;
 mod slices;
 mod snappy;
 mod solve_ivp;
+mod solve_ivp_dense;
 mod solve_ivp_dop853;
 mod sorting;
 mod special;

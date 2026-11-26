@@ -190,7 +190,7 @@ def main():
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: max_step > 0.0, \"`max_step` must be positive.\"\n  \
-         --> <std>/integrate_ivp.byn:319:5\n"
+         --> <std>/integrate_ivp.byn:320:5\n"
     );
 }
 

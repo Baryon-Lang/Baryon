@@ -164,6 +164,10 @@ pub(crate) const LIBRARY: [(&str, &str); 115] = [
         "<std>/integrate_quadpack.byn",
         include_str!("../library/integrate_quadpack.byn"),
     ),
+    (
+        "<std>/integrate_solution.byn",
+        include_str!("../library/integrate_solution.byn"),
+    ),
     ("<std>/legend.byn", include_str!("../library/legend.byn")),
     ("<std>/linalg.byn", include_str!("../library/linalg.byn")),
     (

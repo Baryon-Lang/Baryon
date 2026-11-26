@@ -203,6 +203,7 @@ step counts SciPy gives for the same call.
 | `y0` | The starting state, an `f64`, a `Fixed` vector of `f64` or an `Array[f64, 1]` | |
 | `method` | The integrator, in SciPy's spelling: `"RK45"` or `"DOP853"` (see below) | `"RK45"` |
 | `t_eval` | The times to report the state at, an `Array[f64, 1]` within `t_span` and in the run's direction; `None` reports every step | `None` |
+| `dense_output` | Whether to keep each step's interpolant, so `sol(t)` gives the state at any time (see below) | `False` |
 | `args` | A tuple passed on to `fun` after `t` and `y` | `()` |
 | `first_step` | The size of the first step; `None` picks it by SciPy's rule | `None` |
 | `max_step` | The longest step allowed | `inf` |
@@ -217,7 +218,7 @@ The result is an `OdeResult` with SciPy's 11 fields, read as attributes:
 | `nfev` | How many times `fun` was called |
 | `njev`, `nlu` | Jacobians computed and LU factorizations made: 0 for RK45 and DOP853 |
 | `status`, `success`, `message` | 0, `True` and SciPy's text when the run reached `t_bound`; -1 and `False` when it failed |
-| `sol` | The continuous solution: `None`, since `dense_output=` is not built yet (roadmap 3.19.8) |
+| `sol` | The continuous solution, an `OdeSolution` with `dense_output=True` and `None` without |
 | `t_events`, `y_events` | `None`, since `events=` is not built yet (roadmap 3.19.9) |
 
 With `t_eval`, the run takes the same steps, and the state at each time asked for comes from
@@ -248,6 +249,26 @@ steps and 3878 calls for `0.4080820617`; the exact value is `0.4080820618`. Both
 SciPy's. With `t_eval`, a step that covers a time asked for calls `fun` three more times to
 build DOP853's seventh-order interpolant, as SciPy's does.
 
+With `dense_output=True`, `sol` is an `OdeSolution`, SciPy's continuous solution: called as
+`sol(t)`, it gives the state at the time `t` as an `Array[f64, 1]` of `len(y0)` elements, read
+from the interpolant of the step that covers `t`, and `sol.ts` holds the times between the steps.
+A time outside the run is read from the nearest step's interpolant, so it extrapolates, as
+SciPy's does. `sol` may be `None`, so give it a name and check it before calling it:
+
+```python
+def main():
+    result = solve_ivp(spring, (0.0, 10.0), State(1.0, 0.0), dense_output=True, args=(2.0,))
+    sol = result.sol
+    if sol is not None:
+        x = sol(2.5)[0]
+        print(f"x(2.5) = {x:.6f}, exact {cos(5.0):.6f}, from {len(sol.ts) - 1} steps")
+```
+
+This prints `x(2.5) = 0.284806, exact 0.283662, from 25 steps`, SciPy's numbers: RK45's
+interpolant at the default tolerances is as accurate as its steps. Dense output keeps
+`(terms + 1) * len(y0)` numbers a step, 5 for RK45 and 8 for DOP853, and with DOP853 it costs
+three more calls of `fun` a step, to build each interpolant.
+
 A run fails, as SciPy's does, when a step would have to be shorter than ten times the spacing of
 floats at `t`, as near a singularity: `dy/dt = y * y` from `y(0) = 1` stops just before
 `t = 1` with `status` -1 and the message `Required step size is less than spacing between
@@ -273,9 +294,11 @@ one state; the result stores `len(t)` states.
   change the shape of every call (decision 0065).
 - `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
 - `solve_ivp` takes an `f64`, a `Fixed` or an `Array[f64, 1]` state; SciPy also takes a list.
-  SciPy's other parameters, `dense_output=`, `events=`, `vectorized=` and an array `atol`, are
-  not built yet (roadmap 3.19.8 and 3.19.9; ideas I.64 and I.77), and `method=` takes only
-  `"RK45"` and `"DOP853"`.
+  SciPy's other parameters, `events=`, `vectorized=` and an array `atol`, are not built yet
+  (roadmap 3.19.9; ideas I.64 and I.77), and `method=` takes only `"RK45"` and `"DOP853"`.
+- `sol(t)` takes one time. SciPy's `sol` also takes an array of times and returns an
+  `Array[f64, 2]`; here call it once a time (idea I.79). `OdeSolution` has SciPy's `ts` but not its
+  `interpolants`, `t_min`, `t_max` or `n_segments`.
 - `method=` held in a variable raises `ValueError` with a message that lists only the methods
   built, where SciPy's lists every method it has.
 - With `t_eval` and an empty `t_span`, `y` is an array of shape `(len(y0), 0)`, where SciPy
