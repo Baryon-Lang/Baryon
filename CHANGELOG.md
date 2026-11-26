@@ -46,6 +46,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   column of each row group carries its statistics, the count of missing values and the
   smallest and largest value, so a reader that filters can pass over row groups
   ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).
+- Reading and writing Parquet files is about a fifth faster: a million rows of fifteen columns
+  read in 0.32 s where they took 0.39 s, and are written in about 0.7 s where they took
+  about 0.9 s ([Parquet files](docs/reference/parquet-files.md#cost)).
 - Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
   archives, so trying the extension no longer needs Node.js
   ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).

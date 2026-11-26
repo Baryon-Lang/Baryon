@@ -30,7 +30,13 @@ column's bytes, so reading holds the file, one page and the column at the same t
 
 from compression import zstd
 from frame_parquet import parquet_load, thrift_field, thrift_skip, thrift_zigzag
-from frame_parquet_delta import parquet_delta, parquet_delta_text, parquet_grow, parquet_split
+from frame_parquet_delta import (
+    parquet_copy,
+    parquet_delta,
+    parquet_delta_text,
+    parquet_grow,
+    parquet_split,
+)
 from parquet_lz4 import lz4_decompress
 from parquet_snappy import snappy_decompress
 import zlib
@@ -141,6 +147,83 @@ def _inflate(
 def _mark(valid: InOut[Array[u8, 1]], row: int) -> None:
     """Sets the bit of `row` in the validity bitmap `valid`."""
     valid[row >> 3] = valid[row >> 3] | (u8(1) << u8(row & 7))
+
+
+def _mark_run(valid: InOut[Array[u8, 1]], row: int, count: int) -> None:
+    """Sets the bits of the `count` rows from `row` in the validity bitmap `valid`: the
+    whole bytes among them at once, the bits before and after one at a time."""
+    end = row + count
+    at = row
+    while at < end and at & 7 != 0:
+        _mark(valid, at)
+        at += 1
+    whole = (end - at) >> 3
+    if whole > 0:
+        valid[at >> 3 : (at >> 3) + whole] = u8(255)
+        at += 8 * whole
+    while at < end:
+        _mark(valid, at)
+        at += 1
+
+
+def _present(
+    data: Array[u8, 1], start: int, end: int, valid: InOut[Array[u8, 1]], row: int, values: int
+) -> int:
+    """Reads the definition levels of a page of `values` rows, the bytes of `data` from
+    `start` to `end`, sets the bit in `valid` of each row from `row` whose value is there,
+    and gives how many are, or -1 when the bytes end before the levels do.
+
+    The levels are one bit each in Parquet's mix of runs and packed groups, as `_hybrid`
+    reads. They go straight into the bitmap: a run of ones through `_mark_run`, and packed
+    bits a byte at a time when the row they start at is a multiple of 8, which it is unless
+    a page before held a number of rows that is not, since both keep the lowest bit first.
+    """
+    at = start
+    done = 0
+    there = 0
+    while done < values:
+        head = 0
+        shift = 0
+        while True:
+            if at >= end or shift > 28:
+                return -1
+            byte = int(data[at])
+            at += 1
+            head = head | ((byte & 127) << shift)
+            if byte < 128:
+                break
+            shift += 7
+        if head & 1 == 1:
+            packed = (head >> 1) * 8
+            take = min(packed, values - done)
+            if at + ((take + 7) >> 3) > end:
+                return -1
+            first = row + done
+            whole = 0
+            if first & 7 == 0:
+                whole = take >> 3
+                parquet_copy(valid, first >> 3, data, at, whole)
+                for k in range(whole):
+                    pairs = int(data[at + k])
+                    pairs = pairs - ((pairs >> 1) & 85)
+                    pairs = (pairs & 51) + ((pairs >> 2) & 51)
+                    there += (pairs + (pairs >> 4)) & 15
+            for k in range(8 * whole, take):
+                if (int(data[at + (k >> 3)]) >> (k & 7)) & 1 == 1:
+                    _mark(valid, first + k)
+                    there += 1
+            at += packed >> 3
+            done += take
+        else:
+            if at >= end:
+                return -1
+            take = min(head >> 1, values - done)
+            if int(data[at]) & 1 == 1:
+                _mark_run(valid, row + done, take)
+                there += take
+            at += 1
+            done += take
+    return there
 
 
 def _header(data: Array[u8, 1], at: int, end: int, head: InOut[list[int]]) -> int:
@@ -263,8 +346,7 @@ def parquet_column(
                         spot += 4
                         if spot + length > len(page):
                             raise ValueError(damaged)
-                        for k in range(length):
-                            table[kept + k] = page[spot + k]
+                        parquet_copy(table, kept, page, spot, length)
                         spot += length
                         kept += length
                         table_ends[entry + 1] = kept
@@ -276,16 +358,19 @@ def parquet_column(
             if values > left:
                 raise ValueError(damaged)
             # A data page: the levels that say which values are there, then the values.
-            marks = Array.zeros(values, i32)
             page = Array.zeros(0, u8)
             spot = 0
+            there = values
             if kind == 0:
                 page = _inflate(data[body:at], codec, size, path)
                 if optional:
                     if len(page) < 4:
                         raise ValueError(damaged)
                     length = parquet_load(page, 0)
-                    if 4 + length > len(page) or not _hybrid(page, 4, 4 + length, 1, marks):
+                    if 4 + length > len(page):
+                        raise ValueError(damaged)
+                    there = _present(page, 4, 4 + length, valid, row, values)
+                    if there < 0:
                         raise ValueError(damaged)
                     spot = 4 + length
             else:
@@ -294,23 +379,17 @@ def parquet_column(
                 first = body + head[6]
                 if head[6] < 0 or levels < 0 or head[6] + levels > packed:
                     raise ValueError(damaged)
-                if optional and not _hybrid(data, first, first + levels, 1, marks):
-                    raise ValueError(damaged)
+                if optional:
+                    there = _present(data, first, first + levels, valid, row, values)
+                    if there < 0:
+                        raise ValueError(damaged)
                 first += levels
                 if head[7] == 1:
                     page = _inflate(data[first:at], codec, size - (first - body), path)
                 else:
                     page = data[first:at].copy()
-            there = values
-            if optional:
-                there = 0
-                for k in range(values):
-                    if marks[k] == i32(1):
-                        _mark(valid, row + k)
-                        there += 1
-            else:
-                for k in range(values):
-                    _mark(valid, row + k)
+            if not optional:
+                _mark_run(valid, row, values)
             stop = len(page)
             if encoding == 0 and width == 0:
                 for k in range(there):
@@ -321,8 +400,7 @@ def parquet_column(
                     if spot + length > stop:
                         raise ValueError(damaged)
                     parquet_grow(raw, used, length)
-                    for b in range(length):
-                        raw[used + b] = page[spot + b]
+                    parquet_copy(raw, used, page, spot, length)
                     spot += length
                     used += length
                     ends[present + k + 1] = used
@@ -335,8 +413,7 @@ def parquet_column(
             elif encoding == 0:
                 if spot + there * width > stop:
                     raise ValueError(damaged)
-                for b in range(there * width):
-                    raw[used + b] = page[spot + b]
+                parquet_copy(raw, used, page, spot, there * width)
                 used += there * width
             elif encoding == 3 and physical == 0:
                 bits = Array.zeros(there, i32)
@@ -360,8 +437,7 @@ def parquet_column(
                         first = table_ends[pick]
                         length = table_ends[pick + 1] - first
                         parquet_grow(raw, used, length)
-                        for b in range(length):
-                            raw[used + b] = table[first + b]
+                        parquet_copy(raw, used, table, first, length)
                         used += length
                         ends[present + k + 1] = used
                     else:

@@ -166,17 +166,17 @@ column is decoded its values are held twice. The columns of the frame are as lar
 same columns built any other way.
 
 A file of one million rows and fifteen columns of random values, one of each type the
-reader has, took 0.40 s to read with no compression on the development machine, 0.46 s with
-LZ4, 0.50 s with Snappy, 0.85 s with Zstandard and 0.93 s with gzip, in a program built with
-`--release`, where polars 2.1.0 took 0.02 to 0.05 s. The reader has not been tuned yet: it
-decodes on one thread and rebuilds each float from its bytes by arithmetic. Built without
-`--release` the same program takes about four times as long.
+reader has, took 0.32 s to read with no compression on the development machine, 0.37 s with
+LZ4, 0.38 s with Snappy, 0.70 s with Zstandard and 0.84 s with gzip, in a program built with
+`--release`, where polars 2.1.0 took 0.02 to 0.05 s. What is left of the gap is the design:
+the reader decodes on one thread and rebuilds each number from its bytes by arithmetic, a
+value at a time. Built without `--release` the same program takes about four times as long.
 
 `to_parquet` holds each column as plain bytes and again as compressed pages before it puts
 the file together, about twice the frame's size besides the frame, and frees it all before
-it returns. Writing the same million rows took about 0.9 s, built with `--release`, where
+it returns. Writing the same million rows took about 0.7 s, built with `--release`, where
 polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB. The statistics are
-less than a tenth of that time.
+about a tenth of that time.
 
 ## Differences from pandas
 

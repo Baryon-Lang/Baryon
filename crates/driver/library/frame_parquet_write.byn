@@ -33,7 +33,7 @@ Cost: every column is held as plain bytes and again as compressed pages before t
 put together, so writing takes about twice the frame's size in memory besides the frame.
 """
 
-from frame_parquet_delta import parquet_grow
+from frame_parquet_delta import parquet_copy, parquet_grow
 from frame_parquet_dictionary import (
     parquet_code_bits,
     parquet_codes,
@@ -140,8 +140,7 @@ def _put(out: InOut[Array[u8, 1]], used: int, head: list[int], packed: Array[u8,
     for part in range(len(head)):
         out[used + part] = u8(head[part])
     at = used + len(head)
-    for part in range(len(packed)):
-        out[at + part] = packed[part]
+    parquet_copy(out, at, packed, 0, len(packed))
     return at + len(packed)
 
 
@@ -211,8 +210,7 @@ def parquet_chunks(
                 size = 4 * there + ends[spent + there] - ends[spent]
             body = Array.zeros(len(levels) + size, u8)
             at = len(levels)
-            for part in range(at):
-                body[part] = levels[part]
+            parquet_copy(body, 0, levels, 0, at)
             if bits > 0:
                 for part in range(size):
                     body[at + part] = u8(indices[part])
@@ -227,13 +225,10 @@ def parquet_chunks(
                     for part in range(4):
                         body[at + part] = u8((length >> (8 * part)) & 255)
                     at += 4
-                    for part in range(length):
-                        body[at + part] = raw[first + part]
+                    parquet_copy(body, at, raw, first, length)
                     at += length
             else:
-                first = spent * width
-                for part in range(size):
-                    body[at + part] = raw[first + part]
+                parquet_copy(body, at, raw, spent * width, size)
             spent += there
             packed = snappy_compress(body)
             head = _page_header(len(body), len(packed), end - row, 8 if bits > 0 else 0)
@@ -393,8 +388,7 @@ def parquet_write(
             size = chunks[column][1][spot]
             spots[column] = spot + 5 + chunks[column][1][spot + 4]
             first = taken[column]
-            for part in range(size):
-                out[at + part] = chunks[column][0][first + part]
+            parquet_copy(out, at, chunks[column][0], first, size)
             taken[column] = first + size
             at += size
     for part in range(len(footer)):
