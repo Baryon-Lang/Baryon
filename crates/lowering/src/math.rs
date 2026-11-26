@@ -110,10 +110,11 @@ impl<'db> Builder<'db> {
     /// `math.isnan`, `math.isinf` or `math.isfinite` of `argument` into the `bool` at `place`,
     /// with an integer converted to `f64` first, as Python does. `isnan(x)` is `x != x`, true
     /// only for NaN; `isinf(x)` is `fabs(x) == inf`; `isfinite(x)` is `x - x == 0.0`, since
-    /// `x - x` is NaN for an infinity or NaN and zero for every other float.
+    /// `x - x` is NaN for an infinity or NaN and zero for every other float. A `Float` type
+    /// parameter stays itself, so an `f32` instance classifies in `f32`.
     fn classify(&mut self, place: Place, member: &str, argument: NodeId, node: NodeId) {
         let from = self.ty(argument);
-        let ty = if self.is_float(from) {
+        let ty = if self.is_float(from) || self.is_float_parameter(from) {
             from
         } else {
             self.float_type()

@@ -341,3 +341,77 @@ fn eig_matches_numpy_on_hard_cases() {
          one True 7.5,0 \n\
          Array must not contain infs or NaNs\n").unwrap();
 }
+
+/// The program `f32_eig_matches_numpy` builds, kept apart so the test stays short.
+const F32_EIG_PROGRAM: &str = r#"
+from linalg import LinAlgError, eig, eigvals
+from random import Philox
+
+
+def tidy(x: f32) -> f32:
+    if abs(x) < 1e-5:
+        return 0.0
+    return x
+
+
+def report(name: str, a: Array[f32, 2]) -> Raises[None, LinAlgError]:
+    w, v = eig(a)
+    n = a.shape[0]
+    worst: f32 = 0.0
+    for j in range(n):
+        for i in range(n):
+            total = complex64(0.0, 0.0)
+            for k in range(n):
+                total = total + a[i, k] * v[k, j]
+            worst = max(worst, abs(total - w[j] * v[i, j]))
+    print(name, worst < 1e-4, end=" ")
+    for i in range(1, n):
+        current = w[i]
+        j = i - 1
+        while j >= 0 and (w[j].real > current.real + 1e-4 or (abs(w[j].real - current.real) <= 1e-4 and w[j].imag > current.imag)):
+            w[j + 1] = w[j]
+            j -= 1
+        w[j + 1] = current
+    for j in range(n):
+        print(f"{tidy(w[j].real):.4g},{tidy(w[j].imag):.4g}", end=" ")
+    print()
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(7)
+    random6 = Array.zeros((6, 6), f32)
+    for i in range(6):
+        for j in range(6):
+            random6[i, j] = f32(generator.uniform())
+    report("random6", random6)
+    rotation = Array.zeros((2, 2), f32)
+    rotation[0, 1] = -1.0
+    rotation[1, 0] = 1.0
+    report("rotation", rotation)
+    cyclic = Array.zeros((3, 3), f32)
+    cyclic[0, 2] = 1.0
+    cyclic[1, 0] = 1.0
+    cyclic[2, 1] = 1.0
+    w = eigvals(cyclic)
+    print(len(w), abs(w[0] * w[1] * w[2] - complex64(1.0, 0.0)) < 1e-5)
+    report("cyclic", cyclic)
+"#;
+
+/// `eig` and `eigvals` of `f32` matrices (roadmap 3.10.7), the overloads that work in `f32` and
+/// give `complex64` results, as `NumPy` does for `float32`: a random 6 × 6 matrix with two complex
+/// pairs, a rotation and the cyclic permutation. `NumPy` gives the same eigenvalues, sorted, to 4
+/// digits, for `g = numpy.random.Generator(numpy.random.Philox(key=7))` and
+/// `g.random(36).reshape(6, 6).astype(numpy.float32)`; each line also says whether every
+/// `a @ v[:, j]` is within 10⁻⁴ of `w[j] * v[:, j]`.
+#[test]
+fn f32_eig_matches_numpy() {
+    prints(
+        "linalg-eig-f32",
+        F32_EIG_PROGRAM.trim_start(),
+        "random6 True -0.4053,0 -0.004522,-0.4175 -0.004522,0.4175 0.6309,-0.3518 0.6309,0.3518 2.772,0 \n\
+         rotation True 0,-1 0,1 \n\
+         3 True\n\
+         cyclic True -0.5,-0.866 -0.5,0.866 1,0 \n",
+    )
+    .unwrap();
+}

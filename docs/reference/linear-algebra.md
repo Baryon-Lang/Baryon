@@ -14,10 +14,12 @@ fix their order of operations, so a result has the same bits on every machine an
 NumPy calls LAPACK, which adds in its own order, so the last bits of a result can differ from
 NumPy's; the tests compare to 12 significant digits.
 
-Every `linalg` function except `eig` and `eigvals` is [generic](types.md#generics) over `T: Float`,
-so it takes `f64` or `f32` matrices and computes in that type: an `f32` matrix gives an `f32`
-result, at half the memory and with about seven significant digits, as NumPy's `float32` does.
-Complex matrices are not built yet (idea I.57). The tests compare `f32` results to NumPy's to 4
+Every `linalg` function takes `f64` or `f32` matrices and computes in that type: an `f32` matrix
+gives an `f32` result, at half the memory and with about seven significant digits, as NumPy's
+`float32` does, and `eig` of an `f32` matrix gives `complex64`. Most functions are
+[generic](types.md#generics) over `T: Float`; the rest have one overload for each type
+([decision 0067](../decisions/0067-library-overloading.md)). Complex matrices are not built yet
+(roadmap 3.10.8 to 3.10.10). The tests compare `f32` results to NumPy's to 4
 significant digits.
 
 The matrix product is the operator [`@`](arrays.md#the-matrix-product), not a function.
@@ -223,14 +225,17 @@ Differences from NumPy: no `compute_uv` argument, so call `svdvals` for the valu
 
 ```python
 def eig(a: Array[f64, 2]) -> Raises[tuple[Array[complex128, 1], Array[complex128, 2]], LinAlgError]: ...
+def eig(a: Array[f32, 2]) -> Raises[tuple[Array[complex64, 1], Array[complex64, 2]], LinAlgError]: ...
 def eigvals(a: Array[f64, 2]) -> Raises[Array[complex128, 1], LinAlgError]: ...
+def eigvals(a: Array[f32, 2]) -> Raises[Array[complex64, 1], LinAlgError]: ...
 ```
 
 `w, v = eig(a)` gives the eigenvalues of a square matrix that need not be symmetric, and as the
-columns of `v` their eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. Both are `complex128`,
-since a real matrix can have complex eigenvalues; they come in conjugate pairs, the one with
-positive imaginary part first. Each eigenvector has length 1 and its largest entry real, as
-LAPACK's `geev` returns them. `eigvals(a)` gives `w` alone. Use them for the stability of a
+columns of `v` their eigenvectors: `a @ v[:, i]` is `w[i] * v[:, i]`. Both are complex, since a
+real matrix can have complex eigenvalues: `complex128` for an `f64` matrix and `complex64`, the
+complex number of two `f32` parts, for an `f32` one, as in NumPy. The eigenvalues come in
+conjugate pairs, the one with positive imaginary part first. Each eigenvector has length 1 and its
+largest entry real, as LAPACK's `geev` returns them. `eigvals(a)` gives `w` alone. Use them for the stability of a
 linear system, a Markov chain's stationary distribution, or the roots of a polynomial, which are
 the eigenvalues of its companion matrix. For a symmetric matrix call [`eigh`](#linalgeigh-and-linalgeigvalsh),
 which is faster and returns real values in order.
@@ -276,8 +281,9 @@ NumPy does. A defective matrix, one without a full set of eigenvectors, gives ei
 error near the square root of the rounding error, in NumPy as here.
 
 Differences from NumPy: the order of the eigenvalues is the algorithm's, and can differ from
-NumPy's; sort them when the order matters. `eig` and `eigvals` take `f64` matrices only: an `f32`
-matrix, whose eigenvalues NumPy gives as `complex64`, is not built yet (idea I.57).
+NumPy's; sort them when the order matters. An `f32` matrix is computed in `f32` throughout, its
+iteration stopping at `f32`'s machine epsilon, so its eigenvalues match NumPy's to about 4
+significant digits. A complex matrix is not taken yet.
 
 ## Files under `linalg`
 
@@ -294,7 +300,8 @@ for those working on the library. A panic inside a function names the file it is
 | `linalg_factor` | `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
 | `linalg_symmetric` | `eigh` and `eigvalsh`: Householder tridiagonalization and the implicit QL iteration |
 | `linalg_svd` | `svd` and `svdvals`: one-sided Jacobi rotations |
-| `linalg_eig` | `eig` and `eigvals`: balancing, Hessenberg reduction and the shifted double QR iteration |
+| `linalg_eig` | `eig` and `eigvals`: balancing and Hessenberg reduction |
+| `linalg_schur` | The shifted double QR iteration and back-substitution that `eig` ends with |
 
 ## `fft`
 

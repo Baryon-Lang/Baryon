@@ -165,3 +165,31 @@ def main():
         "5.0\n10.0\n8.0 3.375 64.0\n"
     );
 }
+
+/// `math.isnan`, `isinf` and `isfinite` of a `T: Float` value build at `f32` as well as `f64`:
+/// the `f32` instance once compared in `f64` and failed to compile, which `eig` of an `f32`
+/// matrix (roadmap 3.10.7) needs.
+#[test]
+fn float_classes_of_a_type_parameter_build_at_f32() {
+    let program = "\
+from math import isfinite, isinf, isnan
+
+
+def classes[T: Float](x: T) -> tuple[bool, bool, bool]:
+    return isnan(x), isinf(x), isfinite(x)
+
+
+def main():
+    narrow: f32 = 1.5
+    print(classes(narrow), classes(f32(1e30) * f32(1e30)), classes(2.0))
+";
+    let directory = package("float-generic-classes", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "(False, False, True) (False, True, False) (False, False, True)\n"
+    );
+}
