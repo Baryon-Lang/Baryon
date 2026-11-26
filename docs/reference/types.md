@@ -1019,7 +1019,8 @@ The rules:
   such as `apply(special.loggamma, z)` with `f: Callable[[complex128], complex128]`; it stands for
   the overload with that signature.
 - An overload may be generic only when its bound excludes every other overload's argument types,
-  as `[T: Float]` excludes `complex128`, so no call fits two.
+  as `[T: Float]` excludes `complex128`, so no call fits two. A name has at most one generic
+  overload; a second is an error where it is defined.
 
 ## Generics
 

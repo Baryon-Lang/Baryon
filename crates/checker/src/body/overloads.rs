@@ -196,13 +196,36 @@ impl<'db> Body<'db> {
 
     /// Reports each concrete overload of the generic function `name` whose arguments the generic
     /// one also takes: a generic overload's bound must exclude every concrete overload's types
-    /// (point 6 of decision 0067), so that no call fits both.
+    /// (point 6 of decision 0067), so that no call fits both. A second generic overload of the
+    /// name is reported too, at the later one, since the rule allows one generic among concrete
+    /// overloads and a call could not choose between two.
     pub(super) fn overlapping_overloads(&mut self, name: NodeId) {
         if self.signature.type_parameters.is_empty() {
             return;
         }
         let file = self.lowerer.file;
-        for overload in self.overloads(file, name) {
+        let overloads = self.overloads(file, name);
+        let earlier = overloads.iter().take_while(|&&overload| overload != name);
+        for &overload in earlier {
+            let item = Item::new(self.db, self.lowerer.package, file, overload);
+            if let Declaration::Function(first) = &self.db.declaration(item).declaration
+                && !first.type_parameters.is_empty()
+            {
+                let message = format!(
+                    "`{}` already has a generic overload, `{}`",
+                    self.tree.text(name, self.text),
+                    self.header(file, overload)
+                );
+                self.lowerer.error(
+                    name,
+                    &message,
+                    "a second generic overload",
+                    Some("one generic overload may sit beside concrete ones, never two"),
+                );
+                return;
+            }
+        }
+        for overload in overloads {
             let item = Item::new(self.db, self.lowerer.package, file, overload);
             let Declaration::Function(concrete) = self.db.declaration(item).declaration.clone()
             else {
