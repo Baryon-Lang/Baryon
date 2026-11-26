@@ -1,5 +1,5 @@
-//! `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` of `complex128` matrices
-//! (roadmap 3.10.8 and 3.10.9):
+//! `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky`, `qr`, `eigh` and `eigvalsh` of
+//! `complex128` matrices (roadmap 3.10.8 to 3.10.10):
 //! the overloads beside the real functions (decision 0067) give the results of `NumPy` and `SciPy`.
 
 use crate::examples::prints;
@@ -144,6 +144,66 @@ def main() -> Raises[None, LinAlgError]:
          -0.463536213087,-0.362022472997 0.325854750063,0.350682478078 0.450847051946,0.470798603846 -0.00609710025688,-0.126496982803 -0.286936535519,-0.794371309652 0.230401102044,0.466388591062 -0.592271506168,-0.535956817191 -0.0992835027072,-0.218231332549 -0.384158129629,-0.396112554852 \n\
          -1.62959425016,0 -0.863518479029,-0.360955923577 -1.38208495983,-0.430178432356 -0.960904061103,-0.0386091002376 0,0 -0.63875054256,0 -0.481448891839,0.704296048944 -0.574238297751,0.198948131804 0,0 0,0 0.334880883279,0 0.649829724224,-0.241450032561 \n\
          cholesky: Matrix is not positive definite\n",
+    )
+    .unwrap();
+}
+
+/// `eigh` and `eigvalsh` of a random 5 × 5 Hermitian matrix from `random.Philox(47)`, its
+/// diagonal real and each entry below it drawn real part first: the eigenvalues match
+/// `numpy.linalg.eigvalsh`'s, and `a @ v[:, j] == w[j] * v[:, j]` with `vᴴ @ v` the identity to
+/// 10⁻¹³, since an eigenvector's phase is the algorithm's and can differ from `NumPy`'s. A
+/// matrix whose upper triangle and diagonal's imaginary parts disagree with its lower triangle
+/// shows that only the lower triangle and the diagonal's real parts are read.
+#[test]
+fn hermitian_eigh_matches_numpy() {
+    let program = r#"
+from linalg import LinAlgError, eigh, eigvalsh
+from random import Philox
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(47)
+    n = 5
+    a = Array.zeros((n, n), complex128)
+    for i in range(n):
+        for j in range(i + 1):
+            if i == j:
+                a[i, i] = complex(generator.uniform(), 0.0)
+            else:
+                a[i, j] = complex(generator.uniform(), generator.uniform())
+                a[j, i] = a[i, j].conjugate()
+    w, v = eigh(a)
+    for i in range(n):
+        print(f"{w[i]:.12g}", end=" ")
+    print()
+    worst = 0.0
+    for j in range(n):
+        for i in range(n):
+            total = 0j
+            for k in range(n):
+                total += a[i, k] * v[k, j]
+            worst = max(worst, abs(total - w[j] * v[i, j]))
+        for l in range(n):
+            dot = 0j
+            for k in range(n):
+                dot += v[k, l].conjugate() * v[k, j]
+            if l == j:
+                dot -= 1 + 0j
+            worst = max(worst, abs(dot))
+    print(worst < 1e-13)
+    lower = Array.zeros((2, 2), complex128)
+    lower[0, 0] = 2 + 9j
+    lower[1, 0] = 1j
+    lower[0, 1] = 7 + 7j
+    lower[1, 1] = 2 + 0j
+    print(eigvalsh(lower))
+"#;
+    prints(
+        "linalg-complex-eigh",
+        program.trim_start(),
+        "-0.951750286372 -0.399881892723 0.0795066594383 0.654407821411 3.70228522947 \n\
+         True\n\
+         [1. 3.]\n",
     )
     .unwrap();
 }

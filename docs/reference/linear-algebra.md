@@ -21,11 +21,12 @@ gives an `f32` result, at half the memory and with about seven significant digit
 ([decision 0067](../decisions/0067-library-overloading.md)). The tests compare `f32` results to
 NumPy's to 4 significant digits.
 
-`solve`, `lu_factor`, `lu_solve`, `det`, `inv`, `cholesky` and `qr` also take `complex128`
-matrices, NumPy's default complex type, through overloads beside the real ones, and compute in
-`complex128`. A complex column's pivot is the entry with the largest `|re| + |im|`, the size
-LAPACK compares, so the rows swap as in NumPy. `eigh`, `eigvalsh`, `svd` and `eig` do not take
-complex matrices yet (roadmap 3.10.10 for `eigh`), and no function takes `complex64` ones.
+`solve`, `lu_factor`, `lu_solve`, `det`, `inv`, `cholesky`, `qr`, `eigh` and `eigvalsh` also
+take `complex128` matrices, NumPy's default complex type, through overloads beside the real ones,
+and compute in `complex128`. A complex column's pivot is the entry with the largest
+`|re| + |im|`, the size LAPACK compares, so the rows swap as in NumPy. `svd`, `svdvals`, `eig`
+and `eigvals` do not take complex matrices yet, and no function takes `complex64` ones (idea
+I.78).
 
 The matrix product is the operator [`@`](arrays.md#the-matrix-product), not a function.
 
@@ -203,6 +204,8 @@ built.
 ```python
 def eigh[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 1], Array[T, 2]], LinAlgError]: ...
 def eigvalsh[T: Float](a: Array[T, 2]) -> Raises[Array[T, 1], LinAlgError]: ...
+def eigh(a: Array[complex128, 2]) -> Raises[tuple[Array[f64, 1], Array[complex128, 2]], LinAlgError]: ...
+def eigvalsh(a: Array[complex128, 2]) -> Raises[Array[f64, 1], LinAlgError]: ...
 ```
 
 `w, v = eigh(a)` gives the eigenvalues of a symmetric matrix in ascending order and, as the
@@ -216,6 +219,13 @@ eigenvalues by the implicit QL iteration, EISPACK's `tred2` and `tql2`: about 9n
 0.15 s for n = 400 on one core. An eigenvector's sign is not part of the answer, and it can
 differ from NumPy's. Raises `LinAlgError("Eigenvalues did not converge")` if the iteration does
 not converge within 30 steps for an eigenvalue, as LAPACK does; panics when `a` is not square.
+
+A complex `a` must be Hermitian, equal to its conjugate transpose, as a quantum Hamiltonian is.
+Its eigenvalues are real, so `w` is `f64`, and `v` is `complex128` with `vᴴ @ v` the identity.
+The reflections leave a complex tridiagonal matrix, which a phase on each column turns real, and
+the same QL iteration finishes: about four times the work of a real `eigh`. An eigenvector's
+phase, a complex number of size 1 it can be multiplied by, is not part of the answer, and it can
+differ from NumPy's. Only the lower triangle and the real parts of the diagonal are read.
 
 Differences from NumPy: no `UPLO="U"` argument; `eigvalsh` costs as much as `eigh`.
 
@@ -322,7 +332,7 @@ for those working on the library. A panic inside a function names the file it is
 | `linalg_common` | `LinAlgError`, and `epsilon`, the machine epsilon of a float type, which the iterations of `eigh` and `svd` stop at |
 | `linalg_factor` | `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
 | `linalg_complex` | The bodies of the `complex128` overloads of `lu_factor`, `lu_solve`, `solve`, `det`, `inv`, `cholesky` and `qr` |
-| `linalg_symmetric` | `eigh` and `eigvalsh`: Householder tridiagonalization and the implicit QL iteration |
+| `linalg_symmetric` | `eigh` and `eigvalsh`: Householder tridiagonalization and the implicit QL iteration, and their Hermitian `complex128` overloads |
 | `linalg_svd` | `svd` and `svdvals`: one-sided Jacobi rotations |
 | `linalg_eig` | `eig` and `eigvals`: balancing and Hessenberg reduction |
 | `linalg_schur` | The shifted double QR iteration and back-substitution that `eig` ends with |
