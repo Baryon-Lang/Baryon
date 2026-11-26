@@ -1,6 +1,8 @@
 """Internal file of `linalg` (decision 0040): eigenvalues and eigenvectors of a symmetric
-matrix, `eigh` and `eigvalsh`, by Householder tridiagonalization and the implicit QL iteration.
-`linalg` re-exports each (decision 0062); a program cannot import this file.
+matrix, `eigh` and `eigvalsh`, by Householder tridiagonalization and the implicit QL iteration,
+and their `complex128` overloads for a Hermitian matrix (roadmap 3.10.10), which reduce it to a
+real tridiagonal matrix first. `linalg` re-exports each (decision 0062); a program cannot import
+this file.
 """
 
 from math import copysign, fabs, hypot, sqrt
@@ -201,3 +203,135 @@ def _diagonalize[T: Float](
     for i in range(n):
         for j in range(n):
             v[i, j] = vt[j, i]
+
+
+def eigh(
+    a: Array[complex128, 2],
+) -> Raises[tuple[Array[f64, 1], Array[complex128, 2]], LinAlgError]:
+    """The eigenvalues `w`, real and in ascending order, and unit eigenvectors `v` of a Hermitian
+    `complex128` matrix `a`, equal to its conjugate transpose, as `numpy.linalg.eigh(a)`.
+
+    Reads only `a`'s lower triangle and the real parts of its diagonal, as NumPy does.
+    `_reduce_hermitian` turns `a` into a real tridiagonal matrix, `_diagonalize` finds its
+    eigenvalues and eigenvectors, and the unitary matrix of the reduction turns those into `a`'s:
+    about 4 times the work of a real `eigh`. Each eigenvector's phase is the algorithm's, as in
+    NumPy, whose phases can differ. Raises `LinAlgError` when the iteration does not converge;
+    panics when `a` is not square.
+    """
+    n = a.shape[0]
+    assert a.shape[1] == n, "eigh needs a square matrix"
+    d = Array.zeros(n, f64)
+    e = Array.zeros(n, f64)
+    vectors = Array.zeros((n, n), complex128)
+    if n == 0:
+        return d, vectors
+    unitary = _reduce_hermitian(a, d, e)
+    z = Array.zeros((n, n), f64)
+    for i in range(n):
+        z[i, i] = 1.0
+    _diagonalize(z, d, e)
+    for i in range(n):
+        for j in range(n):
+            total = 0j
+            for k in range(n):
+                total += unitary[i, k] * z[k, j]
+            vectors[i, j] = total
+    for i in range(n - 1):
+        smallest = i
+        for j in range(i + 1, n):
+            if d[j] < d[smallest]:
+                smallest = j
+        if smallest != i:
+            swap = d[i]
+            d[i] = d[smallest]
+            d[smallest] = swap
+            for row in range(n):
+                exchange = vectors[row, i]
+                vectors[row, i] = vectors[row, smallest]
+                vectors[row, smallest] = exchange
+    return d, vectors
+
+
+def eigvalsh(a: Array[complex128, 2]) -> Raises[Array[f64, 1], LinAlgError]:
+    """The real eigenvalues of a Hermitian `complex128` matrix in ascending order, as
+    `numpy.linalg.eigvalsh`: the `w` of `eigh(a)`, at the same cost.
+    """
+    w, _ = eigh(a)
+    return w
+
+
+def _reduce_hermitian(
+    a: Array[complex128, 2], d: InOut[Array[f64, 1]], e: InOut[Array[f64, 1]]
+) -> Array[complex128, 2]:
+    """Reduces the Hermitian matrix whose lower triangle is `a`'s to a real symmetric tridiagonal
+    one: `d` gets its diagonal and `e[1:]` its subdiagonal, in the form `_diagonalize` takes, and
+    the result is the unitary `u` with `uᴴ a u` that tridiagonal matrix.
+
+    Householder reflections made as LAPACK's `zlarfg` makes them leave a complex Hermitian
+    tridiagonal matrix; scaling `u`'s columns by phases then makes its subdiagonal real and not
+    negative. About 16n³/3 real multiply-adds for the reduction and as many for `u`.
+    """
+    n = a.shape[0]
+    h = Array.zeros((n, n), complex128)
+    for i in range(n):
+        h[i, i] = complex(a[i, i].real, 0.0)
+        for j in range(i):
+            h[i, j] = a[i, j]
+            h[j, i] = a[i, j].conjugate()
+    u = Array.zeros((n, n), complex128)
+    for i in range(n):
+        u[i, i] = 1 + 0j
+    reflector = Array.zeros(n, complex128)
+    for k in range(n - 2):
+        alpha = h[k + 1, k]
+        squares = 0.0
+        for row in range(k + 2, n):
+            squares += h[row, k].real * h[row, k].real + h[row, k].imag * h[row, k].imag
+        if squares == 0.0 and alpha.imag == 0.0:
+            continue
+        beta = -copysign(hypot(hypot(alpha.real, alpha.imag), sqrt(squares)), alpha.real)
+        tau = complex((beta - alpha.real) / beta, -alpha.imag / beta)
+        scale = (1 + 0j) / (alpha - complex(beta, 0.0))
+        reflector[k + 1] = 1 + 0j
+        for row in range(k + 2, n):
+            reflector[row] = h[row, k] * scale
+        for column in range(n):
+            total = 0j
+            for row in range(k + 1, n):
+                total += reflector[row].conjugate() * h[row, column]
+            total *= tau.conjugate()
+            for row in range(k + 1, n):
+                h[row, column] -= total * reflector[row]
+        _reflect_columns(h, reflector, tau, k + 1)
+        _reflect_columns(u, reflector, tau, k + 1)
+    phase = 1 + 0j
+    for i in range(n):
+        d[i] = h[i, i].real
+        if i > 0:
+            size = abs(h[i, i - 1])
+            e[i] = size
+            if size > 0.0:
+                phase = phase * h[i, i - 1] / complex(size, 0.0)
+        for row in range(n):
+            u[row, i] *= phase
+    e[0] = 0.0
+    return u
+
+
+def _reflect_columns(
+    matrix: InOut[Array[complex128, 2]],
+    reflector: Array[complex128, 1],
+    tau: complex128,
+    start: int,
+):
+    """Applies the reflection `I - tau v vᴴ` from the right to `matrix`, where `v` is
+    `reflector` from entry `start` on: each row `r` becomes `r - tau (r · v) vᴴ`.
+    """
+    n = len(reflector)
+    for row in range(matrix.shape[0]):
+        total = 0j
+        for column in range(start, n):
+            total += matrix[row, column] * reflector[column]
+        total *= tau
+        for column in range(start, n):
+            matrix[row, column] -= total * reflector[column].conjugate()
