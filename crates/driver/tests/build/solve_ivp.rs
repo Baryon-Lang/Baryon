@@ -34,16 +34,6 @@ const SCIPY: &str = "\
 0 1 2 1 2.0 4.0 1.0 2.0
 -1 632 67 1 63.883757720511255 1165736867277266.5 0.9999286400563746 480848617754195.6";
 
-/// Builds `program` and returns what it prints.
-fn printed(name: &str, program: &str) -> String {
-    let directory = package(name, &[("main.byn", program)]).unwrap();
-    let (output, program) = baryon_build(&directory).unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    let ran = Command::new(&program).output().unwrap();
-    assert!(ran.status.success(), "{}", stderr(&ran));
-    String::from_utf8_lossy(&ran.stdout).into_owned()
-}
-
 /// Each run takes `SciPy`'s steps: the counts match exactly and the numbers to 1e-10.
 #[test]
 fn rk45_takes_scipys_steps() {
@@ -80,7 +70,12 @@ def main():
     print(failed.success, failed.message, failed.njev, failed.nlu, failed.sol is None)
     print(failed.t_events is None, failed.y_events is None)
 ";
-    let output = printed("solve-ivp-rk45", program);
+    let directory = package("solve-ivp-rk45", &[("main.byn", program)]).unwrap();
+    let (output, program) = baryon_build(&directory).unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+    let ran = Command::new(&program).output().unwrap();
+    assert!(ran.status.success(), "{}", stderr(&ran));
+    let output = String::from_utf8_lossy(&ran.stdout);
     let mut lines = output.lines();
     for (expected, found) in SCIPY.lines().zip(&mut lines) {
         let expected: Vec<&str> = expected.split(' ').collect();
