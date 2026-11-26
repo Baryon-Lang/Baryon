@@ -24,8 +24,27 @@ fn copied(ty: Type<'_>) -> Body<'_> {
     body
 }
 
-/// The module text of `copy` at `ty`, or what the backend reports.
-fn module(database: &Database, ty: Type<'_>) -> Result<String, Unsupported> {
+/// `def copy(out: InOut[T], x: T): out = x.copy()`: the copy is written through a pointer the
+/// caller passes, because a C caller and an LLVM function returning a large struct by value
+/// agree on where it goes only on some targets (x86-64, not arm64).
+fn copied_out<'db>(database: &'db Database, ty: Type<'db>) -> Body<'db> {
+    let none = Type::new(database, TypeKind::None);
+    let mut body = Body::new(none, span());
+    let out = body.push_local(ty, parameter("out", Mode::InOut), span());
+    let x = body.push_local(ty, parameter("x", Mode::Borrow), span());
+    body.push_block(end(TerminatorKind::Call {
+        callee: Callee::Builtin(Builtin::Copy),
+        arguments: vec![Argument::Borrow(x.into())],
+        destination: out.into(),
+        target: BlockId::new(1),
+        error: None,
+    }));
+    body.push_block(end(TerminatorKind::Return));
+    body
+}
+
+/// The module text of `body`, defined as `copy`, or what the backend reports.
+fn module_of(database: &Database, body: &Body<'_>) -> Result<String, Unsupported> {
     let symbol = super::symbol_of(database);
     let sources = super::sources();
     let mut module = Module::new(
@@ -35,8 +54,13 @@ fn module(database: &Database, ty: Type<'_>) -> Result<String, Unsupported> {
         &super::no_names,
         &symbol,
     );
-    module.define("copy", &copied(ty), &[])?;
+    module.define("copy", body, &[])?;
     Ok(module.finish())
+}
+
+/// The module text of `copy` at `ty`, or what the backend reports.
+fn module(database: &Database, ty: Type<'_>) -> Result<String, Unsupported> {
+    module_of(database, &copied(ty))
 }
 
 /// A copy of a transposed view, an `Array[f64, 2]` whose strides are `[1, 3]`, holds its
@@ -52,7 +76,7 @@ fn an_array_view_is_copied_row_major() {
             rank: 2,
         },
     );
-    let text = module(&database, grid).unwrap();
+    let text = module_of(&database, &copied_out(&database, grid)).unwrap();
     let main = r#"
         #include <stdio.h>
         #include <stdint.h>
