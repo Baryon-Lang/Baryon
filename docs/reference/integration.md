@@ -3,8 +3,9 @@
 The `integrate` module is SciPy's `scipy.integrate` written in Baryon
 ([decision 0054](../decisions/0054-scipy-module-names.md)), with SciPy's names. It holds
 [`quad`](#quad-integrating-a-function), which integrates a function over a finite or infinite
-interval (roadmap 3.19.4 and 3.19.5), and the fixed rules, which integrate samples already taken
-at known points (roadmap 3.19.3):
+interval (roadmap 3.19.4 and 3.19.5), [`solve_ivp`](#solve_ivp-solving-an-ode), which solves an
+ordinary differential equation from its starting value (roadmap 3.19.7), and the fixed rules,
+which integrate samples already taken at known points (roadmap 3.19.3):
 
 | Function | Result | SciPy |
 | --- | --- | --- |
@@ -163,6 +164,72 @@ interval with too small a `limit`, or as many break points as `limit`.
 panic: assertion failed: limit >= 1, "Invalid 'limit' argument. There must be at least one subinterval"
 ```
 
+## `solve_ivp`: solving an ODE
+
+`solve_ivp(fun, t_span, y0)` solves the initial value problem `dy/dt = fun(t, y)` with
+`y(t_span[0]) = y0`, from `t_span[0]` to `t_span[1]`, as `scipy.integrate.solve_ivp` does with
+its default method, RK45. RK45 is the Dormand-Prince pair of explicit Runge-Kutta formulas, of
+orders 5 and 4: each step calls `fun` six times, and the difference between the two orders
+estimates the step's error. A step whose error is too large is retried shorter; a good step
+makes the next one longer. The state `y` may be an `f64`, for one equation, or a `Fixed` vector,
+for a system:
+
+```python
+from math import cos
+from integrate import solve_ivp
+
+State = Fixed[f64, (2,)]
+
+
+def spring(t: f64, y: State, omega: f64) -> State:
+    # y[0] is the position in metres and y[1] the velocity in metres per second.
+    return State(y[1], -omega * omega * y[0])
+
+
+def main():
+    result = solve_ivp(spring, (0.0, 10.0), State(1.0, 0.0), args=(2.0,), rtol=1e-8, atol=1e-10)
+    last = len(result.t) - 1
+    print(f"{result.message} {len(result.t)} steps, {result.nfev} calls of spring")
+    print(f"x(10) = {result.y[0, last]:.8f}, exact {cos(20.0):.8f}")
+```
+
+This prints `251 steps, 1604 calls of spring` and `x(10) = 0.40808205, exact 0.40808206`, the
+step counts SciPy gives for the same call.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `fun` | The right-hand side, `fun(t, y, *args)`, returning `dy/dt` as the same type as `y` | |
+| `t_span` | `(t0, t_bound)`, a `tuple[f64, f64]`; `t_bound < t0` integrates backwards | |
+| `y0` | The starting state, an `f64` or a `Fixed` vector of `f64` | |
+| `args` | A tuple passed on to `fun` after `t` and `y` | `()` |
+| `first_step` | The size of the first step; `None` picks it by SciPy's rule | `None` |
+| `max_step` | The longest step allowed | `inf` |
+| `rtol`, `atol` | Each step keeps its error in each element below `atol + rtol * abs(y)`; `rtol` below 2.2e-14 is raised to it | `1e-3`, `1e-6` |
+
+The result is an `OdeResult` with SciPy's 11 fields, read as attributes:
+
+| Field | Value |
+| --- | --- |
+| `t` | The times of the steps, an `Array[f64, 1]`, from `t0` to where the run stopped |
+| `y` | The state at each time, an `Array[f64, 2]` of shape `(len(y0), len(t))`; an `f64` state has length 1 |
+| `nfev` | How many times `fun` was called |
+| `njev`, `nlu` | Jacobians computed and LU factorizations made: 0 for RK45 |
+| `status`, `success`, `message` | 0, `True` and SciPy's text when the run reached `t_bound`; -1 and `False` when it failed |
+| `sol` | The continuous solution: `None`, since `dense_output=` is not built yet (roadmap 3.19.8) |
+| `t_events`, `y_events` | `None`, since `events=` is not built yet (roadmap 3.19.9) |
+
+A run fails, as SciPy's does, when a step would have to be shorter than ten times the spacing of
+floats at `t`, as near a singularity: `dy/dt = y * y` from `y(0) = 1` stops just before
+`t = 1` with `status` -1 and the message `Required step size is less than spacing between
+numbers.`, keeping the steps it took. It never raises. A `max_step` or `first_step` that is not
+positive, a negative `atol`, or a `first_step` longer than `t_span` is a mistake in the program
+and panics with SciPy's message, where SciPy raises `ValueError`.
+
+`solve_ivp` takes SciPy's steps and calls `fun` as many times. SciPy forms its sums with BLAS,
+whose rounding depends on the processor, so a step's size can differ from SciPy's in its last
+bits; over a run the results agree with SciPy's to about ten significant digits, fewer near a
+singularity. Each step keeps one state; the result stores `len(t)` states.
+
 ## Differences from SciPy
 
 - The samples are rank-1. SciPy's `axis=` and arrays of higher rank are not built yet.
@@ -173,4 +240,9 @@ panic: assertion failed: limit >= 1, "Invalid 'limit' argument. There must be at
 - `quad`'s `weight=` is roadmap 3.19.5, and `full_output=` is not built: its third value would
   change the shape of every call (decision 0065).
 - `quad`'s `points` is a `list[f64]`; SciPy also takes an array or a tuple.
-- ODE solvers (`solve_ivp`) are not built yet (roadmap 3.19).
+- `solve_ivp` takes an `f64` or a `Fixed` state. An `Array[f64, 1]` state is not built yet:
+  arithmetic on one inside a generic function shares memory between values (roadmap 1.9.75).
+  SciPy's other parameters, `method=`, `t_eval=`, `dense_output=`, `events=`, `vectorized=`
+  and an array `atol`, are not built yet (roadmap 3.19.7.3 to 3.19.9; ideas I.64 and I.77).
+- `solve_ivp` raises `rtol` to 2.2e-14 without SciPy's warning, and panics where SciPy raises
+  `ValueError`.

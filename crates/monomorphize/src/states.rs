@@ -16,7 +16,9 @@ use types::{Type, TypeKind};
 
 /// Rewrites every `len(y)` and `y[i]` in `body` and its outlined bodies whose `y` this instance
 /// makes a `Fixed` vector or a number. Lowering copies each element into a temporary and each
-/// length into a local at once, so only those two assignments name a state that way.
+/// length into a local at once, so only those two assignments name a state that way. The state
+/// may be a local, or reached from one through items of tuples and elements of lists, as
+/// `states[j][i]` reads element `i` of the `j`th state a `list[S]` holds.
 pub(crate) fn read<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     for outlined in &mut body.outlined {
         read(db, outlined);
@@ -28,8 +30,12 @@ pub(crate) fn read<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
                 continue;
             };
             match rvalue {
-                Rvalue::Length(place, 0) if place.projections.is_empty() => {
-                    let length = match types[place.local.index()].kind(db) {
+                Rvalue::Length(place, 0) => {
+                    let Some(state) = projected(db, types[place.local.index()], &place.projections)
+                    else {
+                        continue;
+                    };
+                    let length = match state.kind(db) {
                         TypeKind::Primitive(_) => 1,
                         TypeKind::Fixed { shape, .. } => i128::from(shape.lengths()[0]),
                         _ => continue,
@@ -40,7 +46,7 @@ pub(crate) fn read<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
                 Rvalue::Use(Operand::Copy(place) | Operand::Move(place))
                     if number_element(db, &types, place) =>
                 {
-                    *place = Place::from(place.local);
+                    place.projections.pop();
                 }
                 _ => {}
             }
@@ -48,8 +54,31 @@ pub(crate) fn read<'db>(db: &'db dyn salsa::Database, body: &mut Body<'db>) {
     }
 }
 
-/// Whether `place` is one element of a local whose type is a number: `y[i]` on an `f64` state.
+/// Whether `place` is one element of a number: `y[i]` on an `f64` state.
 fn number_element<'db>(db: &'db dyn salsa::Database, types: &[Type<'db>], place: &Place) -> bool {
-    matches!(place.projections.as_slice(), [Projection::Index(indices)] if indices.len() == 1)
-        && matches!(types[place.local.index()].kind(db), TypeKind::Primitive(_))
+    let Some((Projection::Index(indices), outer)) = place.projections.split_last() else {
+        return false;
+    };
+    indices.len() == 1
+        && projected(db, types[place.local.index()], outer)
+            .is_some_and(|ty| matches!(ty.kind(db), TypeKind::Primitive(_)))
+}
+
+/// The type of the part `projections` reach from a value of type `ty`, when every step is an
+/// item of a tuple or an element of a list. `None` for any other step, which never reaches a
+/// state's element read.
+fn projected<'db>(
+    db: &'db dyn salsa::Database,
+    ty: Type<'db>,
+    projections: &[Projection],
+) -> Option<Type<'db>> {
+    projections
+        .iter()
+        .try_fold(ty, |ty, projection| match (projection, ty.kind(db)) {
+            (Projection::Field(field), TypeKind::Tuple(items)) => {
+                items.get(usize::try_from(*field).ok()?).copied()
+            }
+            (Projection::Index(_), TypeKind::List(item)) => Some(*item),
+            _ => None,
+        })
 }

@@ -56,6 +56,11 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   elements and `y[i]` element `i`, an `f64`, so one function weighs every element of an `f64`,
   a `Fixed` vector or an `Array`. An `f64` has length 1. Elements are only read
   ([Generics](docs/reference/types.md#traits)).
+- `integrate.solve_ivp` solves an ordinary differential equation with SciPy's default method,
+  RK45, on an `f64` or `Fixed` state, with `args=`, `rtol=`, `atol=`, `first_step=` and
+  `max_step=`. It takes SciPy's steps and returns an `OdeResult` with SciPy's fields. An `Array`
+  state, `t_eval=`, `method=`, dense output and events come later
+  ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats

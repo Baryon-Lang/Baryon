@@ -12,6 +12,8 @@ decision 0040 for shapes).
 """
 
 import math
+from integrate_ivp import OdeResult as OdeResult, OdeSolution as OdeSolution
+from integrate_ivp import solve_ivp as solve_ivp
 from integrate_quad import IntegrationError as IntegrationError, quad as quad
 
 
