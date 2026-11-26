@@ -173,7 +173,7 @@ def main():
    |
 13 |     trades.to_csv("trades.csv", index=False)
    |                                 ^^^^^ not built yet
-   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column
+   = note: this version takes the path, `sep=`, `na_rep=`, `header=` and `columns=`, and writes no index column
 
 error: `to_csv` takes the path of the file to write
   --> main.byn:14:5
@@ -326,7 +326,7 @@ error: `to_csv` does not take `na_values` yet
    |
 17 |     trades.to_csv("out.csv", na_values="NA")
    |                              ^^^^^^^^^ not built yet
-   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column
+   = note: this version takes the path, `sep=`, `na_rep=`, `header=` and `columns=`, and writes no index column
 
 error: `DataFrame.read_csv` does not take `na_rep` yet
   --> main.byn:18:64
@@ -380,6 +380,79 @@ error: `to_csv` does not take `nrows` yet
    |
 13 |     trades.to_csv("out.csv", nrows=5)
    |                              ^^^^^ not built yet
-   = note: this version takes the path, `sep=` and `na_rep=`, and writes a header row and no index column"#;
+   = note: this version takes the path, `sep=`, `na_rep=`, `header=` and `columns=`, and writes no index column"#;
+    assert_eq!(check_one(program), expected);
+}
+
+/// `header=` of `to_csv` checks as a `bool` and `columns=` as a list, written out, of the
+/// frame's column names (roadmap 3.14.4.2). A list of new names for the header, one name
+/// alone, an empty list, a name the frame lacks, one named twice and a list worked out are
+/// each reported, and `read_csv` has no `header=` yet.
+#[test]
+fn the_part_of_a_frame_to_write_is_named() {
+    let program = r#"
+class Trade(Struct):
+    symbol: str
+    price: f64 | None
+
+
+def save(trades: DataFrame[Trade], quiet: bool) -> Raises[None, OSError | ValueError]:
+    names = ["price"]
+    trades.to_csv("out.csv", header=False, columns=["price", "symbol"])
+    trades.to_csv("out.csv", header=not quiet, columns=["price"])
+    trades.to_csv("out.csv", header=["a", "b"])
+    trades.to_csv("out.csv", columns="price")
+    trades.to_csv("out.csv", columns=[])
+    trades.to_csv("out.csv", columns=["price", "volume"])
+    trades.to_csv("out.csv", columns=["price", "price"])
+    trades.to_csv("out.csv", columns=names)
+    again: DataFrame[Trade] = DataFrame.read_csv("out.csv", header=False)
+"#;
+    let expected = r#"error: expected `bool`, found `list[str]`
+  --> main.byn:10:37
+   |
+10 |     trades.to_csv("out.csv", header=["a", "b"])
+   |                                     ^^^^^^^^^^ `header` is `bool`
+
+error: `columns` of `to_csv` is a list of column names, written out
+  --> main.byn:11:38
+   |
+11 |     trades.to_csv("out.csv", columns="price")
+   |                                      ^^^^^^^ not a list of names
+   = note: for example `columns=["symbol", "price"]`
+
+error: `columns` of `to_csv` is a list of column names, written out
+  --> main.byn:12:38
+   |
+12 |     trades.to_csv("out.csv", columns=[])
+   |                                      ^^ not a list of names
+   = note: for example `columns=["symbol", "price"]`
+
+error: `DataFrame[Trade]` has no column `volume`
+  --> main.byn:13:48
+   |
+13 |     trades.to_csv("out.csv", columns=["price", "volume"])
+   |                                                ^^^^^^^^ not a column
+   = note: its columns are `symbol`, `price`
+
+error: the column `price` is named twice
+  --> main.byn:14:48
+   |
+14 |     trades.to_csv("out.csv", columns=["price", "price"])
+   |                                                ^^^^^^^ a second time
+
+error: `columns` of `to_csv` is a list of column names, written out
+  --> main.byn:15:38
+   |
+15 |     trades.to_csv("out.csv", columns=names)
+   |                                      ^^^^^ not a list of names
+   = note: for example `columns=["symbol", "price"]`
+
+error: `DataFrame.read_csv` does not take `header` yet
+  --> main.byn:16:61
+   |
+16 |     again: DataFrame[Trade] = DataFrame.read_csv("out.csv", header=False)
+   |                                                             ^^^^^^ not built yet
+   = note: this version takes the path, `sep=`, `na_values=`, `nrows=` and `skiprows=`, for a file with a header row"#;
     assert_eq!(check_one(program), expected);
 }

@@ -135,7 +135,7 @@ column of `f64 | None` is written as an empty cell too, which reads back as `Non
 
 ## Keywords
 
-Both functions take the path first. Five keywords of pandas are built so far:
+Both functions take the path first. Seven keywords of pandas are built so far:
 
 | Keyword | Of | Meaning | Default |
 | --- | --- | --- | --- |
@@ -144,11 +144,14 @@ Both functions take the path first. Five keywords of pandas are built so far:
 | `skiprows=` | `read_csv` | How many lines to pass over before the header: an `int` | `0` |
 | `nrows=` | `read_csv` | How many rows to read at most: an `int` | every row |
 | `na_rep=` | `to_csv` | The text written for a missing value: a `str` | `""` |
+| `header=` | `to_csv` | Whether the header row is written: a `bool` | `True` |
+| `columns=` | `to_csv` | The columns to write, in this order: a list of names, written out | every column |
 
 ```python
 def main() -> Raises[None, OSError | ValueError]:
     trades: DataFrame[Trade] = DataFrame.read_csv("trades.txt", sep=";", na_values=["NA", "-999"])
     trades.to_csv("trades.tsv", sep="\t", na_rep="NA")
+    trades.to_csv("prices.csv", columns=["price", "symbol"], header=False)
 ```
 
 - **`sep` is one character, written out.** It is a string literal of one ASCII character,
@@ -188,8 +191,17 @@ def main() -> Raises[None, OSError | ValueError]:
   raises `ValueError`. Reading the first rows of a large file still loads the whole file
   into memory first.
 
-Any other keyword is a compile error that names it, never ignored. The next to come are
-`header=False` and `columns=` of `to_csv` (roadmap 3.14.4.2).
+- **`header=False` writes the rows alone.** `header` is any `bool`. pandas also takes a list
+  of other names to write as the header, which is a compile error here; `rename` the
+  columns first. `header=` of `read_csv`, for a file with no header row, is not built.
+- **`columns` names the columns to write, in order.** It is a list of string literals, each
+  a column of the frame and none twice, since the file's columns are settled when the
+  program is compiled. A list the program works out, one name with no list and an empty
+  list are compile errors. pandas writes a column named twice two times.
+
+Any other keyword is a compile error that names it, never ignored. `usecols=`, `index=`,
+and `header=` and `names=` of `read_csv` are among them, by the chief designer's choice:
+the schema chooses the columns read, and a frame has no index to write.
 
 ## Errors
 
@@ -245,10 +257,9 @@ took 2.5 s, where pandas took 2.0 s.
 - **The schema chooses the columns.** pandas has `usecols=` for reading some of them. Here a
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
-- **Five keywords so far.** [`sep=`, `na_values=`, `skiprows=`, `nrows=` and
-  `na_rep=`](#keywords) are built. `header=`, `names=`, `usecols=` and the rest are compile
-  errors that name the keyword, never ignored. The same holds for `to_csv`: `index=`,
-  `columns=`, `float_format=` and the rest.
+- **Seven keywords so far**, listed under [Keywords](#keywords). `header=` and `names=` of
+  `read_csv`, `usecols=` and the rest are compile errors that name the keyword, never
+  ignored. The same holds for `to_csv`: `index=`, `float_format=` and the rest.
 - **`to_csv` writes no index column.** pandas writes its row index as a first column unless
   `index=False` is given. A frame has no index here, so the file is the one pandas writes
   with `index=False`.
@@ -256,6 +267,6 @@ took 2.5 s, where pandas took 2.0 s.
 
 ## Not built yet
 
-- The keywords of `pandas.read_csv` and of `to_csv` other than the five under
+- The keywords of `pandas.read_csv` and of `to_csv` other than the seven under
   [Keywords](#keywords) (roadmap 3.14.4.2).
 - Columns of complex numbers.

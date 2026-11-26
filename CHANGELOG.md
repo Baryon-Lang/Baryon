@@ -26,7 +26,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - `DataFrame.read_csv` and `to_csv` take `sep=`, one character written out, such as `";"` or
   `"\t"`. `read_csv` takes `na_values=`, more cells to read as missing, `skiprows=`, lines to
   pass over before the header, and `nrows=`, the most rows to read, and `to_csv` takes `na_rep=`,
-  the text written for a missing value
+  the text written for a missing value, `header=False`, to write the rows alone, and `columns=`,
+  the columns to write and their order
   ([CSV files](docs/reference/csv-files.md#keywords)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
