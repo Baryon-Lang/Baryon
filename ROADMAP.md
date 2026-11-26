@@ -389,7 +389,7 @@ and 3.25.
 | 3.19.7.1 | Reading a `VectorSpace` state by position, `len(y)` and `y[i]`, read only, an `f64` acting as length 1; amends decision 0065 point 1 (chief designer, card 60) | 1 | 3.19.2 | Done | Claude | [#588](https://github.com/Baryon-Lang/Baryon/pull/588) |
 | 3.19.7.2 | `solve_ivp` with RK45 and SciPy's step-size control, returning `OdeResult` with SciPy's 11 fields; `t_events`, `y_events` and `sol` are `None`. Built for `f64` and `Fixed` states; an `Array` state came with row 3.19.7.4, after row 1.9.75 | 2 | 3.19.7.1 | Done | Claude | [#592](https://github.com/Baryon-Lang/Baryon/pull/592) |
 | 3.19.7.3 | `t_eval=`, and `method=` routed when compiling from a literal (decision 0065 point 2) | 1 | 3.19.7.2 | Done | Claude | [#596](https://github.com/Baryon-Lang/Baryon/pull/596) |
-| 3.19.7.4 | `solve_ivp` on an `Array[f64, 1]` state, tested against SciPy's steps with and without `t_eval` | 1 | 1.9.75 | In progress | Claude | — |
+| 3.19.7.4 | `solve_ivp` on an `Array[f64, 1]` state, tested against SciPy's steps with and without `t_eval` | 1 | 1.9.75 | Done | Claude | [#598](https://github.com/Baryon-Lang/Baryon/pull/598) |
 | 3.19.8 | DOP853, and dense output for both methods, `sol.sol(t)`, through `__call__` on structs (decision 0058, chief designer, card 43). `__call__` is built first (#466) | 3.5 | 3.19.7 | Planned | — | [#466](https://github.com/Baryon-Lang/Baryon/pull/466) |
 | 3.19.9 | `events=` for `solve_ivp`, in the shape a later card chooses: SciPy keeps the functions in a list, which version 0 cannot hold | 2 | 3.19.7 | Planned | — | — |
 | 3.19.10 | Validation against values recorded from SciPy and mpmath, the transition guide's entries with differences flagged, and a benchmark against SciPy | 1 | 3.19.8 | Planned | — | — |
