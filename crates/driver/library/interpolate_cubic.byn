@@ -1,0 +1,286 @@
+"""`CubicSpline` for `interpolate` (roadmap 3.21.2): SciPy's `scipy.interpolate.CubicSpline`,
+the twice continuously differentiable piecewise cubic through given points.
+
+The spline is found as SciPy finds it: the slope at each point solves a tridiagonal system,
+LAPACK's `gtsv` ported operation for operation, with the end conditions `bc_type` names; the
+slopes then give each interval's cubic, as SciPy's `CubicHermiteSpline` does. The result is a
+`PPoly` (embedded, so `cs.c`, `cs.x`, `cs.derivative()` and the rest reach it), and every
+coefficient has SciPy's bits. One case differs: three points with `"not-a-knot"` at both ends
+solve a 3 × 3 system, which SciPy hands to OpenBLAS, whose fused multiply-adds round
+differently; there the coefficients agree to the last bit or two.
+
+`bc_type` takes SciPy's four names (decision 0069 point 2); its `((order, value), (order, value))`
+form waits for strings in unions. Bad input panics with SciPy's message, where SciPy raises
+`ValueError` (decision 0069 point 5).
+
+The compiler reads this file for `<std>/interpolate.byn`, which re-exports `CubicSpline`
+(decision 0062); a program cannot import it.
+"""
+
+from math import fabs, isfinite
+from interpolate_ppoly import PPoly
+
+
+class CubicSpline(Struct):
+    """A cubic spline through the points `(x[i], y[i])`, SciPy's
+    `CubicSpline(x, y, axis=0, bc_type="not-a-knot", extrapolate=None)`, called as `cs(t)`.
+    Holds one cubic for each of the `len(x) - 1` intervals, a `PPoly` of order 4."""
+
+    # The piecewise cubic, whose fields and methods are the spline's own.
+    poly: Embed[PPoly]
+
+    def __init__(
+        self,
+        x: Array[f64, 1],
+        y: Array[f64, 1],
+        axis: int = 0,
+        bc_type: str = "not-a-knot",
+        extrapolate: bool | None = None,
+    ):
+        """Finds the slope at each point and builds the cubics. `bc_type` is `"not-a-knot"`,
+        where the third derivative is continuous at the second and second-to-last points;
+        `"clamped"`, a zero slope at both ends; `"natural"`, a zero second derivative at both
+        ends; or `"periodic"`, for `y[0] == y[-1]`, where the slope and second derivative match
+        at the ends and a point outside `x` wraps around. `axis` is accepted for SciPy's
+        signature and ignored, since `y` has one dimension. `extrapolate` defaults to `True`,
+        and to wrapping for `"periodic"`.
+
+        Panics with SciPy's message for fewer than two points, `x` and `y` of different
+        lengths, a value that is not finite, `x` not strictly increasing, an unknown `bc_type`,
+        or a periodic `y` whose ends differ. Costs about 20 operations a point and four arrays
+        of `len(x)` numbers.
+        """
+        n = len(x)
+        _check_points(x, y)
+        known = bc_type == "not-a-knot" or bc_type == "clamped" or bc_type == "natural"
+        periodic = bc_type == "periodic"
+        assert known or periodic, f"bc_type={bc_type} is not allowed."
+        # NumPy's `allclose(y[0], y[-1], rtol=1e-15, atol=1e-15)`.
+        same = fabs(y[0] - y[n - 1]) <= 1e-15 + 1e-15 * fabs(y[n - 1])
+        assert same or not periodic, (
+            "The first and last `y` point along axis 0 must be identical (within machine "
+            "precision) when bc_type='periodic'."
+        )
+        slopes = _slopes(x, y, bc_type)
+        self.poly = PPoly(_hermite(x, y, slopes), x, True if extrapolate is None else extrapolate)
+        self.poly._periodic = periodic and extrapolate is None
+
+    def __call__(self, x: f64, nu: int = 0, extrapolate: bool | None = None) -> f64:
+        """The spline's `nu`-th derivative at `x`, as `PPoly.__call__`: a third derivative is
+        constant on each interval, and a fourth or higher is 0."""
+        return self.poly(x, nu, extrapolate)
+
+
+def _check_points(x: Array[f64, 1], y: Array[f64, 1]):
+    """SciPy's `prepare_input` checks for one-dimensional `x` and `y`: panics with its message
+    for fewer than two points, lengths that differ, a value that is not finite, or `x` not
+    strictly increasing."""
+    n = len(x)
+    assert n >= 2, "`x` must contain at least 2 elements."
+    assert len(y) == n, "The length of `y` along `axis`=0 doesn't match the length of `x`"
+    for i in range(n):
+        assert isfinite(x[i]), "`x` must contain only finite values."
+    for i in range(n):
+        assert isfinite(y[i]), "`y` must contain only finite values."
+    for i in range(n - 1):
+        assert x[i + 1] - x[i] > 0.0, "`x` must be strictly increasing sequence."
+
+
+def _slopes(x: Array[f64, 1], y: Array[f64, 1], bc_type: str) -> Array[f64, 1]:
+    """The spline's slope at each point, SciPy's `CubicSpline.__init__` for one-dimensional
+    `y`: the derivative values that make the cubics twice continuously differentiable with the
+    end conditions `bc_type`. Two points give the straight line, unless clamped or natural."""
+    n = len(x)
+    dx = x[1:] - x[: n - 1]
+    slope = (y[1:] - y[: n - 1]) / dx
+    if n == 3 and bc_type == "not-a-knot":
+        return _parabola(dx, slope)
+    if n == 3 and bc_type == "periodic":
+        t = (slope[0] / dx[0] + slope[1] / dx[1]) / (1.0 / dx[0] + 1.0 / dx[1])
+        return Array([t, t, t])
+    if n > 2 and bc_type == "periodic":
+        return _periodic_slopes(dx, slope)
+    # The tridiagonal system, as `gtsv` takes it: `lower[i]` is row `i + 1`'s entry left of the
+    # diagonal and `upper[i]` row `i`'s right of it.
+    diagonal: Array[f64, 1] = Array.zeros(n)
+    upper: Array[f64, 1] = Array.zeros(n - 1)
+    lower: Array[f64, 1] = Array.zeros(n - 1)
+    b: Array[f64, 1] = Array.zeros(n)
+    for j in range(1, n - 1):
+        diagonal[j] = 2.0 * (dx[j - 1] + dx[j])
+        b[j] = 3.0 * (dx[j] * slope[j - 1] + dx[j - 1] * slope[j])
+    for j in range(2, n):
+        upper[j - 1] = dx[j - 2]
+    for j in range(n - 2):
+        lower[j] = dx[j + 1]
+    # Two points with "not-a-knot" or "periodic" fix both slopes to the line's.
+    order = 1
+    value = slope[0]
+    if bc_type == "natural":
+        order = 2
+        value = 0.0
+    elif bc_type == "clamped":
+        value = 0.0
+    if bc_type == "not-a-knot" and n > 2:
+        diagonal[0] = dx[1]
+        upper[0] = x[2] - x[0]
+        d = x[2] - x[0]
+        b[0] = ((dx[0] + 2.0 * d) * dx[1] * slope[0] + dx[0] * dx[0] * slope[1]) / d
+    elif order == 1:
+        diagonal[0] = 1.0
+        upper[0] = 0.0
+        b[0] = value
+    else:
+        diagonal[0] = 2.0 * dx[0]
+        upper[0] = dx[0]
+        b[0] = -0.5 * value * (dx[0] * dx[0]) + 3.0 * (y[1] - y[0])
+    if bc_type == "not-a-knot" and n > 2:
+        diagonal[n - 1] = dx[n - 3]
+        lower[n - 2] = x[n - 1] - x[n - 3]
+        d = x[n - 1] - x[n - 3]
+        last = dx[n - 2]
+        b[n - 1] = (last * last * slope[n - 3] + (2.0 * d + last) * dx[n - 3] * slope[n - 2]) / d
+    elif order == 1:
+        diagonal[n - 1] = 1.0
+        lower[n - 2] = 0.0
+        b[n - 1] = value
+    else:
+        diagonal[n - 1] = 2.0 * dx[n - 2]
+        lower[n - 2] = dx[n - 2]
+        b[n - 1] = 0.5 * value * (dx[n - 2] * dx[n - 2]) + 3.0 * (y[n - 1] - y[n - 2])
+    return _tridiagonal(lower, diagonal, upper, b)
+
+
+def _parabola(dx: Array[f64, 1], slope: Array[f64, 1]) -> Array[f64, 1]:
+    """The slopes of the parabola through three points, SciPy's special case for three points
+    with "not-a-knot" at both ends, where the two conditions coincide: a 3 × 3 system solved by
+    Gaussian elimination with partial pivoting, in `linalg.solve`'s order."""
+    a: Array[f64, 2] = Array.zeros((3, 3))
+    a[0, 0] = 1.0
+    a[0, 1] = 1.0
+    a[1, 0] = dx[1]
+    a[1, 1] = 2.0 * (dx[0] + dx[1])
+    a[1, 2] = dx[0]
+    a[2, 1] = 1.0
+    a[2, 2] = 1.0
+    s = Array([2.0 * slope[0], 3.0 * (dx[0] * slope[1] + dx[1] * slope[0]), 2.0 * slope[1]])
+    for k in range(3):
+        pivot = k
+        for i in range(k + 1, 3):
+            if fabs(a[i, k]) > fabs(a[pivot, k]):
+                pivot = i
+        if pivot != k:
+            for j in range(3):
+                swap = a[k, j]
+                a[k, j] = a[pivot, j]
+                a[pivot, j] = swap
+            swap = s[k]
+            s[k] = s[pivot]
+            s[pivot] = swap
+        for i in range(k + 1, 3):
+            factor = a[i, k] / a[k, k]
+            a[i, k] = factor
+            for j in range(k + 1, 3):
+                a[i, j] -= factor * a[k, j]
+            s[i] -= factor * s[k]
+    for k in range(2, -1, -1):
+        total = s[k]
+        for j in range(k + 1, 3):
+            total -= a[k, j] * s[j]
+        s[k] = total / a[k, k]
+    return s
+
+
+def _periodic_slopes(dx: Array[f64, 1], slope: Array[f64, 1]) -> Array[f64, 1]:
+    """The slopes of a periodic spline through four or more points, SciPy's way: the cyclic
+    system of `n - 1` unknowns is cut to a tridiagonal one of `n - 2`, solved for two
+    right-hand sides, and the last unknown found from the cut row."""
+    n = len(dx) + 1
+    m = n - 2
+    diagonal: Array[f64, 1] = Array.zeros(m)
+    upper: Array[f64, 1] = Array.zeros(m - 1)
+    lower: Array[f64, 1] = Array.zeros(m - 1)
+    b1: Array[f64, 1] = Array.zeros(m)
+    b2: Array[f64, 1] = Array.zeros(m)
+    diagonal[0] = 2.0 * (dx[n - 2] + dx[0])
+    for j in range(1, m):
+        diagonal[j] = 2.0 * (dx[j - 1] + dx[j])
+    if m > 1:
+        upper[0] = dx[n - 2]
+    for j in range(2, m):
+        upper[j - 1] = dx[j - 2]
+    for j in range(m - 1):
+        lower[j] = dx[j + 1]
+    b1[0] = 3.0 * (dx[0] * slope[n - 2] + dx[n - 2] * slope[0])
+    for j in range(1, m):
+        b1[j] = 3.0 * (dx[j] * slope[j - 1] + dx[j - 1] * slope[j])
+    last = 3.0 * (dx[n - 2] * slope[n - 3] + dx[n - 3] * slope[n - 2])
+    b2[0] = -dx[0]
+    b2[m - 1] = -dx[n - 4]
+    s1 = _tridiagonal(lower, diagonal, upper, b1)
+    s2 = _tridiagonal(lower, diagonal, upper, b2)
+    corner = dx[n - 3]
+    side = dx[n - 2]
+    s_last = (last - corner * s1[0] - side * s1[m - 1]) / (
+        2.0 * (dx[n - 2] + dx[n - 3]) + corner * s2[0] + side * s2[m - 1]
+    )
+    s: Array[f64, 1] = Array.zeros(n)
+    for i in range(m):
+        s[i] = s1[i] + s_last * s2[i]
+    s[m] = s_last
+    s[n - 1] = s[0]
+    return s
+
+
+def _tridiagonal(
+    lower: Array[f64, 1], diagonal: Array[f64, 1], upper: Array[f64, 1], b: Array[f64, 1]
+) -> Array[f64, 1]:
+    """The solution of the tridiagonal system with the diagonals `lower`, `diagonal` and
+    `upper` and the right-hand side `b`, LAPACK's `dgtsv` for one right-hand side: Gaussian
+    elimination that swaps a row with the next when the next has the larger entry, then back
+    substitution. Works on copies, about 8n operations."""
+    n = len(diagonal)
+    dl = lower.copy()
+    d = diagonal.copy()
+    du = upper.copy()
+    x = b.copy()
+    for i in range(n - 1):
+        if fabs(d[i]) >= fabs(dl[i]):
+            factor = dl[i] / d[i]
+            d[i + 1] = d[i + 1] - factor * du[i]
+            x[i + 1] = x[i + 1] - factor * x[i]
+            dl[i] = 0.0
+        else:
+            factor = d[i] / dl[i]
+            d[i] = dl[i]
+            temp = d[i + 1]
+            d[i + 1] = du[i] - factor * temp
+            if i < n - 2:
+                dl[i] = du[i + 1]
+                du[i + 1] = -factor * dl[i]
+            du[i] = temp
+            temp = x[i]
+            x[i] = x[i + 1]
+            x[i + 1] = temp - factor * x[i + 1]
+    x[n - 1] = x[n - 1] / d[n - 1]
+    if n > 1:
+        x[n - 2] = (x[n - 2] - du[n - 2] * x[n - 1]) / d[n - 2]
+    for i in range(n - 3, -1, -1):
+        x[i] = (x[i] - du[i] * x[i + 1] - dl[i] * x[i + 2]) / d[i]
+    return x
+
+
+def _hermite(x: Array[f64, 1], y: Array[f64, 1], slopes: Array[f64, 1]) -> Array[f64, 2]:
+    """The coefficients of the cubics with values `y` and slopes `slopes` at the points `x`,
+    SciPy's `CubicHermiteSpline`: shape `(4, len(x) - 1)`, highest power first."""
+    n = len(x)
+    c: Array[f64, 2] = Array.zeros((4, n - 1))
+    for i in range(n - 1):
+        dx = x[i + 1] - x[i]
+        slope = (y[i + 1] - y[i]) / dx
+        t = (slopes[i] + slopes[i + 1] - 2.0 * slope) / dx
+        c[0, i] = t / dx
+        c[1, i] = (slope - slopes[i]) / dx - t
+        c[2, i] = slopes[i]
+        c[3, i] = y[i]
+    return c

@@ -9,6 +9,10 @@ published to a package registry yet. Releases are time-based: one every two week
 
 Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 
+- The `interpolate` module starts, with SciPy's names: `CubicSpline(x, y, bc_type=...)` with
+  `"not-a-knot"`, `"clamped"`, `"natural"` and `"periodic"`, and `PPoly(c, x)`, each called on
+  one number, with `derivative`, `antiderivative` and `integrate`, all with SciPy's bits
+  ([Interpolation](docs/reference/interpolation.md), decision 0069)
 - A struct can define `__init__`, as a Python class does: `Line(x0, y0, x1, y1)` runs it, and it
   sets each field through `self`. Every field must be set on every path, and `self` is used only
   through its fields until `__init__` ends, so a half-built struct is never seen

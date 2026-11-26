@@ -162,6 +162,18 @@ pub(crate) const LIBRARY: &[(&str, &str)] = &[
         include_str!("../library/integrate_quad.byn"),
     ),
     (
+        "<std>/interpolate.byn",
+        include_str!("../library/interpolate.byn"),
+    ),
+    (
+        "<std>/interpolate_cubic.byn",
+        include_str!("../library/interpolate_cubic.byn"),
+    ),
+    (
+        "<std>/interpolate_ppoly.byn",
+        include_str!("../library/interpolate_ppoly.byn"),
+    ),
+    (
         "<std>/integrate_quadpack.byn",
         include_str!("../library/integrate_quadpack.byn"),
     ),

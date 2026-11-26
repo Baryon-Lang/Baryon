@@ -1,0 +1,16 @@
+"""The `interpolate` module: SciPy's `scipy.interpolate` written in Baryon (decisions 0054 and
+0069, roadmap 3.21).
+
+Each interpolator is a struct built by calling its class with the data, as in SciPy:
+`CubicSpline(x, y)` runs its `__init__` (decision 0068). It is then called on one `f64` to give
+one `f64`, `cs(0.5)`; calling it on an array waits for idea I.61 (decision 0069 point 1). Every
+routine follows SciPy 1.18's order of operations, so results have SciPy's bits on Linux x86_64.
+Bad input panics with SciPy's message, where SciPy raises `ValueError`.
+
+This file re-exports the module's classes from the files that hold them (decision 0062):
+`PPoly`, the piecewise polynomial every spline is, and `CubicSpline` (roadmap 3.21.2).
+NumPy's linear interpolation is `Array.interp` (roadmap 3.21.1).
+"""
+
+from interpolate_ppoly import PPoly as PPoly
+from interpolate_cubic import CubicSpline as CubicSpline
