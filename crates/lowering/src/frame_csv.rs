@@ -401,10 +401,11 @@ impl<'db> Builder<'db> {
         Some(Place::from(cell))
     }
 
-    /// Calls the function `name` of `<std>/frame_csv.byn`, which can fail with the errors of
-    /// the `read_csv` or `to_csv` call `node`, its result written into `result`. `false` after
+    /// Calls the function `name` of the library's files for CSV or Parquet, which can fail
+    /// with the errors of the `read_csv`, `to_csv` or `read_parquet` call `node`, its result
+    /// written into `result`. `false` after
     /// reporting that the library's file or the function is missing.
-    fn csv_call(
+    pub(crate) fn csv_call(
         &mut self,
         name: &str,
         arguments: Vec<Argument<'db>>,

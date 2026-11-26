@@ -33,6 +33,11 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   the text written for a missing value, `header=False`, to write the rows alone, and `columns=`,
   the columns to write and their order
   ([CSV files](docs/reference/csv-files.md#keywords)).
+- `DataFrame.read_parquet(path)` reads a Parquet file into a DataFrame, with the schema written in
+  the program as for `read_csv`: columns of floats, whole numbers, `bool` and `str`, with missing
+  values, from files compressed with Snappy, gzip, Zstandard or LZ4 or not at all. The reader is
+  written in Baryon, so a program needs no other library. Dates, decimals and nested columns are
+  not read yet ([Parquet files](docs/reference/parquet-files.md)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

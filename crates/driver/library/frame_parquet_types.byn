@@ -1,0 +1,404 @@
+"""Parquet files: the columns of a file as arrays of the types a program's schema names, in
+Baryon (roadmap 3.14.6.3, decision 0045).
+
+The compiler calls one of these functions for each column of `DataFrame.read_parquet(path)`,
+by the type of the column's field: `parquet_f64` for a field of `f64`, and
+`parquet_optional_f64` for one of `f64 | None`, which gives the values and the validity
+bitmap as the frame stores them. A program cannot import this file. Every function takes
+the file's bytes and the plan `parquet_plan` of `<std>/frame_parquet.byn` gave, the position
+of the column among the planned ones, the file's path and the column's name for its
+errors, and raises `OSError` and `ValueError` as `parquet_column` does.
+
+A field's type says what the file's column may hold:
+
+- a float, `DOUBLE` for `f64` and `FLOAT` for `f32` or `f64`, since a `DOUBLE` does not fit
+  an `f32`;
+- a whole number, `INT32` or `INT64` whatever the field's width, each value checked against
+  the field's range, as `read_csv` checks a cell;
+- `BOOLEAN` for `bool`, and a `BYTE_ARRAY` of UTF-8 text for `str`.
+
+A column of any other kind, such as a date, a time or a decimal, is a `ValueError`. A
+missing value where the field has no `None` is NaN in a column of floats, as pandas reads
+one, and a `ValueError` anywhere else.
+
+A float is rebuilt from its bytes by arithmetic, since Baryon has no way yet to read bytes
+as a float: the fraction as a whole number times a power of two from a table, which is
+exact.
+"""
+
+from frame_parquet import parquet_load
+from frame_parquet_pages import Column, parquet_column
+from math import inf, nan
+
+
+def parquet_there(valid: Array[u8, 1], row: int) -> bool:
+    """Whether the value of `row` is there: its bit in the validity bitmap `valid` is 1."""
+    return ((valid[row >> 3] >> u8(row & 7)) & u8(1)) == u8(1)
+
+
+def _held(plan: list[int], column: int) -> str:
+    """What the file's column `column` of `plan` holds, as an error names it, or `""` for a
+    kind of value no column type reads yet."""
+    physical = plan[3 + 4 * column]
+    note = plan[5 + 4 * column]
+    names = [
+        "booleans",
+        "whole numbers (INT32)",
+        "whole numbers (INT64)",
+        "",
+        "floats (FLOAT)",
+        "floats (DOUBLE)",
+        "bytes",
+    ]
+    if note == 9 or physical < 0 or physical > 6:
+        return ""
+    if physical == 6 and note == 1:
+        return "text"
+    return names[physical].copy()
+
+
+def parquet_refused(plan: list[int], column: int, path: str, name: str, kind: str) -> str:
+    """The message for a column that does not hold what a field of the type `kind` reads."""
+    held = _held(plan, column)
+    if held == "":
+        what = "a date, a time, a decimal or another kind of value that is not read yet"
+        return f"{path}: the column '{name}' holds {what}"
+    return f"{path}: the column '{name}' holds {held}, which is not read into a column of {kind}"
+
+
+def _missing(path: str, name: str, row: int) -> str:
+    """The message for a missing value in the 0-based `row` of a column whose type has no
+    `None`."""
+    where = f"{path}: column '{name}', row {row + 1}"
+    return where + ": the value is missing, and the column's type has no None"
+
+
+def _powers() -> Array[f64, 1]:
+    """The table that scales a float's fraction: `table[e]` is 2 to the power `e - 1075`,
+    for `e` from 1 to 2046, each exact, built by doubling and halving 1.0."""
+    table = Array.fill((2047,), 0.0)
+    table[1075] = 1.0
+    value = 1.0
+    for power in range(1076, 2047):
+        value = value * 2.0
+        table[power] = value
+    value = 1.0
+    for back in range(1074):
+        value = value / 2.0
+        table[1074 - back] = value
+    return table
+
+
+def _double(raw: Array[u8, 1], at: int, table: Array[f64, 1]) -> f64:
+    """The `f64` whose eight bytes, lowest first, are at `at` in `raw`: a sign bit, eleven
+    bits of exponent and fifty-two of fraction. A NaN comes back as the one NaN `nan` is."""
+    low = parquet_load(raw, at)
+    middle = int(raw[at + 4]) | (int(raw[at + 5]) << 8)
+    sixth = int(raw[at + 6])
+    last = int(raw[at + 7])
+    fraction = low | (middle << 32) | ((sixth & 15) << 48)
+    exponent = ((last & 127) << 4) | (sixth >> 4)
+    value = 0.0
+    if exponent == 2047:
+        value = inf if fraction == 0 else nan
+    elif exponent == 0:
+        value = float(fraction) * table[1]
+    else:
+        value = float(fraction | (1 << 52)) * table[exponent]
+    return -value if last >= 128 else value
+
+
+def _single(raw: Array[u8, 1], at: int, table: Array[f64, 1]) -> f64:
+    """The `f32` whose four bytes, lowest first, are at `at` in `raw`, as the `f64` equal to
+    it: a sign bit, eight bits of exponent and twenty-three of fraction."""
+    bits = parquet_load(raw, at)
+    fraction = bits & 8388607
+    exponent = (bits >> 23) & 255
+    value = 0.0
+    if exponent == 255:
+        value = inf if fraction == 0 else nan
+    elif exponent == 0:
+        value = float(fraction) * table[926]
+    else:
+        value = float(fraction | 8388608) * table[exponent + 925]
+    return -value if bits >= 2147483648 else value
+
+
+def _floats(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str, kind: str
+) -> Raises[tuple[Array[f64, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column as `f64` for a field of the float type named `kind`, with its validity
+    bitmap: a `DOUBLE`, or a `FLOAT`, which is all a field of `f32` reads. A missing value
+    is NaN."""
+    physical = plan[3 + 4 * column]
+    if physical != 4 and (physical != 5 or kind == "f32"):
+        raise ValueError(parquet_refused(plan, column, path, name, kind))
+    got = parquet_column(data, plan, column, path, name)
+    rows = plan[0]
+    result = Array.fill((rows,), nan)
+    table = _powers()
+    at = 0
+    for row in range(rows):
+        if parquet_there(got.valid, row):
+            if physical == 5:
+                result[row] = _double(got.raw, at, table)
+                at += 8
+            else:
+                result[row] = _single(got.raw, at, table)
+                at += 4
+    return (result, got.valid.copy())
+
+
+def _whole(
+    data: Array[u8, 1],
+    plan: list[int],
+    column: int,
+    path: str,
+    name: str,
+    kind: str,
+    limits: tuple[int, int],
+) -> Raises[tuple[Array[i64, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column as `i64` for a field of the whole number type named `kind`, with its
+    validity bitmap: an `INT32` or an `INT64`, each value from `limits[0]` to `limits[1]`,
+    the least and the greatest of the type, or a `ValueError`. A missing value is 0. A
+    column the file marks unsigned is read as unsigned, so an `INT32` holds up to
+    4,294,967,295; an unsigned `INT64` past the greatest `i64` is out of every range here,
+    and `parquet_u64` reads it."""
+    physical = plan[3 + 4 * column]
+    note = plan[5 + 4 * column]
+    if (physical != 1 and physical != 2) or note == 1 or note == 9:
+        raise ValueError(parquet_refused(plan, column, path, name, kind))
+    got = parquet_column(data, plan, column, path, name)
+    rows = plan[0]
+    result = Array.zeros(rows, i64)
+    unsigned = note >= 200
+    at = 0
+    for row in range(rows):
+        if not parquet_there(got.valid, row):
+            continue
+        value = parquet_load(got.raw, at)
+        fits = True
+        if physical == 1:
+            if value >= 2147483648 and not unsigned:
+                value -= 4294967296
+            at += 4
+        else:
+            high = parquet_load(got.raw, at + 4)
+            fits = high < 2147483648 or not unsigned
+            value = value | ((high & 2147483647) << 32)
+            if high >= 2147483648:
+                value += -9223372036854775807 - 1
+            at += 8
+        if not fits or value < limits[0] or value > limits[1]:
+            shown = f"{value}" if fits else "a number past the greatest i64"
+            where = f"{path}: column '{name}', row {row + 1}"
+            raise ValueError(f"{where}: could not read {shown} as {kind}")
+        result[row] = value
+    return (result, got.valid.copy())
+
+
+def parquet_gap(valid: Array[u8, 1], rows: int, path: str, name: str) -> Raises[None, ValueError]:
+    """Raises `ValueError` for the first of the `rows` rows whose value `valid` marks
+    missing, in a column whose type has no `None`."""
+    for row in range(rows):
+        if not parquet_there(valid, row):
+            raise ValueError(_missing(path, name, row))
+
+
+def parquet_f64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[f64, 1], OSError | ValueError]:
+    """The column for a field of `f64`; a missing value is NaN, as pandas reads one."""
+    both = _floats(data, plan, column, path, name, "f64")
+    return both[0].copy()
+
+
+def parquet_optional_f64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[f64, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `f64 | None`: its values and its validity bitmap."""
+    return _floats(data, plan, column, path, name, "f64")
+
+
+def parquet_f32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[f32, 1], OSError | ValueError]:
+    """The column for a field of `f32`; a missing value is NaN."""
+    both = _floats(data, plan, column, path, name, "f32")
+    result = Array.zeros(plan[0], f32)
+    for row in range(plan[0]):
+        result[row] = f32(both[0][row])
+    return result
+
+
+def parquet_optional_f32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[f32, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `f32 | None`: its values and its validity bitmap."""
+    both = _floats(data, plan, column, path, name, "f32")
+    result = Array.zeros(plan[0], f32)
+    for row in range(plan[0]):
+        result[row] = f32(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_i64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[i64, 1], OSError | ValueError]:
+    """The column for a field of `i64`; a missing value is a `ValueError`."""
+    limits = (-9223372036854775807 - 1, 9223372036854775807)
+    both = _whole(data, plan, column, path, name, "i64", limits)
+    parquet_gap(both[1], plan[0], path, name)
+    return both[0].copy()
+
+
+def parquet_optional_i64(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[i64, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `i64 | None`: its values and its validity bitmap."""
+    limits = (-9223372036854775807 - 1, 9223372036854775807)
+    return _whole(data, plan, column, path, name, "i64", limits)
+
+
+def parquet_i8(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[i8, 1], OSError | ValueError]:
+    """The column for a field of `i8`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "i8", (-128, 127))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], i8)
+    for row in range(plan[0]):
+        result[row] = i8(both[0][row])
+    return result
+
+
+def parquet_optional_i8(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[i8, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `i8 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "i8", (-128, 127))
+    result = Array.zeros(plan[0], i8)
+    for row in range(plan[0]):
+        result[row] = i8(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_i16(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[i16, 1], OSError | ValueError]:
+    """The column for a field of `i16`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "i16", (-32768, 32767))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], i16)
+    for row in range(plan[0]):
+        result[row] = i16(both[0][row])
+    return result
+
+
+def parquet_optional_i16(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[i16, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `i16 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "i16", (-32768, 32767))
+    result = Array.zeros(plan[0], i16)
+    for row in range(plan[0]):
+        result[row] = i16(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_i32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[i32, 1], OSError | ValueError]:
+    """The column for a field of `i32`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "i32", (-2147483648, 2147483647))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], i32)
+    for row in range(plan[0]):
+        result[row] = i32(both[0][row])
+    return result
+
+
+def parquet_optional_i32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[i32, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `i32 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "i32", (-2147483648, 2147483647))
+    result = Array.zeros(plan[0], i32)
+    for row in range(plan[0]):
+        result[row] = i32(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_u8(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[u8, 1], OSError | ValueError]:
+    """The column for a field of `u8`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "u8", (0, 255))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], u8)
+    for row in range(plan[0]):
+        result[row] = u8(both[0][row])
+    return result
+
+
+def parquet_optional_u8(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[u8, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `u8 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "u8", (0, 255))
+    result = Array.zeros(plan[0], u8)
+    for row in range(plan[0]):
+        result[row] = u8(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_u16(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[u16, 1], OSError | ValueError]:
+    """The column for a field of `u16`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "u16", (0, 65535))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], u16)
+    for row in range(plan[0]):
+        result[row] = u16(both[0][row])
+    return result
+
+
+def parquet_optional_u16(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[u16, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `u16 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "u16", (0, 65535))
+    result = Array.zeros(plan[0], u16)
+    for row in range(plan[0]):
+        result[row] = u16(both[0][row])
+    return (result, both[1].copy())
+
+
+def parquet_u32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[Array[u32, 1], OSError | ValueError]:
+    """The column for a field of `u32`; a value outside its range or missing is a
+    `ValueError`."""
+    both = _whole(data, plan, column, path, name, "u32", (0, 4294967295))
+    parquet_gap(both[1], plan[0], path, name)
+    result = Array.zeros(plan[0], u32)
+    for row in range(plan[0]):
+        result[row] = u32(both[0][row])
+    return result
+
+
+def parquet_optional_u32(
+    data: Array[u8, 1], plan: list[int], column: int, path: str, name: str
+) -> Raises[tuple[Array[u32, 1], Array[u8, 1]], OSError | ValueError]:
+    """The column for a field of `u32 | None`: its values and its validity bitmap."""
+    both = _whole(data, plan, column, path, name, "u32", (0, 4294967295))
+    result = Array.zeros(plan[0], u32)
+    for row in range(plan[0]):
+        result[row] = u32(both[0][row])
+    return (result, both[1].copy())

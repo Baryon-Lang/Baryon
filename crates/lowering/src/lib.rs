@@ -314,6 +314,7 @@ mod frame_groups;
 mod frame_joins;
 mod frame_missing;
 mod frame_outer;
+mod frame_parquet;
 mod frame_rows;
 mod frame_schema;
 mod frame_sort;

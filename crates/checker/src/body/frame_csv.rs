@@ -35,7 +35,8 @@ const EXAMPLE: &str = "for example `trades: DataFrame[Trade] = DataFrame.read_cs
 
 impl<'db> Body<'db> {
     /// The call `node` of `DataFrame.name(...)`, a function found on the built-in name
-    /// `DataFrame`: `read_csv` alone. `expected` is the type the context needs.
+    /// `DataFrame`: `read_csv` here, and `read_parquet` in its own module. `expected` is the
+    /// type the context needs.
     pub(super) fn frame_function(
         &mut self,
         node: NodeId,
@@ -43,11 +44,14 @@ impl<'db> Body<'db> {
         arguments: &Arguments,
         expected: Option<Type<'db>>,
     ) -> Type<'db> {
+        if name == "read_parquet" {
+            return self.read_parquet(node, arguments, expected);
+        }
         if name != "read_csv" {
             self.untyped(arguments);
             let message = format!("`DataFrame` has no function `{name}`");
-            let hint = "a frame is made with `DataFrame({...})`, `DataFrame(rows)` or \
-                        `DataFrame.read_csv(path)`";
+            let hint = "a frame is made with `DataFrame({...})`, `DataFrame(rows)`, \
+                        `DataFrame.read_csv(path)` or `DataFrame.read_parquet(path)`";
             return self
                 .lowerer
                 .error(node, &message, "not defined", Some(hint));
@@ -235,7 +239,7 @@ impl<'db> Body<'db> {
 
     /// Whether `read_csv` reads, and `to_csv` writes, a column whose elements are `element`s:
     /// a float, a whole number, a `bool` or a `str`, or one of them or `None`.
-    fn is_csv_element(&self, element: Type<'db>) -> bool {
+    pub(super) fn is_csv_element(&self, element: Type<'db>) -> bool {
         let element = match element.kind(self.db) {
             TypeKind::Optional(value) => *value,
             _ => element,
