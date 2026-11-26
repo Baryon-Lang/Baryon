@@ -101,6 +101,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   those, and structs with their own `copy`. A call that makes `T` a type with no copy, such as
   a tuple, is an error at that call naming the type
   ([Generics](docs/reference/types.md#generics)).
+- A standard-library module that defines two generic overloads of one name is an error where
+  the second is defined, as decision 0067 says; before, each call of the name failed instead.
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

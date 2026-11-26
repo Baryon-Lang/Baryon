@@ -165,6 +165,38 @@ error: this generic overload also takes the arguments of `def scale(x: complex12
     );
 }
 
+/// Two generic overloads of one name are an error where the second is defined (decision 0067,
+/// point 6), not at each call, which no overload could take (roadmap 1.9.76).
+#[test]
+fn a_name_has_at_most_one_generic_overload() {
+    let library = r"
+def solve(x: complex128) -> complex128:
+    return x
+
+
+def solve[T: Float](x: T) -> T:
+    return x
+
+
+def solve[T: Float](x: Array[T, 1]) -> T:
+    return x[0]
+";
+    let program = r"
+def main():
+    pass
+";
+    assert_eq!(
+        check(&[("<std>/overloads_test.byn", library), ("main.byn", program)]),
+        "\
+error: `solve` already has a generic overload, `def solve[T: Float](x: T) -> T`
+  --> <std>/overloads_test.byn:10:5
+   |
+10 | def solve[T: Float](x: Array[T, 1]) -> T:
+   |     ^^^^^ a second generic overload
+   = note: one generic overload may sit beside concrete ones, never two"
+    );
+}
+
 #[test]
 fn an_argument_that_moves_is_checked_once() {
     // Choosing the overload reads the arguments' types; the move in `first(xs)` must still
