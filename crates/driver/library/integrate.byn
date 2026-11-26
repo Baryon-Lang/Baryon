@@ -16,7 +16,8 @@ It also holds `_solve_ivp_named`, which picks `solve_ivp`'s integrator at run ti
 
 import math
 from math import inf
-from integrate_ivp import OdeResult as OdeResult, OdeSolution as OdeSolution
+from integrate_ivp import OdeResult as OdeResult
+from integrate_solution import OdeSolution as OdeSolution
 from integrate_ivp import solve_ivp as solve_ivp
 from integrate_dop853 import solve_ivp_dop853
 from integrate_quad import IntegrationError as IntegrationError, quad as quad
@@ -179,6 +180,7 @@ def _solve_ivp_named[S: VectorSpace, *Ts](
     y0: S,
     method: str = "RK45",
     t_eval: Array[f64, 1] | None = None,
+    dense_output: bool = False,
     args: tuple[*Ts] = (),
     first_step: f64 | None = None,
     max_step: f64 = inf,
@@ -192,8 +194,10 @@ def _solve_ivp_named[S: VectorSpace, *Ts](
     as a literal, so the checker sends it to that integrator and not back here."""
     if method == "DOP853":
         return solve_ivp_dop853(
-            fun, t_span, y0, "DOP853", t_eval, args, first_step, max_step, rtol, atol
+            fun, t_span, y0, "DOP853", t_eval, dense_output, args, first_step, max_step, rtol, atol
         )
     if method != "RK45":
         raise ValueError("`method` must be one of {'RK45', 'DOP853'} or OdeSolver class.")
-    return solve_ivp(fun, t_span, y0, "RK45", t_eval, args, first_step, max_step, rtol, atol)
+    return solve_ivp(
+        fun, t_span, y0, "RK45", t_eval, dense_output, args, first_step, max_step, rtol, atol
+    )

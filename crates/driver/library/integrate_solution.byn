@@ -1,0 +1,139 @@
+"""`OdeSolution` for `solve_ivp` (roadmap 3.19.8): the continuous solution `dense_output=True`
+returns, SciPy's `OdeSolution`, called as `sol(t)` through `__call__` (decision 0058).
+
+A run's solution is one interpolant per step, the polynomial the method builds over that step,
+and `sol(t)` evaluates the one whose step covers `t`. A time before the first step or after the
+last is read from the nearest step's polynomial, as SciPy does, so it extrapolates. The
+polynomials are stored as numbers, not as states, so one `OdeSolution` serves every state type
+and `OdeResult` stays one type.
+
+The compiler reads this file for `integrate_ivp` and `integrate_dop853`; `<std>/integrate.byn`
+re-exports `OdeSolution` (decision 0062).
+"""
+
+# The polynomial a step's interpolant is: RK45's fourth-order `RkDenseOutput`, or DOP853's
+# seventh-order `Dop853DenseOutput`.
+RK45_INTERPOLANT: Final = 0
+DOP853_INTERPOLANT: Final = 1
+
+
+class OdeSolution(Struct):
+    """The continuous solution of an ODE, SciPy's `OdeSolution`, called as `sol(t)` to give the
+    state at the time `t` as an `Array[f64, 1]` of `len(y0)` elements. `solve_ivp` makes one
+    with `dense_output=True`.
+
+    Step `s` runs from `ts[s]` to `ts[s + 1]`, and row `s` of `y_old` is the state at its start.
+    Row `s` of `coefficients` holds its polynomial, element by element: `terms` numbers for
+    element 0, then `terms` for element 1, and so on. Holds `len(ts) - 1` steps, each of
+    `(terms + 1) * len(y0)` numbers."""
+
+    # The times between the steps, from the start of `t_span` to the end, in the run's order.
+    ts: Array[f64, 1]
+    # The state at the start of each step, one row a step.
+    y_old: Array[f64, 2]
+    # Each step's polynomial, one row a step, `terms` numbers an element.
+    coefficients: Array[f64, 2]
+    # How many numbers each element's polynomial has: 4 for RK45, 7 for DOP853.
+    terms: int
+    # `RK45_INTERPOLANT` or `DOP853_INTERPOLANT`.
+    interpolant: int
+
+    def __call__(self, t: f64) -> Array[f64, 1]:
+        """The state at the time `t`, from the step that covers it, SciPy's
+        `OdeSolution._call_single`: a time at a step's end belongs to that step, and one outside
+        the run to the nearest step. A run over an empty `t_span` has one step of no length,
+        whose state is the same at every time."""
+        segments = len(self.ts) - 1
+        segment = _segment(self.ts, t)
+        n = self.y_old.shape[1]
+        y: Array[f64, 1] = Array.zeros(n)
+        t_old = self.ts[segment]
+        h = self.ts[segment + 1] - t_old
+        if h == 0.0 or segments == 0:
+            for i in range(n):
+                y[i] = self.y_old[segment, i]
+            return y
+        x = (t - t_old) / h
+        for i in range(n):
+            first = i * self.terms
+            if self.interpolant == RK45_INTERPOLANT:
+                y[i] = _rk45_value(self.coefficients, segment, first, h, x) + self.y_old[segment, i]
+            else:
+                y[i] = _dop853_value(self.coefficients, segment, first, x) + self.y_old[segment, i]
+        return y
+
+
+def _segment(ts: Array[f64, 1], t: f64) -> int:
+    """The step of the times `ts` whose polynomial gives the state at `t`, SciPy's
+    `np.searchsorted(ts_sorted, t, side)` clipped to the steps, by bisection: the step whose
+    interval holds `t`, its end included, in the run's direction. 0 for a single step."""
+    segments = len(ts) - 1
+    if segments <= 1:
+        return 0
+    ascending = ts[segments] >= ts[0]
+    # Count the step ends strictly before `t` going forwards, or strictly after it going
+    # backwards: SciPy's left search of the times going forwards, right search of them reversed.
+    low = 0
+    high = segments + 1
+    while low < high:
+        middle = (low + high) // 2
+        before = ts[middle] < t
+        if not ascending:
+            before = ts[middle] > t
+        if before:
+            low = middle + 1
+        else:
+            high = middle
+    return min(max(low - 1, 0), segments - 1)
+
+
+def _rk45_value(coefficients: Array[f64, 2], segment: int, first: int, h: f64, x: f64) -> f64:
+    """`h * (q0 x + q1 x**2 + q2 x**3 + q3 x**4)` for one element, RK45's `RkDenseOutput`, with
+    the `q` read from row `segment` from `first` on. The powers are SciPy's `np.cumprod`."""
+    x2 = x * x
+    x3 = x2 * x
+    x4 = x3 * x
+    total = coefficients[segment, first] * x
+    total += coefficients[segment, first + 1] * x2
+    total += coefficients[segment, first + 2] * x3
+    total += coefficients[segment, first + 3] * x4
+    return h * total
+
+
+def _dop853_value(coefficients: Array[f64, 2], segment: int, first: int, x: f64) -> f64:
+    """DOP853's `Dop853DenseOutput` for one element, less the starting state: the seven numbers
+    read from row `segment` from `first` on, from the last to the first, each added and the sum
+    multiplied by `x` and `1 - x` in turn."""
+    total = 0.0
+    for i in range(7):
+        total += coefficients[segment, first + 6 - i]
+        if i % 2 == 0:
+            total *= x
+        else:
+            total *= 1.0 - x
+    return total
+
+
+def ode_solution[S: VectorSpace](
+    steps: list[f64],
+    starts: list[S],
+    polynomials: list[S],
+    sizes: tuple[int, int],
+    interpolant: int,
+) -> OdeSolution:
+    """The `OdeSolution` of a run's steps: the times `steps` between them, the state `starts[s]`
+    at the start of step `s`, and its polynomial in `polynomials[s * terms]` onwards, with
+    `sizes` as `(len(y0), terms)`. Copies each step's numbers once."""
+    n, terms = sizes
+    segments = len(starts)
+    ts: Array[f64, 1] = Array.zeros(len(steps))
+    for s in range(len(steps)):
+        ts[s] = steps[s]
+    y_old: Array[f64, 2] = Array.zeros((segments, n))
+    coefficients: Array[f64, 2] = Array.zeros((segments, n * terms))
+    for s in range(segments):
+        for i in range(n):
+            y_old[s, i] = starts[s][i]
+            for k in range(terms):
+                coefficients[s, i * terms + k] = polynomials[s * terms + k][i]
+    return OdeSolution(ts, y_old, coefficients, terms, interpolant)
