@@ -10,7 +10,9 @@
 //! gain the overflow check lowering writes for integers (decision 0030), and once it is an array
 //! they become whole-array expressions. A call of a user trait's method, `body.energy()` on a
 //! `T: Body`, becomes a direct call of the receiver type's own method in [`trait_calls`]
-//! (decision 0031), so no trait call reaches the backend.
+//! (decision 0031), so no trait call reaches the backend. Likewise `x.copy()` on a `T` that an
+//! instance makes a struct with its own `copy` becomes a direct call of that method in
+//! [`own_copies`] (roadmap 1.9.60).
 //!
 //! The instance query runs [`instantiate`], then drop elaboration and array expansion, and marks
 //! the result [`Phase::Ready`](mir::Phase). The driver collects which instances a program needs
@@ -83,12 +85,14 @@
 //! ```
 
 mod callables;
+mod copies;
 mod overflow;
 mod spread;
 mod substitution;
 mod unions;
 
 pub use callables::forward_callables;
+pub use copies::{CopyMethod, own_copies};
 use mir::{
     Body, Callee, Elementwise, LocalKind, Operand, Projection, Rvalue, StatementKind,
     TerminatorKind,

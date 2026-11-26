@@ -68,8 +68,16 @@ pub(super) fn ready_body<'db>(
         item: *wanted.item(db),
         arguments: wanted.arguments(db).clone(),
     };
+    let copy_method = move |ty: types::Type<'db>| checker::copy_method(db, package, ty);
     let destructor = |nominal: &Nominal<'db>| checker::destructor(db, package, nominal).is_some();
-    match instances::ready(db, &instance, &declared, &destructor, &implementation) {
+    match instances::ready(
+        db,
+        &instance,
+        &declared,
+        &destructor,
+        &implementation,
+        &copy_method,
+    ) {
         Ok(body) => Ready::Body(body),
         Err(errors) => Ready::Errors(errors),
     }

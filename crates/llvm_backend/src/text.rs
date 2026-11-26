@@ -110,6 +110,31 @@ impl Function<'_, '_, '_> {
         )))
     }
 
+    /// A new, owned `str` holding the bytes of the `str` value `value`, as `copy()` makes one:
+    /// one piece through the runtime's string builder, so the copy owns a buffer of its own
+    /// even when `value` points at a constant.
+    pub(crate) fn copy_text(&mut self, value: &str) -> String {
+        self.declare(
+            "baryon_rt_text_new",
+            "declare ptr @baryon_rt_text_new() nounwind",
+        );
+        let builder = self.emit("call ptr @baryon_rt_text_new()");
+        let (bytes, length) = self.text_parts(value);
+        self.append(
+            &builder,
+            "str",
+            &format!("ptr {bytes}, i64 {length}"),
+            "null",
+        );
+        self.declare(
+            "baryon_rt_text_finish",
+            &format!("declare {TEXT} @baryon_rt_text_finish(ptr) nounwind"),
+        );
+        self.emit(&format!(
+            "call {TEXT} @baryon_rt_text_finish(ptr {builder})"
+        ))
+    }
+
     /// Appends the value at `place` with the specification at `spec`, through the runtime
     /// function for its type: a narrower integer is widened first, as for `print`, and a
     /// complex number passes its two parts.
