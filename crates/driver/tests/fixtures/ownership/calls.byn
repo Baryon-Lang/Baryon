@@ -276,6 +276,21 @@ def default_argument():
     default_argument_greet()
 
 
+# site: generic_arithmetic once
+# `VectorSpace` arithmetic at an `Array`, whose results are new arrays held in locals of
+# the type parameter's type (roadmap 1.9.75).
+def generic_arithmetic_step[S: VectorSpace](y: S) -> S:
+    scaled = y * 2.0
+    negated = -scaled
+    return negated + y
+
+
+def generic_arithmetic():
+    y: Array[f64, 1] = Array.ones(3)
+    z = generic_arithmetic_step(y)
+    print(z[0], y[0])
+
+
 # site: generic_owned
 # A generic function taking and returning an `Owned` value.
 def keep[U](x: Owned[U]) -> U:
