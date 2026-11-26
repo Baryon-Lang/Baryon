@@ -534,7 +534,7 @@ of `--blas` (3.10.2), are internal and not interop
 | R.7.2 | Dry run: start the release workflow by hand on the release commit; both builds and both clean-machine tests pass before anyone tags | 0.1 | R.7.1 | Planned | — | — |
 | R.7.3 | The chief designer approves and publishes 0.4.0 on the release commit: either the tag `v0.4.0` is pushed first and the draft the workflow fills is published, or the release is published from the GitHub website, which creates the tag. Either way the workflow attaches both archives, their SHA-256 files and the VS Code extension (R.7.5); check them and the notes | — | R.7.2 | Planned | — | — |
 | R.7.4 | Add the next time-based release, due two weeks after 0.4.0, as R.8 with the same steps | 0.1 | R.7.3 | Planned | — | — |
-| R.7.5 | The release workflow packages the VS Code extension as a `.vsix` and attaches it with the archives, and adds the files to a release already published from the GitHub website instead of failing, without replacing any file it already holds. A tag whose extension version differs from the release stops the workflow (the chief designer, 2026-11-26) | 0.25 | R.6.3 | In progress | Claude | — |
+| R.7.5 | The release workflow packages the VS Code extension as a `.vsix` and attaches it with the archives, and adds the files to a release already published from the GitHub website instead of failing, without replacing any file it already holds. A tag whose extension version differs from the release stops the workflow (the chief designer, 2026-11-26) | 0.25 | R.6.3 | Done | Claude | [#580](https://github.com/Baryon-Lang/Baryon/pull/580) |
 
 ## Decisions needed
 
