@@ -15,9 +15,10 @@ with a Thrift header that says what it is and how many bytes follow:
   version 2 keeps the levels outside and says how many bytes they take.
 
 Levels and dictionary positions are in Parquet's hybrid of runs and bit-packed groups, which
-`_hybrid` decodes. Values written plainly are their bytes, lowest first: 4 for `INT32` and
-`FLOAT`, 8 for `INT64` and `DOUBLE`, a bit for a `BOOLEAN`, and a length in 4 bytes and then
-the bytes for a `BYTE_ARRAY`.
+`_hybrid` decodes. The delta encodings and the split byte streams are decoded by
+`<std>/frame_parquet_delta.byn`. Values written plainly are their bytes, lowest first: 4 for
+`INT32` and `FLOAT`, 8 for `INT64` and `DOUBLE`, a bit for a `BOOLEAN`, and a length in 4
+bytes and then the bytes for a `BYTE_ARRAY`.
 
 The codecs are the library's own: Snappy and LZ4 raw blocks (`<std>/parquet_snappy.byn`,
 `<std>/parquet_lz4.byn`), gzip (`zlib`) and Zstandard (`compression.zstd`). Brotli and LZO
@@ -29,6 +30,7 @@ column's bytes, so reading holds the file, one page and the column at the same t
 
 from compression import zstd
 from frame_parquet import parquet_load, thrift_field, thrift_skip, thrift_zigzag
+from frame_parquet_delta import parquet_delta, parquet_delta_text, parquet_grow, parquet_split
 from parquet_lz4 import lz4_decompress
 from parquet_snappy import snappy_decompress
 import zlib
@@ -107,18 +109,6 @@ def _hybrid(
                 out[done + k] = i32(value & mask)
             done += take
     return True
-
-
-def _grow(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
-    """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
-    is replaced by an array twice as long as is needed, holding the same first bytes, so
-    adding a byte at a time costs a constant on average."""
-    if used + more <= len(raw):
-        return
-    longer = Array.zeros(2 * (used + more), u8)
-    for at in range(used):
-        longer[at] = raw[at]
-    raw = longer
 
 
 def _inflate(
@@ -299,14 +289,18 @@ def parquet_column(
                         raise ValueError(damaged)
                     spot = 4 + length
             else:
-                if head[6] != 0 or levels < 0 or levels > packed:
+                # The repetition levels of a flat column say nothing, but some writers
+                # store a few bytes of them, which are passed over.
+                first = body + head[6]
+                if head[6] < 0 or levels < 0 or head[6] + levels > packed:
                     raise ValueError(damaged)
-                if optional and not _hybrid(data, body, body + levels, 1, marks):
+                if optional and not _hybrid(data, first, first + levels, 1, marks):
                     raise ValueError(damaged)
+                first += levels
                 if head[7] == 1:
-                    page = _inflate(data[body + levels : at], codec, size - levels, path)
+                    page = _inflate(data[first:at], codec, size - (first - body), path)
                 else:
-                    page = data[body + levels : at].copy()
+                    page = data[first:at].copy()
             there = values
             if optional:
                 there = 0
@@ -326,7 +320,7 @@ def parquet_column(
                     spot += 4
                     if spot + length > stop:
                         raise ValueError(damaged)
-                    _grow(raw, used, length)
+                    parquet_grow(raw, used, length)
                     for b in range(length):
                         raw[used + b] = page[spot + b]
                     spot += length
@@ -365,7 +359,7 @@ def parquet_column(
                     if width == 0:
                         first = table_ends[pick]
                         length = table_ends[pick + 1] - first
-                        _grow(raw, used, length)
+                        parquet_grow(raw, used, length)
                         for b in range(length):
                             raw[used + b] = table[first + b]
                         used += length
@@ -374,6 +368,19 @@ def parquet_column(
                         for b in range(width):
                             raw[used + b] = table[pick * width + b]
                         used += width
+            elif encoding == 5 and (physical == 1 or physical == 2):
+                if parquet_delta(page, spot, stop, there, width, raw, used) < 0:
+                    raise ValueError(damaged)
+                used += there * width
+            elif encoding == 9 and width >= 4:
+                if not parquet_split(page, spot, stop, there, width, raw, used):
+                    raise ValueError(damaged)
+                used += there * width
+            elif (encoding == 6 or encoding == 7) and width == 0:
+                shared = encoding == 7
+                used = parquet_delta_text(page, spot, stop, there, shared, raw, ends, used, present)
+                if used < 0:
+                    raise ValueError(damaged)
             else:
                 message = f"{path}: the column '{name}' uses the encoding {encoding}"
                 raise ValueError(message + ", which is not read yet")

@@ -37,7 +37,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   the program as for `read_csv`: columns of floats, whole numbers, `bool` and `str`, with missing
   values, from files compressed with Snappy, gzip, Zstandard or LZ4 or not at all. The reader is
   written in Baryon, so a program needs no other library. Dates, decimals and nested columns are
-  not read yet ([Parquet files](docs/reference/parquet-files.md)).
+  not read yet. The encodings writers choose for the format's version 2 are read too: packed
+  differences, text as lengths or shared prefixes, and split byte streams
+  ([Parquet files](docs/reference/parquet-files.md)).
 - `df.to_parquet(path)` writes a DataFrame as a Parquet file that pandas, polars and other
   readers open with the same columns and types, compressed with Snappy. Values are stored
   plainly, with no dictionaries or statistics yet

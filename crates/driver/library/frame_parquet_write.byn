@@ -26,6 +26,7 @@ Cost: every column is held as plain bytes and again as compressed pages before t
 put together, so writing takes about twice the frame's size in memory besides the frame.
 """
 
+from frame_parquet_delta import parquet_grow
 from parquet_snappy import snappy_compress
 
 
@@ -95,18 +96,6 @@ def _page_header(body: int, stored: int, values: int) -> list[int]:
     out.append(0)
     out.append(0)
     return out
-
-
-def parquet_room(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
-    """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
-    is replaced by an array twice as long as is needed, holding the same first bytes, so
-    adding a few bytes at a time costs a constant on average."""
-    if used + more <= len(raw):
-        return
-    longer = Array.zeros(2 * (used + more), u8)
-    for at in range(used):
-        longer[at] = raw[at]
-    raw = longer
 
 
 def _count(valid: Array[u8, 1], start: int, end: int) -> int:
@@ -214,7 +203,7 @@ def parquet_chunks(
             spent += there
             packed = snappy_compress(body)
             head = _page_header(len(body), len(packed), end - row)
-            parquet_room(out, used, len(head) + len(packed))
+            parquet_grow(out, used, len(head) + len(packed))
             for part in range(len(head)):
                 out[used + part] = u8(head[part])
             used += len(head)
