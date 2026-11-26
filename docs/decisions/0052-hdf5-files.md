@@ -1,6 +1,6 @@
 # 0052. HDF5 files are read with h5py's names
 
-Status: Accepted (chief designer, 2026-11-13), amended 2026-11-13 and 2026-11-14
+Status: Accepted (chief designer, 2026-11-13), amended 2026-11-13, 2026-11-14 and 2026-11-21
 Date: 2026-11-12
 Roadmap: 3.14.6.1
 
@@ -147,3 +147,28 @@ program making `n` objects does work in proportion to `n²`, small next to the v
 real dataset. The alternative, keeping the emulated file in memory behind a handle, would avoid
 the replay but give the runtime state that outlives a call, which it has avoided so far: the
 NetCDF writer of decision 0047 keeps its state in the file.
+
+## Amendment, 2026-11-21: an open file is kept in memory
+
+Point 4 of the amendment of 2026-11-14 made a file its log of changes, replayed whole at every
+change. Measured before any program could write a file, the replay cost 2.8 s for 1,000 datasets,
+53 s for 4,000 and about 13 minutes, projected, for 10,000, where h5py takes under a second. The
+chief designer chose on 2026-11-21 (card 37, "In-memory File handle now") to keep the open file in
+memory instead. Point 4 is replaced by this:
+
+4. **An open file is kept in memory.** `h5by.File(path, "w")` makes the emulation of the
+   library's allocator, object headers, heaps and B-trees once, and the `File` holds it, one
+   pointer to the runtime's state, until the `File` is dropped. Each change updates that state
+   and writes to the disk only the blocks it touched: the new object's header, its values, the
+   structures of the group that gains it, the superblock, and zeros over any structure that
+   moved away. The file on disk is complete and closed after every change, with the same bytes
+   the log's replay gave, so nothing is lost when a program drops a `File` without closing it,
+   and dropping one only frees the memory.
+
+Points 1, 2, 3 and 5 are unchanged: the same calls give the same file, and mode `"a"` is still
+not offered.
+
+What it costs: each change costs work in proportion to what it touches, not to the file's size,
+and the memory of the file's metadata, a few hundred bytes per object, while the `File` is open.
+The runtime now keeps state that outlives a call, owned by the `File` value and freed when it is
+dropped, as a text `File` owns its open file (decision 0036, part 3).
