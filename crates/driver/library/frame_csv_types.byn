@@ -164,22 +164,24 @@ def _single(value: f32) -> str:
     return f"{sign}{digits[0:1]}.{digits[1:]}e+{exponent:02}"
 
 
-def csv_single_cells(column: Array[f32, 1]) -> list[str]:
+def csv_single_cells(column: Array[f32, 1], missing: str) -> list[str]:
     """The cells of a column of `f32` for `to_csv`: each number as `_single` writes it, and
-    an empty cell for NaN, as pandas writes one."""
+    `missing` for NaN, where pandas writes its `na_rep`."""
     cells: list[str] = []
     for value in column:
         if value != value:
-            cells.append("")
+            cells.append(missing.copy())
         else:
             cells.append(_single(value))
     return cells
 
 
-def csv_optional_single_cells(values: Array[f32, 1], bits: Array[u8, 1]) -> list[str]:
-    """`csv_single_cells` for a column that may hold `None`, whose cell is empty too."""
-    cells = csv_single_cells(values)
+def csv_optional_single_cells(
+    values: Array[f32, 1], bits: Array[u8, 1], missing: str
+) -> list[str]:
+    """`csv_single_cells` for a column that may hold `None`, whose cell is `missing` too."""
+    cells = csv_single_cells(values, missing)
     for row in range(len(cells)):
         if not csv_there(bits, row):
-            cells[row] = ""
+            cells[row] = missing.copy()
     return cells
