@@ -63,6 +63,7 @@ mod h5by;
 mod hoisting;
 mod inflate;
 mod integrate;
+mod integrate_validation;
 mod interpolation;
 mod kernels;
 mod linalg;

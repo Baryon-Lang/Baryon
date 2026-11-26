@@ -10,7 +10,7 @@ sidebar and search. It opens on [Learn Baryon](guide/learn.md), which shows a fi
 says where a newcomer, a Python programmer, and a NumPy, pandas or SciPy user should start.
 `cargo xtask learn-site` builds it, and the `learn.yml` workflow publishes it from `main`.
 
-How to code in Baryon is taught by six guide pages, read in order. CI runs every step of each
+How to code in Baryon is taught by seven guide pages, read in order. CI runs every step of each
 as written, so every program in them builds and prints what the page shows.
 
 1. The [beginner's guide](guide/README.md) installs `baryon`, runs a first program, lets the
@@ -26,6 +26,8 @@ as written, so every program in them builds and prints what the page shows.
    Polars.
 6. [Special functions](guide/special-functions.md) covers `scipy.special`'s functions in
    Baryon, what changes when a program moves from SciPy, and how fast they run.
+7. [Integration](guide/integration.md) covers `scipy.integrate` in Baryon: `quad`, the fixed
+   rules and `solve_ivp`, what changes when a program moves from SciPy, and how fast it runs.
 
 To work in an editor, [Coding Baryon in VS Code](guide/vscode.md) sets up VS Code and walks
 through a first program there.
