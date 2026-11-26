@@ -133,6 +133,36 @@ Two values do not come back as they were when the file is read again. An empty t
 column of `str | None` is written as an empty cell, which reads back as `None`. NaN in a
 column of `f64 | None` is written as an empty cell too, which reads back as `None`.
 
+## Keywords
+
+Both functions take the path first. One keyword of pandas is built so far, on both:
+
+| Keyword | Meaning | Default |
+| --- | --- | --- |
+| `sep=` | The character between the cells of a row | `","` |
+
+```python
+def main() -> Raises[None, OSError | ValueError]:
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.txt", sep=";")
+    trades.to_csv("trades.tsv", sep="\t")
+```
+
+- **`sep` is one character, written out.** It is a string literal of one ASCII character,
+  such as `";"`, `"|"` or `"\t"`, a tab. A variable, a text of several characters, a quote
+  and a backslash are compile errors. pandas also takes a text of several characters, which
+  it reads as a pattern.
+- **Quotes follow the separator.** A cell is quoted when it is read with the separator
+  inside it, and `to_csv` quotes a cell that holds the separator, a quote or a line end. So
+  a comma is plain text in a file split by `;`, and the file is the one pandas writes with
+  the same `sep`.
+- **The wrong separator is an error when the file is read.** A file split by `;` read with
+  no `sep` has one column, whose name is the whole first line, so the first field has no
+  column and `read_csv` raises `ValueError`.
+
+Any other keyword is a compile error that names it, never ignored. The next to come, in this
+order, are `na_values=` and `na_rep=`, `nrows=` and `skiprows=`, and `header=False` and
+`columns=` of `to_csv` (roadmap 3.14.4.2).
+
 ## Errors
 
 `DataFrame.read_csv` can fail in two ways, and the function that calls it handles both or
@@ -184,9 +214,10 @@ took 2.5 s, where pandas took 2.0 s.
 - **The schema chooses the columns.** pandas has `usecols=` for reading some of them. Here a
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
-- **No keywords yet.** `sep=`, `header=`, `names=`, `skiprows=`, `nrows=`, `na_values=` and
-  the rest are compile errors that name the keyword, never ignored. The same holds for
-  `to_csv`: `index=`, `sep=`, `columns=`, `na_rep=`, `float_format=` and the rest.
+- **One keyword so far.** [`sep=`](#keywords) is built. `header=`, `names=`, `skiprows=`,
+  `nrows=`, `na_values=` and the rest are compile errors that name the keyword, never
+  ignored. The same holds for `to_csv`: `index=`, `columns=`, `na_rep=`, `float_format=` and
+  the rest.
 - **`to_csv` writes no index column.** pandas writes its row index as a first column unless
   `index=False` is given. A frame has no index here, so the file is the one pandas writes
   with `index=False`.
@@ -194,5 +225,5 @@ took 2.5 s, where pandas took 2.0 s.
 
 ## Not built yet
 
-- Every keyword of `pandas.read_csv` and of `to_csv` (roadmap 3.14.4.2).
+- The keywords of `pandas.read_csv` and of `to_csv` other than `sep=` (roadmap 3.14.4.2).
 - Columns of complex numbers.
