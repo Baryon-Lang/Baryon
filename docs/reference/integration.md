@@ -5,7 +5,9 @@ The `integrate` module is SciPy's `scipy.integrate` written in Baryon
 [`quad`](#quad-integrating-a-function), which integrates a function over a finite or infinite
 interval (roadmap 3.19.4 and 3.19.5), [`solve_ivp`](#solve_ivp-solving-an-ode), which solves an
 ordinary differential equation from its starting value (roadmap 3.19.7), and the fixed rules,
-which integrate samples already taken at known points (roadmap 3.19.3):
+which integrate samples already taken at known points (roadmap 3.19.3).
+[Integration](../guide/integration.md) in the guide works through them in physics programs, and
+times them against SciPy:
 
 | Function | Result | SciPy |
 | --- | --- | --- |
@@ -282,6 +284,15 @@ bits; over a run the results agree with SciPy's to about ten significant digits,
 singularity. DOP853's error estimate is a sum of thirteen terms that nearly cancel, so its
 rounding moves a step's size more: its results agree to about eight digits. Each step keeps
 one state; the result stores `len(t)` states.
+
+## Validation
+
+Beyond matching SciPy, `crates/driver/tests/build/integrate_validation.rs` checks the answers
+against values computed by mpmath at 40 digits (roadmap 3.19.10). `quad` meets them on seven
+integrals chosen to be hard: singular at an end, oscillating, and over infinite intervals. Each
+value is within its own error estimate and within the default `epsrel`, 1.49e-8. `solve_ivp`
+on the van der Pol oscillator with μ = 2, from (1, 0), is within 1e-5 of the true state at
+t = 1, 5 and 10 with RK45 at `rtol=1e-6`, and within 1e-9 with DOP853 at `rtol=1e-10`.
 
 ## Differences from SciPy
 

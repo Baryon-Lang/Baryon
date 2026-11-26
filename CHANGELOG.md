@@ -72,6 +72,10 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   eighth-order method for tight tolerances, with SciPy's steps too. `dense_output=True` keeps
   each step's interpolant, so `result.sol(t)` gives the state at any time. Events come later
   ([`solve_ivp`](docs/reference/integration.md#solve_ivp-solving-an-ode)).
+- A guide page, [Integration](docs/guide/integration.md), works through `quad`, the fixed rules
+  and `solve_ivp` in physics programs, lists what changes from SciPy and times them against it:
+  100 runs of `solve_ivp` take 0.019 s where SciPy takes 4.7 s, and 100,000 `quad` calls 0.15 s
+  where SciPy takes 2.8 s. A test checks `quad` and `solve_ivp` against mpmath's true values.
 
 - A long list literal of numbers or `bool`s builds in a fraction of the time with `--release`:
   its elements are copied from one table, not stored one by one. A literal of 100,000 floats
