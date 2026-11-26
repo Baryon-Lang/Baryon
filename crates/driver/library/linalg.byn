@@ -5,9 +5,9 @@ Every function fixes its order of operations, so a result has the same bits on e
 The functions live in internal files of the standard library, one for each family: solving and
 factoring in `linalg_factor`, symmetric eigenvalues in `linalg_symmetric`, the singular value
 decomposition in `linalg_svd` and general eigenvalues in `linalg_eig`, whose QR iteration is in
-`linalg_schur`, with `LinAlgError` and what they share in `linalg_common`. This file re-exports each public name with
-`from linalg_factor import solve as solve` (decision 0062), so a program imports `linalg` alone
-and never sees the files behind it.
+`linalg_schur`, with `LinAlgError` and what they share in `linalg_common`. This file re-exports each
+public name with `from linalg_factor import solve as solve` (decision 0062), so a program imports
+`linalg` alone and never sees the files behind it.
 """
 
 from linalg_common import LinAlgError as LinAlgError

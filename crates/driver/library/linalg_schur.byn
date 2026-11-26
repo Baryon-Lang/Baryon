@@ -138,7 +138,8 @@ def schur[T: Float](
                 if m == l:
                     break
                 left = fabs(h[m, m - 1]) * (fabs(q) + fabs(r))
-                right = machine_epsilon * (fabs(p) * (fabs(h[m - 1, m - 1]) + fabs(z) + fabs(h[m + 1, m + 1])))
+                neighbours = fabs(h[m - 1, m - 1]) + fabs(z) + fabs(h[m + 1, m + 1])
+                right = machine_epsilon * (fabs(p) * neighbours)
                 if left < right:
                     break
                 m -= 1
@@ -205,7 +206,9 @@ def schur[T: Float](
             v[i, j] = total
 
 
-def _back_substitute[T: Float](h: InOut[Array[T, 2]], real: Array[T, 1], imaginary: Array[T, 1], norm: T):
+def _back_substitute[T: Float](
+    h: InOut[Array[T, 2]], real: Array[T, 1], imaginary: Array[T, 1], norm: T
+):
     """Overwrites the quasi-triangular Schur form `h` with the eigenvectors of that form, by
     back-substitution: the second half of EISPACK's `hqr2`. `norm` is the sum of the magnitudes of
     the Hessenberg matrix's entries, which stands in for a zero divisor.
@@ -281,13 +284,18 @@ def _back_substitute[T: Float](h: InOut[Array[T, 2]], real: Array[T, 1], imagina
                     vr = (real[i] - p) * (real[i] - p) + imaginary[i] * imaginary[i] - q * q
                     vi = (real[i] - p) * 2.0 * q
                     if vr == 0.0 and vi == 0.0:
-                        vr = machine_epsilon * norm * (fabs(w) + fabs(q) + fabs(x) + fabs(y) + fabs(z))
-                    h[i, n - 1], h[i, n] = _divide(x * r - z * ra + q * sa, x * s - z * sa - q * ra, vr, vi)
+                        sizes = fabs(w) + fabs(q) + fabs(x) + fabs(y) + fabs(z)
+                        vr = machine_epsilon * norm * sizes
+                    top_real = x * r - z * ra + q * sa
+                    top_imaginary = x * s - z * sa - q * ra
+                    h[i, n - 1], h[i, n] = _divide(top_real, top_imaginary, vr, vi)
                     if fabs(x) > fabs(z) + fabs(q):
                         h[i + 1, n - 1] = (-ra - w * h[i, n - 1] + q * h[i, n]) / x
                         h[i + 1, n] = (-sa - w * h[i, n] - q * h[i, n - 1]) / x
                     else:
-                        h[i + 1, n - 1], h[i + 1, n] = _divide(-r - y * h[i, n - 1], -s - y * h[i, n], z, q)
+                        top_real = -r - y * h[i, n - 1]
+                        top_imaginary = -s - y * h[i, n]
+                        h[i + 1, n - 1], h[i + 1, n] = _divide(top_real, top_imaginary, z, q)
                 t = max(fabs(h[i, n - 1]), fabs(h[i, n]))
                 if (machine_epsilon * t) * t > 1.0:
                     for j in range(i, n + 1):
@@ -308,10 +316,14 @@ def _divide[T: Float](a_real: T, a_imaginary: T, b_real: T, b_imaginary: T) -> t
             return a_real / real_size, a_imaginary / real_size
         ratio = b_imaginary / b_real
         denominator = b_real + b_imaginary * ratio
-        return (a_real + a_imaginary * ratio) / denominator, (a_imaginary - a_real * ratio) / denominator
+        real = (a_real + a_imaginary * ratio) / denominator
+        imaginary = (a_imaginary - a_real * ratio) / denominator
+        return real, imaginary
     if imaginary_size >= real_size:
         ratio = b_real / b_imaginary
         denominator = b_real * ratio + b_imaginary
-        return (a_real * ratio + a_imaginary) / denominator, (a_imaginary * ratio - a_real) / denominator
+        real = (a_real * ratio + a_imaginary) / denominator
+        imaginary = (a_imaginary * ratio - a_real) / denominator
+        return real, imaginary
     not_a_number = real_size - real_size + imaginary_size - imaginary_size
     return not_a_number, not_a_number
