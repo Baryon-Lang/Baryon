@@ -135,16 +135,18 @@ column of `f64 | None` is written as an empty cell too, which reads back as `Non
 
 ## Keywords
 
-Both functions take the path first. One keyword of pandas is built so far, on both:
+Both functions take the path first. Three keywords of pandas are built so far:
 
-| Keyword | Meaning | Default |
-| --- | --- | --- |
-| `sep=` | The character between the cells of a row | `","` |
+| Keyword | Of | Meaning | Default |
+| --- | --- | --- | --- |
+| `sep=` | both | The character between the cells of a row | `","` |
+| `na_values=` | `read_csv` | More cells to read as missing: a `str` or a `list[str]` | none |
+| `na_rep=` | `to_csv` | The text written for a missing value: a `str` | `""` |
 
 ```python
 def main() -> Raises[None, OSError | ValueError]:
-    trades: DataFrame[Trade] = DataFrame.read_csv("trades.txt", sep=";")
-    trades.to_csv("trades.tsv", sep="\t")
+    trades: DataFrame[Trade] = DataFrame.read_csv("trades.txt", sep=";", na_values=["NA", "-999"])
+    trades.to_csv("trades.tsv", sep="\t", na_rep="NA")
 ```
 
 - **`sep` is one character, written out.** It is a string literal of one ASCII character,
@@ -158,10 +160,25 @@ def main() -> Raises[None, OSError | ValueError]:
 - **The wrong separator is an error when the file is read.** A file split by `;` read with
   no `sep` has one column, whose name is the whole first line, so the first field has no
   column and `read_csv` raises `ValueError`.
+- **`na_values` adds spellings of a missing cell.** Only an empty cell is missing without
+  it. A cell that is exactly one of the texts given, in quotes or not, is read as an empty
+  cell is read in its column: `None` where the field has `| None`, NaN in a column of
+  floats, empty text in a column of `str`, and a `ValueError` in a column of whole numbers
+  or `bool`s with no `None`. The value is any `str` or `list[str]`, so a program can work
+  the list out.
+- **The text is compared, not the number yet.** `na_values=["-999"]` leaves a cell written
+  `-999.0` or ` -999` as it is, where pandas reads a column of numbers by value and takes
+  both as missing. Until numbers are matched by value, give each spelling the file uses:
+  `na_values=["-999", "-999.0"]`. pandas also takes a dict that names spellings for each
+  column, which is a compile error here.
+- **`na_rep` is written for every missing value**: a `None` of any column and a NaN of a
+  column of floats, as in pandas. It is quoted as any text is, when it holds the separator,
+  a quote or a line end. An empty text in a column of `str | None` is not missing and stays
+  an empty cell.
 
 Any other keyword is a compile error that names it, never ignored. The next to come, in this
-order, are `na_values=` and `na_rep=`, `nrows=` and `skiprows=`, and `header=False` and
-`columns=` of `to_csv` (roadmap 3.14.4.2).
+order, are `nrows=` and `skiprows=`, then `header=False` and `columns=` of `to_csv` (roadmap
+3.14.4.2).
 
 ## Errors
 
@@ -204,7 +221,8 @@ took 2.5 s, where pandas took 2.0 s.
   that does not fit is an error when it is read, not a column of another type later.
 - **Only an empty cell is missing.** pandas also reads `NA`, `NaN`, `null`, `None` and a
   dozen spellings more as missing. Here they are text in a column of `str`, `nan` and `NaN`
-  are the number in a column of `f64`, and anything else is an error.
+  are the number in a column of `f64`, and anything else is an error, unless
+  [`na_values=`](#keywords) names them.
 - **A column of `str` keeps an empty cell as empty text.** pandas gives it NaN. Declare the
   field `str | None` to get `None`, as pandas's missing value is read here.
 - **An `i64` cell is a whole number.** pandas reads `1.0` into an `int64` column; here it is
@@ -214,10 +232,10 @@ took 2.5 s, where pandas took 2.0 s.
 - **The schema chooses the columns.** pandas has `usecols=` for reading some of them. Here a
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
-- **One keyword so far.** [`sep=`](#keywords) is built. `header=`, `names=`, `skiprows=`,
-  `nrows=`, `na_values=` and the rest are compile errors that name the keyword, never
-  ignored. The same holds for `to_csv`: `index=`, `columns=`, `na_rep=`, `float_format=` and
-  the rest.
+- **Three keywords so far.** [`sep=`, `na_values=` and `na_rep=`](#keywords) are built.
+  `header=`, `names=`, `skiprows=`, `nrows=` and the rest are compile errors that name the
+  keyword, never ignored. The same holds for `to_csv`: `index=`, `columns=`,
+  `float_format=` and the rest.
 - **`to_csv` writes no index column.** pandas writes its row index as a first column unless
   `index=False` is given. A frame has no index here, so the file is the one pandas writes
   with `index=False`.
@@ -225,5 +243,6 @@ took 2.5 s, where pandas took 2.0 s.
 
 ## Not built yet
 
-- The keywords of `pandas.read_csv` and of `to_csv` other than `sep=` (roadmap 3.14.4.2).
+- The keywords of `pandas.read_csv` and of `to_csv` other than `sep=`, `na_values=` and
+  `na_rep=` (roadmap 3.14.4.2).
 - Columns of complex numbers.

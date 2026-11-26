@@ -28,7 +28,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   than Python's; an optimal parser to close the gap is row 3.27.12
   ([`lzma.compress`](docs/reference/lzma.md#lzmacompress)).
 - `DataFrame.read_csv` and `to_csv` take `sep=`, one character written out, such as `";"` or
-  `"\t"` ([CSV files](docs/reference/csv-files.md#keywords)).
+  `"\t"`. `read_csv` takes `na_values=`, more cells to read as missing, and `to_csv` takes
+  `na_rep=`, the text written for a missing value
+  ([CSV files](docs/reference/csv-files.md#keywords)).
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

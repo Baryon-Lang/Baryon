@@ -1,0 +1,119 @@
+"""CSV files written from the columns of a `DataFrame`, in Baryon (roadmap 3.14.4,
+decision 0045). `<std>/frame_csv.byn` reads them.
+
+The compiler calls these functions for `df.to_csv(path)`; a program cannot import this
+file. It asks for each column's cells as text, by the column's type, and hands them to
+`csv_write` with the names:
+
+- `csv_float_cells`, `csv_plain_cells` and `csv_text_cells` give the cells of a column of
+  `f64`, of whole numbers or `bool`s, and of `str`, and the `csv_optional_` function of each
+  gives them for a column that may hold `None`.
+- `csv_missing` gives the cell of a missing value, NaN or `None`: empty, or what the program
+  wrote as `na_rep=` (roadmap 3.14.4.2), quoted where it must be.
+- `csv_write` writes the header and the rows, the bytes
+  `pandas.DataFrame.to_csv(path, index=False)` writes.
+
+Cost of writing: one text for each cell, all held until the file is written.
+"""
+
+from frame_csv import csv_there
+from math import isnan
+
+
+def _quoted(text: str, sep: str) -> str:
+    """`text` as a cell of a CSV file whose fields `sep` separates, as pandas writes it: in
+    double quotes, each double quote inside written twice, when it holds `sep`, a double
+    quote or a line end, and as it is otherwise."""
+    if sep in text or "\"" in text or "\n" in text or "\r" in text:
+        return "\"" + text.replace("\"", "\"\"") + "\""
+    return text.copy()
+
+
+def csv_missing(na_rep: str, sep: str) -> str:
+    """The cell of a missing value in a file whose fields `sep` separates: `na_rep`, quoted
+    as any text is, which is how pandas writes it."""
+    return _quoted(na_rep, sep)
+
+
+def csv_float_cells(column: Array[f64, 1], missing: str) -> list[str]:
+    """The cells of a column of `f64` for `to_csv`: each number as `print` writes it, which
+    is the shortest text that reads back as the same number, and `missing` for NaN, where
+    pandas writes its `na_rep`."""
+    cells: list[str] = []
+    for value in column:
+        if isnan(value):
+            cells.append(missing.copy())
+        else:
+            cells.append(f"{value}")
+    return cells
+
+
+def csv_optional_float_cells(
+    values: Array[f64, 1], bits: Array[u8, 1], missing: str
+) -> list[str]:
+    """`csv_float_cells` for a column that may hold `None`, whose cell is `missing` too."""
+    cells = csv_float_cells(values, missing)
+    for row in range(len(cells)):
+        if not csv_there(bits, row):
+            cells[row] = missing.copy()
+    return cells
+
+
+def csv_plain_cells[T: Copy](column: Array[T, 1]) -> list[str]:
+    """The cells of a column of integers or of `bool` for `to_csv`: each value as `print`
+    writes it, `True` and `False` for a `bool`."""
+    return [f"{value}" for value in column]
+
+
+def csv_optional_plain_cells[T: Copy](
+    values: Array[T, 1], bits: Array[u8, 1], missing: str
+) -> list[str]:
+    """`csv_plain_cells` for a column that may hold `None`, whose cell is `missing`."""
+    cells: list[str] = []
+    for row in range(len(values)):
+        if csv_there(bits, row):
+            cells.append(f"{values[row]}")
+        else:
+            cells.append(missing.copy())
+    return cells
+
+
+def csv_text_cells(column: Array[str, 1], sep: str) -> list[str]:
+    """The cells of a column of `str` for `to_csv` with fields separated by `sep`, each
+    quoted where it must be."""
+    return [_quoted(text, sep) for text in column]
+
+
+def csv_optional_text_cells(
+    values: Array[str, 1], bits: Array[u8, 1], missing: str, sep: str
+) -> list[str]:
+    """`csv_text_cells` for a column that may hold `None`, whose cell is `missing`."""
+    cells = csv_text_cells(values, sep)
+    for row in range(len(cells)):
+        if not csv_there(bits, row):
+            cells[row] = missing.copy()
+    return cells
+
+
+def csv_write(
+    path: str, names: list[str], columns: list[list[str]], rows: int, sep: str
+) -> Raises[None, OSError]:
+    """Writes the CSV file `path`: the header `names`, then `rows` lines of the cells
+    `columns` holds, a list for each column, split by `sep` and each line ended by `"\\n"`,
+    as `pandas.DataFrame.to_csv(path, index=False, sep=sep)` writes them. A row of one
+    empty cell is written `""`, as pandas writes it, since an empty line would be skipped
+    when read.
+
+    Raises `OSError` when the file cannot be made or written.
+    """
+    with open(path, "w") as out:
+        out.write(sep.join([_quoted(name, sep) for name in names]) + "\n")
+        for row in range(rows):
+            line = ""
+            for position in range(len(columns)):
+                if position > 0:
+                    line += sep
+                line += columns[position][row]
+            if line == "":
+                line = "\"\""
+            out.write(line + "\n")
