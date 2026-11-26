@@ -44,7 +44,7 @@ pub(crate) struct Builder<'db> {
     /// `break` and `continue` it cannot, and the next statement starts a new block.
     dead: bool,
     /// The local of each parameter and variable, by the `Name` node of its first binding.
-    variables: BTreeMap<NodeId, Local>,
+    pub(crate) variables: BTreeMap<NodeId, Local>,
     /// For each statement being lowered, outermost first, the temporaries it made that own
     /// memory and were not moved, which it drops when it ends.
     temporaries: Vec<Vec<Local>>,
@@ -73,6 +73,8 @@ pub(crate) struct Builder<'db> {
     /// its loop variables borrows, by binding, with the element's type: the element itself,
     /// which a read of the variable reads in place (the `loops` module). Empty elsewhere.
     pub(crate) aliases: BTreeMap<NodeId, (Place, Type<'db>)>,
+    /// Inside `__init__`, its `self` and the local of each field (the `initializers` module).
+    pub(crate) initializer: Option<crate::initializers::Initializer>,
 }
 
 /// One `try` statement whose body is being lowered.
@@ -130,12 +132,16 @@ impl<'db> Builder<'db> {
         let returns = erase(db, returns);
         let mut body = Body::new(returns, tree.span(function));
         let mut variables = BTreeMap::new();
+        let text = file.source(db).text();
+        let initializer =
+            crate::initializers::is_initializer(db, tree, text, (function, class), signature);
         let parameters = tree
             .child(function, Role::Parameters)
             .into_iter()
             .flat_map(|parameters| tree.children(parameters))
             .filter(|&parameter| tree.kind(parameter) == SyntaxKind::Parameter)
-            .filter_map(|parameter| tree.child(parameter, Role::Name));
+            .filter_map(|parameter| tree.child(parameter, Role::Name))
+            .skip(usize::from(initializer));
         for (name, parameter) in parameters.zip(&signature.parameters) {
             let kind = LocalKind::Parameter {
                 name: parameter.name.clone(),
@@ -144,7 +150,6 @@ impl<'db> Builder<'db> {
             let local = body.push_local(erase(db, parameter.ty), kind, tree.span(name));
             variables.insert(name, local);
         }
-        let text = file.source(db).text();
         for (key, &ty) in &typed.locals {
             if let std::collections::btree_map::Entry::Vacant(entry) = variables.entry(key.0) {
                 let name = tree.text(key.0, text).to_owned();
@@ -157,7 +162,7 @@ impl<'db> Builder<'db> {
             kind: TerminatorKind::Unreachable,
             span,
         });
-        Self {
+        let mut builder = Self {
             db,
             package,
             file,
@@ -181,7 +186,16 @@ impl<'db> Builder<'db> {
             accumulated: Vec::new(),
             lanes: Vec::new(),
             aliases: BTreeMap::new(),
+            initializer: None,
+        };
+        if let (true, Some(class), Some(receiver)) = (
+            initializer,
+            class,
+            crate::initializers::receiver(tree, function),
+        ) {
+            builder.start_initializer(class, receiver);
         }
+        builder
     }
 
     /// A builder for the body that evaluates a default of a parameter of `item`, the function
@@ -263,6 +277,7 @@ impl<'db> Builder<'db> {
             accumulated: Vec::new(),
             lanes: Vec::new(),
             aliases: BTreeMap::new(),
+            initializer: None,
         }
     }
 

@@ -3,11 +3,12 @@
 //! Each `.byn` file under `crates/driver/library/` is listed here once, by its path under
 //! [`database::LIBRARY_ROOT`], and its text is included at build time, so every package has the
 //! whole library without reading the file system. A new library file is added to [`LIBRARY`],
-//! in alphabetical order, with the array's length raised by one.
+//! in alphabetical order. It is a slice, so its length is not written by hand: a typed length
+//! made every pull request that added a file conflict on the same line.
 
 /// The standard library's source files (decision 0038): each file's path under
 /// [`database::LIBRARY_ROOT`] and its text, compiled into the driver so every package has them.
-pub(crate) const LIBRARY: [(&str, &str); 117] = [
+pub(crate) const LIBRARY: &[(&str, &str)] = &[
     ("<std>/arrays.byn", include_str!("../library/arrays.byn")),
     ("<std>/artist.byn", include_str!("../library/artist.byn")),
     ("<std>/axis.byn", include_str!("../library/axis.byn")),

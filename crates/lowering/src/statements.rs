@@ -20,7 +20,7 @@ impl<'db> Builder<'db> {
             return;
         }
         let function = self.function;
-        if matches!(self.returns.kind(self.db), TypeKind::None) {
+        if matches!(self.returns.kind(self.db), TypeKind::None) || self.initializer.is_some() {
             self.return_none(function);
             self.drop_all(function);
             self.terminate(TerminatorKind::Return, function);
@@ -153,8 +153,11 @@ impl<'db> Builder<'db> {
         }
     }
 
-    /// `_0 = None`, for a `return` without a value.
+    /// `_0 = None`, for a `return` without a value; in `__init__`, the struct it built.
     pub(crate) fn return_none(&mut self, node: NodeId) {
+        if self.build_initialized(node) {
+            return;
+        }
         let nothing = Operand::Constant(Constant {
             ty: self.returns,
             value: ConstantValue::None,

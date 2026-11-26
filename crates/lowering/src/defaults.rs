@@ -38,8 +38,19 @@ pub(crate) fn lower<'db>(
     if !db.declaration(callee).diagnostics.is_empty() || !typed.diagnostics.is_empty() {
         return Err(Vec::new());
     }
+    // `__init__`'s signature leaves out `self`, which `position` counts.
+    let text = item.file(db).source(db).text();
+    let skipped = usize::from(crate::initializers::is_initializer(
+        db,
+        tree,
+        text,
+        (function, class),
+        signature,
+    ));
     let (Some(declared), Some(default)) = (
-        signature.parameters.get(position),
+        position
+            .checked_sub(skipped)
+            .and_then(|position| signature.parameters.get(position)),
         tree.child(parameter, Role::Default),
     ) else {
         return Err(Vec::new());

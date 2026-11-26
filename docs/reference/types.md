@@ -540,6 +540,60 @@ class Particle(Struct):
 Python programmers will recognize this as a `@dataclass`. It is written as a class with a base
 rather than a decorator so that the base, not a convention, is what changes the semantics.
 
+### `__init__`
+
+A struct that defines `__init__` is built by calling the class with `__init__`'s arguments,
+as in Python ([decision 0068](../decisions/0068-struct-init.md)). It is how a type computes its
+fields from other inputs and keeps its own name, as SciPy's `CubicSpline(x, y)` does.
+
+```python
+class Line(Struct):
+    slope: f64
+    offset: f64
+    side: str
+
+    def __init__(self, x0: f64, y0: f64, x1: f64, y1: f64):
+        self.slope = (y1 - y0) / (x1 - x0)
+        self.offset = y0 - self.slope * x0
+        if x0 < 0.0:
+            self.side = "left"
+            return
+        self.side = "right"
+
+
+line = Line(0.0, 1.0, 2.0, 5.0)
+print(line.slope, line.offset, line.side)   # 2.0 1.0 right
+```
+
+- `__init__` replaces the field constructor: `Line(0.0, 1.0, 2.0, 5.0)` calls it, and
+  `Line(2.0, 1.0, "right")` is no longer a way to build a `Line`. A struct without `__init__`
+  is built from its fields, as above.
+- It sets every field on every path that reaches its end or a `return`. A path that misses one
+  is an error that names the field:
+
+  ```text
+  error: `__init__` can end without setting `side`
+  ```
+
+- Inside it, `self` is the struct being built. `self.slope = v` sets a field, and `self.slope`
+  reads one already set on every path to that point. A field changes in place once set:
+  `self.points[0] = x0` and `self.count += 1` work. Setting a field twice drops its first
+  value.
+- `self` is used only through its fields: `self.method()`, `f(self)`, `print(self)` and
+  `return self` are errors, because the struct is not whole until `__init__` ends. Compute what
+  a method would give from the arguments first. Moving a field back out, `kept = self.points`,
+  is an error too; keep a copy with `.copy()`.
+- It returns nothing. `return` takes no value, and a return type other than `None` is an
+  error. A bad argument panics, as an `assert` does.
+- Its parameters are passed as any function's are: a `str`, list or array argument is
+  borrowed, so keeping it in a field needs `name.copy()` or the parameter written
+  `Owned[str]`.
+- Only the class calls it: `line.__init__(...)` is an error.
+- A `Copy` struct can have one, and so can a struct with `__del__`, which runs once, for the
+  struct `__init__` built.
+- Not built yet: `__init__` on a generic struct, and setting a field of `self` inside a
+  `prange` loop.
+
 ### Field layout
 
 A struct stores its fields in the order they are declared, each at the next offset its alignment

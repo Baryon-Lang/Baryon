@@ -31,15 +31,16 @@ each pull request added is in this file's history.
 
 ## The example programs
 
-All eight [example programs](../examples/README.md) build and run:
+All nine [example programs](../examples/README.md) build and run:
 [`heat_equation.byn`](../examples/heat_equation.byn),
 [`lennard_jones.byn`](../examples/lennard_jones.byn),
 [`lorenz_rk4.byn`](../examples/lorenz_rk4.byn),
 [`conjugate_gradient.byn`](../examples/conjugate_gradient.byn),
 [`monte_carlo_pi.byn`](../examples/monte_carlo_pi.byn),
 [`rod_boundaries.byn`](../examples/rod_boundaries.byn),
-[`energy_audit.byn`](../examples/energy_audit.byn) and
-[`flight_log.byn`](../examples/flight_log.byn). Each is built and run by a test that
+[`energy_audit.byn`](../examples/energy_audit.byn),
+[`flight_log.byn`](../examples/flight_log.byn) and
+[`spring_fit.byn`](../examples/spring_fit.byn). Each is built and run by a test that
 checks what it prints.
 
 | Example | Still needs |
@@ -52,6 +53,7 @@ checks what it prints.
 | [`rod_boundaries.byn`](../examples/rod_boundaries.byn) | Nothing: it builds and runs |
 | [`energy_audit.byn`](../examples/energy_audit.byn) | Nothing: it builds and runs |
 | [`flight_log.byn`](../examples/flight_log.byn) | Nothing: it builds and runs |
+| [`spring_fit.byn`](../examples/spring_fit.byn) | Nothing: it builds and runs |
 
 ## Syntax
 
@@ -68,6 +70,7 @@ checks what it prints.
 | `match` on numbers, `bool`, enums, `T \| None` and tuples of these, with `\|` patterns and guards | `match` on `str`; `\|` patterns that capture names |
 | `with unsafe:`; [context managers](syntax.md#with-and-context-managers), a class with `__enter__` and `__exit__`, whose `__exit__` runs on every way out of the block; several in one `with` | A file and a context manager in one `with` |
 | [`__del__`](values-and-references.md#code-that-runs-when-a-value-is-dropped-__del__), run once when a value of the class is dropped, before its fields; an error from it panics | `__del__` on a generic class |
+| [`__init__`](types.md#__init__) on a struct, run when the class is called, setting every field through `self` on every path, a `Copy` struct and a struct with `__del__` included (decision 0068) | `__init__` on a generic struct; setting a field of `self` inside a `prange` loop |
 | Number, string, `True`, `False` and `None` literals, with Python's backslash escapes such as `\n`, `\t` and `\u00e9`, and raw strings `r"..."`; f-strings with format specifications, and any value `print` writes, such as a list, a struct or `None`, written as `print` writes it when it has no specification; complex literals such as `2j` | A format specification on a value other than a number, `bool` or `str`, such as `{xs:>10}` for a list; `\N{name}` escapes; bytes `b"..."`; a literal written in parts, `"a" "b"` |
 | `+ - * / // % **`, unary `-` and `+`, bitwise operators, chained comparisons, `and`, `or`, `not`, `is None`, conditional expressions; comparisons, `in` and `not in` between two `str`s | `in` and `not in` on arrays and tuples |
 | `min`, `max`, `len` of arrays, lists and `str`; `sum`, `min` and `max` of a list or rank-1 array of numbers, a list's float `sum` as CPython 3.12 adds it; `int`, `float` and the number conversions such as `f64(n)`; the [`math`](arrays.md#math-functions) functions for real numbers, from `sqrt` and `atan2` to `erf`, `fma`, `floor` and `isnan`, and the constants `pi`, `e`, `tau`, `inf` and `nan`; [`math.fsum`](arrays.md#exact-sums) of a list or rank-1 array of `f64`s; [`math.f64x2`](arrays.md#double-double-floats) double-double floats and their methods; [`random.Philox`](arrays.md#random-numbers) and `uniform()`; `round(x)` and `round(x, digits)` as Python rounds; `sorted` of a list of numbers or `str`s, with `reverse=`; `abs` of integers, floats and complex numbers | `float(text)` and the other conversions of a `str` to a number; `sorted` with `key=` or of other elements, such as tuples; `min` and `max` of a list of `str`s; `sum` of a list of complex numbers and of an array with a start; the integer functions of `math`, such as `gcd`, and `math.prod`; `fsum` of other element types and iterables; the rest of `random` |

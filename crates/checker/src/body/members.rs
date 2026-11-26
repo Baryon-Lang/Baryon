@@ -45,6 +45,9 @@ impl<'db> Body<'db> {
         if self.lowerer.definition(attribute).is_some() {
             return self.name(attribute, expected);
         }
+        if let Some(ty) = self.initializer_read(node) {
+            return ty;
+        }
         if let Some(&Definition::Item(file, class)) = self.lowerer.definition(value) {
             return self.class_attribute(node, file, class, attribute);
         }

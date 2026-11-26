@@ -167,11 +167,15 @@ impl<'db> Lowerer<'db> {
             }
             None => Type::new(self.db, TypeKind::None),
         };
-        Signature {
+        let signature = Signature {
             type_parameters,
             parameters,
             returns,
+        };
+        if crate::initializers::is_initializer(self.db, self.file, entry) {
+            return self.initializer_signature(statement, signature);
         }
+        signature
     }
 
     /// A struct or error type: its fields, in order, its methods, and the traits it names.

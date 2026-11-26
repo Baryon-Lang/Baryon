@@ -15,7 +15,7 @@ compiled each API shape the port needs. It found four limits of the language tod
 - **No `str` in a union** ([decision 0032](0032-sum-types-are-unions-of-structs.md)), so
   `bc_type` cannot take a string or a tuple.
 - **No rank-generic functions**, so one type cannot take both a 2-D and a 3-D grid.
-- **No constructor that computes.** Record 0068, proposed, adds one, `__init__`, so
+- **No constructor that computes.** [Record 0068](0068-struct-init.md) adds one, `__init__`, so
   `CubicSpline(x, y)` keeps SciPy's name.
 
 The chief designer accepted the seven points of the study on 2026-11-19 (card 47, "Accept all
