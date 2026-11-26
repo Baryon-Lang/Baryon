@@ -127,7 +127,8 @@ impl<'db> Function<'_, '_, 'db> {
         for dimension in 0..rank {
             for (part, into) in [(1, &mut lengths), (2, &mut strides)] {
                 let at = self.emit(&format!(
-                    "getelementptr inbounds {header}, ptr {address}, i32 0, i32 {part}, i32 {dimension}"
+                    "getelementptr inbounds {header}, ptr {address}, \
+                     i32 0, i32 {part}, i32 {dimension}"
                 ));
                 into.push(self.emit(&format!("load i64, ptr {at}")));
             }
