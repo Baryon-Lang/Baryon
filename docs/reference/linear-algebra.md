@@ -401,6 +401,47 @@ prints
 0.0
 ```
 
-Differences from NumPy: no `axes` or `norm` argument. `fftn` and `ifftn`,
-for any number of dimensions, wait for functions that take an array of any rank (idea I.51).
+Differences from NumPy: no `axes` or `norm` argument. For three or four dimensions, use
+[`fftn` and `ifftn`](#fftfftn-and-fftifftn).
+
+## `fft.fftn` and `fft.ifftn`
+
+```python
+def fftn(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def fftn(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
+def fftn(x: Array[complex128, 3]) -> Array[complex128, 3]: ...
+def fftn(x: Array[complex128, 4]) -> Array[complex128, 4]: ...
+def ifftn(x: Array[complex128, 1]) -> Array[complex128, 1]: ...
+def ifftn(x: Array[complex128, 2]) -> Array[complex128, 2]: ...
+def ifftn(x: Array[complex128, 3]) -> Array[complex128, 3]: ...
+def ifftn(x: Array[complex128, 4]) -> Array[complex128, 4]: ...
+```
+
+The transform over every axis of an array, such as a field on a three-dimensional grid, as
+NumPy's `fftn` and `ifftn`. There is one overload for each rank from 1 to 4
+([decision 0067](../decisions/0067-library-overloading.md)), and the call picks the one that
+fits: for a vector `fftn` is `fft`, and for a matrix it is `fft2`. The transform runs along the
+last axis first, then each axis before it, as NumPy's does, so `fftn(x)[k]` is the sum of every
+`x[j]` times `exp(-2πi j·k / n)` along each axis. `ifftn` inverts it, divided by the number of
+entries, so `ifftn(fftn(x))` is `x` up to rounding.
+
+Each side can have any length, with the costs `fft` gives a side. N entries cost about
+N log N operations and one copy of `x`; each line along an axis is copied into a contiguous
+vector before it is transformed, so a transform along the first axis reads memory in order too.
+
+Differences from NumPy: ranks 1 to 4 only, where NumPy takes any rank, and no `s`, `axes` or
+`norm` argument. An empty array panics, where NumPy raises `ValueError`.
+
+## Files under `fft`
+
+`fft` is the public file `<std>/fft.byn`, which defines the one- and two-dimensional transforms
+and re-exports `fftn` and `ifftn` from an internal file, as `linalg` does
+([decision 0062](../decisions/0062-standard-library-reexports.md)). A program cannot import the
+internal files. A panic inside a transform names the file it is in.
+
+| File | Holds |
+| --- | --- |
+| `fft` | `fft`, `ifft`, `rfft`, `irfft`, `fftfreq`, `rfftfreq`, `fft2`, `ifft2`, `rfft2` and `irfft2` |
+| `fft_axes` | `fftn` and `ifftn`, one overload for each rank from 1 to 4 |
+| `fft_engine` | The transform of one vector, radix-2, mixed-radix or Bluestein's by its length, and of each row and column of a matrix, which the other two files call |
 

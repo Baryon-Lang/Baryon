@@ -184,6 +184,105 @@ def main():
     .unwrap();
 }
 
+/// `fftn` of a 2 × 3 × 4 array and `ifftn` of a 2 × 2 × 3 × 2 array (roadmap 3.10.6), the
+/// rank-3 and rank-4 overloads (decision 0067), one entry a line in row-major order. `NumPy`
+/// prints the same lines for
+///
+/// ```python
+/// g = numpy.random.Generator(numpy.random.Philox(key=12))
+/// r = g.random(48).reshape(24, 2) - 0.5
+/// x = (r[:, 0] + 1j * r[:, 1]).reshape(2, 3, 4)
+/// r = g.random(48).reshape(24, 2) - 0.5
+/// w = (r[:, 0] + 1j * r[:, 1]).reshape(2, 2, 3, 2)
+/// numpy.fft.fftn(x), numpy.fft.ifftn(w)
+/// ```
+#[test]
+fn transforms_over_every_axis_match_numpy() {
+    let program = r#"
+from fft import fftn, ifftn
+from random import Philox
+
+
+def main():
+    generator = Philox(12)
+    x = Array.zeros((2, 3, 4), complex128)
+    for i in range(2):
+        for j in range(3):
+            for k in range(4):
+                x[i, j, k] = complex(generator.uniform() - 0.5, generator.uniform() - 0.5)
+    w = Array.zeros((2, 2, 3, 2), complex128)
+    for i in range(2):
+        for j in range(2):
+            for k in range(3):
+                for m in range(2):
+                    w[i, j, k, m] = complex(generator.uniform() - 0.5, generator.uniform() - 0.5)
+    y = fftn(x)
+    for i in range(2):
+        for j in range(3):
+            for k in range(4):
+                print(f"{y[i, j, k].real:.12g},{y[i, j, k].imag:.12g}")
+    v = ifftn(w)
+    for i in range(2):
+        for j in range(2):
+            for k in range(3):
+                for m in range(2):
+                    print(f"{v[i, j, k, m].real:.12g},{v[i, j, k, m].imag:.12g}")
+"#;
+    prints(
+        "fft-every-axis",
+        program.trim_start(),
+        "-0.573870651438,-0.807364328001\n\
+         1.68192488812,0.205619312362\n\
+         1.77374081254,-0.140732583705\n\
+         1.29674544111,-0.866887038589\n\
+         -0.821655885301,-0.45442333257\n\
+         -0.492159591883,-1.27143019047\n\
+         2.08237293288,-1.23097986414\n\
+         -1.63000460465,-0.977319575672\n\
+         -0.336292576596,-0.498036943318\n\
+         -2.6009152906,0.358820003044\n\
+         2.19786550116,-0.749752862886\n\
+         -0.664431736267,0.00551478389094\n\
+         -1.27760244704,0.632933834177\n\
+         -0.669753893313,0.790709634749\n\
+         -1.86184714417,2.77628023093\n\
+         1.69554656444,2.26630500483\n\
+         -2.59556385635,0.689841443707\n\
+         -0.845175389763,1.60100371403\n\
+         0.323518754122,-2.46672622991\n\
+         1.83987969003,-0.940522187609\n\
+         1.80091566304,-1.43774857596\n\
+         -1.54732344017,-1.623156907\n\
+         0.728294527705,0.69889427752\n\
+         1.66703284906,2.18417404875\n\
+         0.0898457602774,-0.0447736725648\n\
+         0.0626824253501,-0.0125221734033\n\
+         0.0241125514366,-0.0505569143212\n\
+         -0.00542753959487,0.0510080518356\n\
+         0.107483136104,0.0151689269253\n\
+         -0.111677787141,0.048987941865\n\
+         -0.0522208555782,0.0267819441686\n\
+         0.0576658891504,-0.0610837445118\n\
+         0.0267280243172,-0.147875929959\n\
+         0.00268617236668,-0.0568459961531\n\
+         0.0547409695749,-0.0657021079736\n\
+         -0.00362594721301,0.0809237921022\n\
+         -0.0240488448321,-0.079648992207\n\
+         0.0441978314006,-0.0668127713597\n\
+         -0.0139934293974,-0.00986890715597\n\
+         -0.0207989612621,-0.0506749460692\n\
+         -0.0247324863194,0.0125910500159\n\
+         -0.118737464178,-0.0267244661001\n\
+         0.0454750343956,-0.0491931225084\n\
+         -0.0354574419435,-0.055979753413\n\
+         -0.044006199091,0.00148773105354\n\
+         -0.095368271164,0.0886876057318\n\
+         0.050022647529,0.0098873323221\n\
+         0.0155361787432,-0.046105815102\n",
+    )
+    .unwrap();
+}
+
 /// `fft2` and `ifft2` of a 4 × 8 array, all powers of two, of a 3 × 5 array through the mixed-radix
 /// transform, and of a 1 × 1 array; `rfft2` of a 3 × 6 real array and `irfft2` back; and
 /// `irfft2` of a 2 × 5 array, an odd number of columns, with the shape `s` given, then with

@@ -1,0 +1,136 @@
+"""`fft.fftn` and `fft.ifftn` (roadmap 3.10.6): the transform over every axis of an array of rank 1
+to 4, one overload for each rank (decision 0067), re-exported by `fft.byn` (decision 0062).
+
+Each transforms along the last axis first, then each axis before it, as NumPy's `fftn` does: every
+line of the array along an axis is copied into a contiguous vector, transformed, and copied back.
+"""
+
+from fft_engine import transform, transform_2d
+
+
+def fftn(x: Array[complex128, 1]) -> Array[complex128, 1]:
+    """The n-dimensional transform of a vector, which is `fft(x)`, as `numpy.fft.fftn(x)`."""
+    return transform(x, -1.0)
+
+
+def fftn(x: Array[complex128, 2]) -> Array[complex128, 2]:
+    """The n-dimensional transform of a matrix, which is `fft2(x)`, as `numpy.fft.fftn(x)`."""
+    return transform_2d(x, -1.0)
+
+
+def fftn(x: Array[complex128, 3]) -> Array[complex128, 3]:
+    """The transform of a rank-3 array over its three axes, as `numpy.fft.fftn(x)`: about
+    N log N operations for N entries, with `fft`'s factor for a side that is not a power of two,
+    and one copy of `x`. Panics when `x` has no entries.
+    """
+    result = x.copy()
+    for axis in range(2, -1, -1):
+        _along_3(result, axis, -1.0)
+    return result
+
+
+def fftn(x: Array[complex128, 4]) -> Array[complex128, 4]:
+    """The transform of a rank-4 array over its four axes, as `numpy.fft.fftn(x)`, at the cost
+    the rank-3 form gives. Panics when `x` has no entries.
+    """
+    result = x.copy()
+    for axis in range(3, -1, -1):
+        _along_4(result, axis, -1.0)
+    return result
+
+
+def ifftn(x: Array[complex128, 1]) -> Array[complex128, 1]:
+    """The inverse of `fftn` of a vector, `ifft(x)`, as `numpy.fft.ifftn(x)`: divided by n."""
+    result = transform(x, 1.0)
+    scale = 1.0 / len(x)
+    for k in range(len(result)):
+        result[k] = result[k] * scale
+    return result
+
+
+def ifftn(x: Array[complex128, 2]) -> Array[complex128, 2]:
+    """The inverse of `fftn` of a matrix, `ifft2(x)`, as `numpy.fft.ifftn(x)`: divided by m n."""
+    result = transform_2d(x, 1.0)
+    scale = 1.0 / (x.shape[0] * x.shape[1])
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            result[i, j] = result[i, j] * scale
+    return result
+
+
+def ifftn(x: Array[complex128, 3]) -> Array[complex128, 3]:
+    """The inverse of `fftn` of a rank-3 array, as `numpy.fft.ifftn(x)`: the transform with
+    `+2πi` over each axis, divided by the number of entries, so `ifftn(fftn(x))` is `x` up to
+    rounding.
+    """
+    result = x.copy()
+    for axis in range(2, -1, -1):
+        _along_3(result, axis, 1.0)
+    scale = 1.0 / (x.shape[0] * x.shape[1] * x.shape[2])
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            for k in range(x.shape[2]):
+                result[i, j, k] = result[i, j, k] * scale
+    return result
+
+
+def ifftn(x: Array[complex128, 4]) -> Array[complex128, 4]:
+    """The inverse of `fftn` of a rank-4 array, as `numpy.fft.ifftn(x)`: divided by the number
+    of entries.
+    """
+    result = x.copy()
+    for axis in range(3, -1, -1):
+        _along_4(result, axis, 1.0)
+    scale = 1.0 / (x.shape[0] * x.shape[1] * x.shape[2] * x.shape[3])
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            for k in range(x.shape[2]):
+                for m in range(x.shape[3]):
+                    result[i, j, k, m] = result[i, j, k, m] * scale
+    return result
+
+
+def _along_3(x: InOut[Array[complex128, 3]], axis: int, sign: f64):
+    """Replaces every line of `x` along `axis` by its unscaled transform. The two other axes are
+    walked in order, so each line is one call of `transform` on a contiguous copy.
+    """
+    shape = [x.shape[0], x.shape[1], x.shape[2]]
+    length = shape[axis]
+    others = [d for d in range(3) if d != axis]
+    line = Array.zeros(length, complex128)
+    for a in range(shape[others[0]]):
+        for b in range(shape[others[1]]):
+            index = [0, 0, 0]
+            index[others[0]] = a
+            index[others[1]] = b
+            for t in range(length):
+                index[axis] = t
+                line[t] = x[index[0], index[1], index[2]]
+            transformed = transform(line, sign)
+            for t in range(length):
+                index[axis] = t
+                x[index[0], index[1], index[2]] = transformed[t]
+
+
+def _along_4(x: InOut[Array[complex128, 4]], axis: int, sign: f64):
+    """Replaces every line of `x` along `axis` by its unscaled transform, as `_along_3` does for
+    rank 3.
+    """
+    shape = [x.shape[0], x.shape[1], x.shape[2], x.shape[3]]
+    length = shape[axis]
+    others = [d for d in range(4) if d != axis]
+    line = Array.zeros(length, complex128)
+    for a in range(shape[others[0]]):
+        for b in range(shape[others[1]]):
+            for c in range(shape[others[2]]):
+                index = [0, 0, 0, 0]
+                index[others[0]] = a
+                index[others[1]] = b
+                index[others[2]] = c
+                for t in range(length):
+                    index[axis] = t
+                    line[t] = x[index[0], index[1], index[2], index[3]]
+                transformed = transform(line, sign)
+                for t in range(length):
+                    index[axis] = t
+                    x[index[0], index[1], index[2], index[3]] = transformed[t]

@@ -1,0 +1,249 @@
+"""The engine under the `fft` module (decision 0040): the one-dimensional transform of any length,
+radix-2, mixed-radix or Bluestein's, and the two-dimensional one built on it. `fft.byn` and
+`fft_axes.byn` import these; `fft` re-exports neither, so no program sees them
+(decision 0062).
+"""
+
+from math import cos, pi, sin
+
+
+def transform_2d(x: Array[complex128, 2], sign: f64) -> Array[complex128, 2]:
+    """The unscaled transform of each row of `x`, then of each column of the result."""
+    rows = x.shape[0]
+    columns = x.shape[1]
+    result = Array.zeros((rows, columns), complex128)
+    for i in range(rows):
+        row = Array.zeros(columns, complex128)
+        for j in range(columns):
+            row[j] = x[i, j]
+        transformed = transform(row, sign)
+        for j in range(columns):
+            result[i, j] = transformed[j]
+    transform_columns(result, sign)
+    return result
+
+
+def transform_columns(x: InOut[Array[complex128, 2]], sign: f64):
+    """Replaces each column of `x` by its unscaled transform. Each column is copied into a
+    contiguous vector first, so the transform reads memory in order.
+    """
+    rows = x.shape[0]
+    for j in range(x.shape[1]):
+        column = Array.zeros(rows, complex128)
+        for i in range(rows):
+            column[i] = x[i, j]
+        transformed = transform(column, sign)
+        for i in range(rows):
+            x[i, j] = transformed[i]
+
+
+def transform(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
+    """The sum over `j` of `x[j] * exp(sign * 2πi jk / n)` for each `k`, unscaled: the radix-2
+    transform for a power-of-two length, the mixed-radix one when no prime factor of n is above
+    23, Bluestein's otherwise. The bound 23 is measured: up to it the mixed-radix transform beat
+    Bluestein's at every length tried, from 3 to 10⁶ points; a bare prime of 29 or 31, or twice
+    one, ran faster through Bluestein's.
+    """
+    n = len(x)
+    assert n > 0, "an FFT needs at least one point"
+    if n & (n - 1) == 0:
+        result = x.copy()
+        _power_of_two(result, sign)
+        return result
+    if _largest_prime_factor(n) <= 23:
+        return _mixed_radix(x, sign)
+    return _bluestein(x, sign)
+
+
+def _largest_prime_factor(n: int) -> int:
+    """The largest prime that divides `n`, for n of at least 2, by trial division: at most √n
+    divisions, nothing next to the transform itself.
+    """
+    remaining = n
+    largest = 1
+    divisor = 2
+    while divisor * divisor <= remaining:
+        while remaining % divisor == 0:
+            remaining //= divisor
+            largest = divisor
+        divisor += 1
+    if remaining > 1:
+        largest = remaining
+    return largest
+
+
+def _smallest_prime_factor(n: int) -> int:
+    """The smallest prime that divides `n`, for n of at least 2, by trial division."""
+    divisor = 2
+    while divisor * divisor <= n:
+        if n % divisor == 0:
+            return divisor
+        divisor += 1
+    return n
+
+
+def _mixed_radix(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
+    """Transforms `x` whose length n has only small prime factors, by Stockham's self-sorting
+    algorithm: one pass per factor of n, each reading one buffer and writing the other, so no
+    bit-reversal step is needed. Factors of 4 go first, then the primes from the smallest. A pass
+    of radix 4 or 2 is a butterfly; a pass of an odd prime p is a direct transform of p points,
+    about n * p complex multiplications. Every twiddle factor, those inside the p-point
+    transforms included, is read from one table of n entries computed with `cos` and `sin`, so
+    errors do not grow.
+    """
+    n = len(x)
+    twiddles = Array.zeros(n, complex128)
+    for k in range(n):
+        angle = 2.0 * pi * k / n
+        twiddles[k] = complex(cos(angle), sign * sin(angle))
+    # The largest radix of any pass: 4 or the largest prime factor.
+    largest = max(4, _largest_prime_factor(n))
+    source = x.copy()
+    target = Array.zeros(n, complex128)
+    points = Array.zeros(largest, complex128)
+    roots = Array.zeros(largest * largest, complex128)
+    factors = Array.zeros(largest, complex128)
+    length = n
+    stride = 1
+    while length > 1:
+        radix = 4 if length % 4 == 0 else _smallest_prime_factor(length)
+        span = length // radix
+        step = n // length
+        for t in range(radix):
+            for u in range(radix):
+                roots[t * radix + u] = twiddles[(t * u) % radix * (n // radix)]
+        for block in range(span):
+            for u in range(radix):
+                factors[u] = twiddles[block * u * step]
+            if radix == 4:
+                _radix_four(source, target, block, span, stride, factors, sign)
+            elif radix == 2:
+                _radix_two(source, target, block, span, stride, factors[1])
+            else:
+                for offset in range(stride):
+                    for t in range(radix):
+                        points[t] = source[offset + stride * (block + t * span)]
+                    for u in range(radix):
+                        total = points[0]
+                        for t in range(1, radix):
+                            total = total + points[t] * roots[t * radix + u]
+                        target[offset + stride * (radix * block + u)] = total * factors[u]
+        swap = source
+        source = target
+        target = swap
+        length = span
+        stride *= radix
+    return source
+
+
+def _radix_two(
+    source: Array[complex128, 1],
+    target: InOut[Array[complex128, 1]],
+    block: int,
+    span: int,
+    stride: int,
+    factor: complex128,
+):
+    """One block of a radix-2 Stockham pass: sum and difference of two points, the difference
+    turned by `factor`.
+    """
+    for offset in range(stride):
+        a = source[offset + stride * block]
+        b = source[offset + stride * (block + span)]
+        target[offset + stride * 2 * block] = a + b
+        target[offset + stride * (2 * block + 1)] = (a - b) * factor
+
+
+def _radix_four(
+    source: Array[complex128, 1],
+    target: InOut[Array[complex128, 1]],
+    block: int,
+    span: int,
+    stride: int,
+    factors: Array[complex128, 1],
+    sign: f64,
+):
+    """One block of a radix-4 Stockham pass: a four-point transform, whose roots are 1, ±i and
+    -1 so it needs no multiplication, then each output but the first turned by its factor.
+    """
+    for offset in range(stride):
+        a = source[offset + stride * block]
+        b = source[offset + stride * (block + span)]
+        c = source[offset + stride * (block + 2 * span)]
+        d = source[offset + stride * (block + 3 * span)]
+        sum_ac = a + c
+        difference_ac = a - c
+        sum_bd = b + d
+        difference_bd = b - d
+        turned = complex(-sign * difference_bd.imag, sign * difference_bd.real)
+        base = offset + stride * 4 * block
+        target[base] = sum_ac + sum_bd
+        target[base + stride] = (difference_ac + turned) * factors[1]
+        target[base + 2 * stride] = (sum_ac - sum_bd) * factors[2]
+        target[base + 3 * stride] = (difference_ac - turned) * factors[3]
+
+
+def _power_of_two(x: InOut[Array[complex128, 1]], sign: f64):
+    """Transforms `x`, whose length is a power of two, in place: bit-reversal order, then
+    log2(n) passes of butterflies, each twiddle factor read from one table of n / 2 entries
+    computed with `cos` and `sin`, never by repeated multiplication, so errors do not grow.
+    """
+    n = len(x)
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit != 0:
+            j ^= bit
+            bit >>= 1
+        j |= bit
+        if i < j:
+            swap = x[i]
+            x[i] = x[j]
+            x[j] = swap
+    twiddles = Array.zeros(n // 2, complex128)
+    for k in range(n // 2):
+        angle = 2.0 * pi * k / n
+        twiddles[k] = complex(cos(angle), sign * sin(angle))
+    size = 2
+    while size <= n:
+        half = size // 2
+        stride = n // size
+        for start in range(0, n, size):
+            for k in range(half):
+                top = start + k
+                product = x[top + half] * twiddles[k * stride]
+                x[top + half] = x[top] - product
+                x[top] = x[top] + product
+        size *= 2
+
+
+def _bluestein(x: Array[complex128, 1], sign: f64) -> Array[complex128, 1]:
+    """Transforms `x` of any length n by Bluestein's algorithm: `jk = (j² + k² - (k - j)²) / 2`
+    turns the transform into a convolution with a chirp, done by power-of-two transforms of a
+    length at least 2n - 1. The chirp's angle uses `j²` modulo `2n`, so it stays exact for any n.
+    """
+    n = len(x)
+    m = 1
+    while m < 2 * n - 1:
+        m *= 2
+    chirp = Array.zeros(n, complex128)
+    for j in range(n):
+        angle = pi * ((j * j) % (2 * n)) / n
+        chirp[j] = complex(cos(angle), sign * sin(angle))
+    a = Array.zeros(m, complex128)
+    b = Array.zeros(m, complex128)
+    for j in range(n):
+        a[j] = x[j] * chirp[j]
+        b[j] = chirp[j].conjugate()
+        if j > 0:
+            b[m - j] = chirp[j].conjugate()
+    _power_of_two(a, -1.0)
+    _power_of_two(b, -1.0)
+    for k in range(m):
+        a[k] = a[k] * b[k]
+    _power_of_two(a, 1.0)
+    result = Array.zeros(n, complex128)
+    scale = 1.0 / m
+    for k in range(n):
+        result[k] = a[k] * chirp[k] * scale
+    return result
