@@ -359,10 +359,9 @@ impl<'db> Builder<'db> {
     /// checker types as the class with its type arguments, or else from the receiver, the
     /// first of `arguments`. A call of the class that runs its `__init__`, `Grid(xs)`, has
     /// neither: they come from the struct the call gives. Empty for a function and for a
-    /// method of a class with no type
-    /// parameters. `None` when the class has type parameters but neither is a struct of that
-    /// class, such as a method an embedded generic struct provides (decision 0031), which is
-    /// not built yet.
+    /// method of a class with no type parameters. `None` when the class has type parameters
+    /// but neither is a struct of that class, such as a method an embedded generic struct
+    /// provides (decision 0031), which is not built yet.
     fn class_arguments(
         &self,
         item: Item<'db>,
