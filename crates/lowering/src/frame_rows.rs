@@ -45,6 +45,7 @@ impl<'db> Builder<'db> {
             ("dropna", _) => return self.frame_dropna(place, frame, node),
             ("fillna", &[value]) => return self.frame_fillna(place, frame, value, node),
             ("to_csv", &[path, ..]) => return self.frame_to_csv(place, frame, path, node),
+            ("to_parquet", &[path]) => return self.frame_to_parquet(place, frame, path, node),
             _ => {}
         }
         if method == "merge" {

@@ -214,7 +214,7 @@ too, and each has its page in the reference:
 | `drop_duplicates(keep="last")`, `value_counts(normalize=True)`, `describe(percentiles=[0.1, 0.9])` | [Sorting, grouping and joining](../reference/dataframe-operations.md) |
 | `isna`, `notna`, `fillna`, `dropna`, arithmetic and masks with missing values | [Missing values in frames](../reference/missing-values-in-frames.md) |
 | `DataFrame.read_csv(path)`, `df.to_csv(path)` | [CSV files](../reference/csv-files.md) |
-| `DataFrame.read_parquet(path)` | [Parquet files](../reference/parquet-files.md) |
+| `DataFrame.read_parquet(path)`, `df.to_parquet(path)` | [Parquet files](../reference/parquet-files.md) |
 
 [What builds today](../reference/status.md) lists what is not built yet, such as the keyword
 arguments of `read_csv`.

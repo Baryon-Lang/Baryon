@@ -1,7 +1,8 @@
 # Parquet files for the reader's tests
 
 The build tests in [`../../build/frame_parquet.rs`](../../build/frame_parquet.rs) read these
-files with `DataFrame.read_parquet` (roadmap 3.14.6.3), so the tests show that Baryon reads
+files with `DataFrame.read_parquet` (roadmap 3.14.6.3) and compare what `to_parquet` writes
+(roadmap 3.14.6.4) with one of them, so the tests show that Baryon reads
 the files another library writes without that library running in the tests. The `types_*`
 files and `other.parquet` were written by polars 2.1.0 on Python 3.12, Linux x86-64. The
 `pages_v2*` files were put together by hand, since polars writes data pages of version 1
@@ -19,6 +20,13 @@ only; polars reads from them the values the tests expect.
 - `types.csv` is those rows as CSV, written by the same script from the values it gave
   polars, with `<none>` for a missing value. The tests compare what Baryon reads, written
   with `to_csv`, with it byte for byte.
+- `types_written.parquet` is what `to_parquet` wrote for the frame read from
+  `types_snappy.parquet`, less `extra`. polars 2.1.0 reads it as a table equal to that one,
+  with the same type for every column and every float the same bit for bit. The test that
+  writes the frame again compares its bytes with this file, so a change to the writer shows.
+  After a change that is meant, write the file again with the test's program and check it
+  with polars: `a.equals(b, null_equal=True)` and `a.schema == b.schema`, where `a` is
+  `types_snappy.parquet` without `extra` and `b` the new file.
 - `pages_v2.parquet` and `pages_v2_gzip.parquet` hold ten rows in data pages of version 2:
   `n`, an `INT64` through a dictionary, in one page of bit-packed runs and one of repeated
   runs; `s`, text in two pages; `b`, booleans stored as runs; and `x`, a `DOUBLE` whose

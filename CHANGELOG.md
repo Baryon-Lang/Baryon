@@ -38,6 +38,10 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   values, from files compressed with Snappy, gzip, Zstandard or LZ4 or not at all. The reader is
   written in Baryon, so a program needs no other library. Dates, decimals and nested columns are
   not read yet ([Parquet files](docs/reference/parquet-files.md)).
+- `df.to_parquet(path)` writes a DataFrame as a Parquet file that pandas, polars and other
+  readers open with the same columns and types, compressed with Snappy. Values are stored
+  plainly, with no dictionaries or statistics yet
+  ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).
 - Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
   archives, so trying the extension no longer needs Node.js
   ([Coding Baryon in VS Code](docs/guide/vscode.md#3-install-the-extension)).

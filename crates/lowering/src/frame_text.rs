@@ -329,9 +329,10 @@ impl<'db> Builder<'db> {
     /// The function `name` that `<std>/frames.byn`, `<std>/frame_csv.byn`,
     /// `<std>/frame_csv_types.byn`, `<std>/frame_csv_write.byn`, `<std>/frame_joins.byn`,
     /// `<std>/frame_missing.byn`, `<std>/frame_outer.byn`, `<std>/frame_masks.byn`,
-    /// `<std>/frame_order.byn`, `<std>/frame_holders.byn` or one of the three files of the
-    /// Parquet reader that lowering calls, `<std>/frame_parquet.byn`,
-    /// `<std>/frame_parquet_text.byn` and `<std>/frame_parquet_types.byn`, defines at its
+    /// `<std>/frame_order.byn`, `<std>/frame_holders.byn` or one of the files of the Parquet
+    /// reader and writer that lowering calls, `<std>/frame_parquet.byn`,
+    /// `<std>/frame_parquet_text.byn`, `<std>/frame_parquet_types.byn`,
+    /// `<std>/frame_parquet_put.byn` and `<std>/frame_parquet_write.byn`, defines at its
     /// top level. Costs one pass over the top-level
     /// statements of each file looked in.
     pub(crate) fn frame_function(&self, name: &str) -> Option<Item<'db>> {
@@ -347,8 +348,10 @@ impl<'db> Builder<'db> {
             "frame_order",
             "frame_holders",
             "frame_parquet",
+            "frame_parquet_put",
             "frame_parquet_text",
             "frame_parquet_types",
+            "frame_parquet_write",
         ]
         .into_iter()
         .find_map(|module| {
