@@ -1,0 +1,298 @@
+"""`solve_ivp` for `integrate` (roadmap 3.19.7.2): SciPy's explicit Runge-Kutta method of order
+5(4), RK45, the Dormand-Prince pair, with SciPy's step-size control.
+
+Each step takes six new values of the right-hand side and gives a fifth-order solution and a
+fourth-order error estimate. A step whose error, measured in SciPy's root-mean-square norm
+against `atol + rtol * |y|`, is below 1 is kept and the next step grows by up to ten times; a
+larger error shrinks the step and tries again. The constants, the first step and the stopping
+rules are those of `scipy.integrate.RK45` 1.18, so a run takes SciPy's steps and calls `fun` as
+many times as SciPy does. SciPy forms its sums with BLAS, whose rounding depends on the
+processor, so results agree with SciPy's to about the last two digits, not bit for bit.
+
+The state `y0` is any `VectorSpace` type (decision 0065 point 1): an `f64` for one equation or a
+`Fixed` vector for a system. The library reads it element by element (the card 60 amendment)
+only to measure the error and to fill `y`. An `Array[f64, 1]` state is not built yet: its
+arithmetic inside a generic function shares memory between values (roadmap 1.9.75).
+
+The compiler reads this file for `<std>/integrate.byn`, which re-exports `solve_ivp`,
+`OdeResult` and `OdeSolution` (decision 0062); a program cannot import it.
+"""
+
+from math import fabs, inf, sqrt
+
+# Rounding of an `f64`: the gap between 1.0 and the next float, SciPy's `EPS`.
+_EPSILON: Final = 2.220446049250313e-16
+# The smallest positive normal `f64`, below which floats are 2**-1074 apart.
+_SMALLEST_NORMAL: Final = 2.2250738585072014e-308
+# The gap between floats below `_SMALLEST_NORMAL`, the smallest positive `f64`.
+_SUBNORMAL_GAP: Final = 5e-324
+# SciPy's step-size controls: the error's safety factor and the most a step shrinks or grows.
+_SAFETY: Final = 0.9
+_MIN_FACTOR: Final = 0.2
+_MAX_FACTOR: Final = 10.0
+# `-1 / (order + 1)` for RK45's fourth-order error estimate.
+_ERROR_EXPONENT: Final = -1.0 / 5.0
+
+
+class OdeSolution(Struct):
+    """The continuous solution of an ODE, SciPy's `OdeSolution`, called as `sol(t)`. Dense output
+    is built in row 3.19.8; until then `solve_ivp` never makes one, and `OdeResult.sol` is
+    `None`."""
+
+
+class OdeResult(Struct):
+    """What `solve_ivp` returns, with the 11 fields of SciPy's `OdeResult` (decision 0065 point
+    4). They are read as attributes; SciPy's dict form is not built."""
+
+    # The times of the steps, from the start of `t_span` to where the run stopped.
+    t: Array[f64, 1]
+    # The state at each time, one column per entry of `t`: shape `(len(y0), len(t))`.
+    y: Array[f64, 2]
+    # The continuous solution, `None` unless `dense_output=True` (row 3.19.8).
+    sol: OdeSolution | None
+    # The times each event occurred, `None` with no `events=` (row 3.19.9).
+    t_events: list[Array[f64, 1]] | None
+    # The state at each event, `None` with no `events=` (row 3.19.9).
+    y_events: list[Array[f64, 2]] | None
+    # How many times `fun` was called.
+    nfev: int
+    # How many Jacobians were computed: 0 for RK45, which needs none.
+    njev: int
+    # How many LU factorizations were made: 0 for RK45.
+    nlu: int
+    # 0 when the run reached the end of `t_span`, -1 when a step failed.
+    status: int
+    # SciPy's text for `status`.
+    message: str
+    # Whether `status` is 0 or more.
+    success: bool
+
+
+def _spacing(t: f64, direction: f64) -> f64:
+    """The gap from `t` to the next `f64` in the direction of the sign of `direction`, SciPy's
+    `abs(np.nextafter(t, direction * inf) - t)`: 2**-52 times the power of two at or below |t|,
+    half that when stepping from a power of two toward zero, and the smallest float below the
+    normal range. A loop of doublings, about 64 at the extremes."""
+    size = fabs(t)
+    if size < _SMALLEST_NORMAL:
+        return _SUBNORMAL_GAP
+    power = 1.0
+    while power * 2.0 <= size:
+        power *= 2.0
+    while power > size:
+        power *= 0.5
+    if size == power and direction * t < 0.0:
+        return power * (_EPSILON / 2.0)
+    return power * _EPSILON
+
+
+def _scaled_norm[S: VectorSpace](values: S, y: S, tolerances: tuple[f64, f64]) -> f64:
+    """SciPy's root-mean-square norm of `values / (atol + rtol * |y|)`, elementwise, with
+    `tolerances` as `(rtol, atol)`."""
+    rtol, atol = tolerances
+    total = 0.0
+    for i in range(len(values)):
+        ratio = values[i] / (atol + fabs(y[i]) * rtol)
+        total += ratio * ratio
+    return sqrt(total) / sqrt(f64(len(values)))
+
+
+def _initial_step[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t0: f64,
+    y0: S,
+    f0: S,
+    args: tuple[*Ts],
+    bounds: tuple[f64, f64, f64],
+    tolerances: tuple[f64, f64],
+) -> f64:
+    """The size of the first step, SciPy's `select_initial_step`, from the time `t0`, state `y0`
+    and slope `f0`, with `bounds` as `(t_bound, max_step, direction)`. Calls `fun` once, and is
+    called only when the interval is not empty and the state has elements."""
+    t_bound, max_step, direction = bounds
+    interval_length = fabs(t_bound - t0)
+    d0 = _scaled_norm(y0, y0, tolerances)
+    d1 = _scaled_norm(f0, y0, tolerances)
+    h0 = 1e-6
+    if d0 >= 1e-5 and d1 >= 1e-5:
+        h0 = 0.01 * d0 / d1
+    h0 = min(h0, interval_length)
+    y1 = y0 + h0 * direction * f0
+    f1 = fun(t0 + h0 * direction, y1, *args)
+    d2 = _scaled_norm(f1 - f0, y0, tolerances) / h0
+    h1 = max(1e-6, h0 * 1e-3)
+    if d1 > 1e-15 or d2 > 1e-15:
+        h1 = (0.01 / max(d1, d2)) ** (1.0 / 5.0)
+    return min(min(100.0 * h0, h1), min(interval_length, max_step))
+
+
+def _rk45_step[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t: f64,
+    y: S,
+    f: S,
+    h: f64,
+    args: tuple[*Ts],
+) -> tuple[S, S, S]:
+    """One Dormand-Prince step of `h` from the time `t`, state `y` and slope `f`: the
+    fifth-order state at `t + h`, its slope, and the error estimate, the difference from the
+    fourth-order state. Calls `fun` six times. Each sum adds the stages in order, the
+    coefficient on the left, as SciPy's `rk_step` and `_estimate_error` write it."""
+    k2 = fun(t + 0.2 * h, y + (f * 0.2) * h, *args)
+    k3 = fun(t + 0.3 * h, y + (f * (3.0 / 40.0) + k2 * (9.0 / 40.0)) * h, *args)
+    a4 = f * (44.0 / 45.0) + k2 * (-56.0 / 15.0) + k3 * (32.0 / 9.0)
+    k4 = fun(t + 0.8 * h, y + a4 * h, *args)
+    a5 = (
+        f * (19372.0 / 6561.0)
+        + k2 * (-25360.0 / 2187.0)
+        + k3 * (64448.0 / 6561.0)
+        + k4 * (-212.0 / 729.0)
+    )
+    k5 = fun(t + 8.0 / 9.0 * h, y + a5 * h, *args)
+    a6 = (
+        f * (9017.0 / 3168.0)
+        + k2 * (-355.0 / 33.0)
+        + k3 * (46732.0 / 5247.0)
+        + k4 * (49.0 / 176.0)
+        + k5 * (-5103.0 / 18656.0)
+    )
+    k6 = fun(t + h, y + a6 * h, *args)
+    b = (
+        f * (35.0 / 384.0)
+        + k2 * 0.0
+        + k3 * (500.0 / 1113.0)
+        + k4 * (125.0 / 192.0)
+        + k5 * (-2187.0 / 6784.0)
+        + k6 * (11.0 / 84.0)
+    )
+    y_new = y + h * b
+    f_new = fun(t + h, y_new, *args)
+    e = (
+        f * (-71.0 / 57600.0)
+        + k2 * 0.0
+        + k3 * (71.0 / 16695.0)
+        + k4 * (-71.0 / 1920.0)
+        + k5 * (17253.0 / 339200.0)
+        + k6 * (-22.0 / 525.0)
+        + f_new * (1.0 / 40.0)
+    )
+    return (y_new, f_new, e * h)
+
+
+def _error_norm[S: VectorSpace](error: S, y: S, y_new: S, tolerances: tuple[f64, f64]) -> f64:
+    """SciPy's error norm of a step: the root-mean-square of `error / (atol + rtol * max(|y|,
+    |y_new|))`, elementwise, with `tolerances` as `(rtol, atol)`."""
+    rtol, atol = tolerances
+    total = 0.0
+    for i in range(len(error)):
+        ratio = error[i] / (atol + max(fabs(y[i]), fabs(y_new[i])) * rtol)
+        total += ratio * ratio
+    return sqrt(total) / sqrt(f64(len(error)))
+
+
+def _result[S: VectorSpace](
+    ts: list[f64], ys: list[S], n: int, nfev: int, status: int, message: str
+) -> OdeResult:
+    """The `OdeResult` of a run that kept the times `ts` and the states `ys`, each state a
+    column of `y`."""
+    times: Array[f64, 1] = Array.zeros(len(ts))
+    states: Array[f64, 2] = Array.zeros((n, len(ts)))
+    for j in range(len(ts)):
+        times[j] = ts[j]
+        for i in range(n):
+            states[i, j] = ys[j][i]
+    return OdeResult(times, states, None, None, None, nfev, 0, 0, status, message.copy(), status == 0)
+
+
+def solve_ivp[S: VectorSpace, *Ts](
+    fun: Callable[[f64, S, *Ts], S],
+    t_span: tuple[f64, f64],
+    y0: S,
+    args: tuple[*Ts] = (),
+    first_step: f64 | None = None,
+    max_step: f64 = inf,
+    rtol: f64 = 1e-3,
+    atol: f64 = 1e-6,
+) -> OdeResult:
+    """The solution of `dy/dt = fun(t, y, *args)` from `y(t_span[0]) = y0` to `t_span[1]`, as
+    `scipy.integrate.solve_ivp` with `method="RK45"`: the times of the steps in `t` and the
+    state after each in the columns of `y`. A step's error is kept below `atol + rtol * |y|`
+    for each element; `rtol` below 100 ε, about 2.2e-14, is raised to it, as SciPy does.
+    `first_step` is the size of the first step, chosen by SciPy's rule when it is `None`, and no
+    step is longer than `max_step`. A `t_span` that runs backwards integrates backwards.
+
+    A run that cannot go on, because a step would be smaller than ten times the spacing of
+    floats at `t`, stops with `status` -1, `success` False and SciPy's `message`, and returns
+    the steps taken so far, as SciPy does (decision 0065 point 3). `max_step <= 0`, `atol < 0`,
+    `first_step <= 0` and a `first_step` longer than `t_span` panic with SciPy's message, where
+    SciPy raises `ValueError`. Keeps one state per step.
+    """
+    t0, t_bound = t_span
+    assert max_step > 0.0, "`max_step` must be positive."
+    assert atol >= 0.0, "`atol` must be positive."
+    tolerances = (max(rtol, 100.0 * _EPSILON), atol)
+    direction = 1.0
+    if t_bound < t0:
+        direction = -1.0
+    n = len(y0)
+    t = t0
+    y = y0 * 1.0
+    f = fun(t, y, *args)
+    nfev = 1
+    h_abs = 0.0
+    if first_step is not None:
+        assert first_step > 0.0, "`first_step` must be positive."
+        assert first_step <= fabs(t_bound - t0), "`first_step` exceeds bounds."
+        h_abs = first_step
+    elif n > 0 and t_bound != t0:
+        bounds = (t_bound, max_step, direction)
+        h_abs = _initial_step(fun, t, y, f, args, bounds, tolerances)
+        nfev += 1
+    ts: list[f64] = [t0]
+    ys: list[S] = [y * 1.0]
+    # SciPy's loop: a step at the end of `t_span`, or of an empty state, finishes the run and
+    # keeps the last time once more, so `t_span = (1.0, 1.0)` gives `t = [1.0, 1.0]`.
+    finished = False
+    while not finished:
+        if n == 0 or t == t_bound:
+            t = t_bound
+            ts.append(t)
+            ys.append(y * 1.0)
+            finished = True
+            continue
+        min_step = 10.0 * _spacing(t, direction)
+        h_abs = min(h_abs, max_step)
+        if h_abs < min_step:
+            h_abs = min_step
+        rejected = False
+        accepted = False
+        while not accepted and h_abs >= min_step:
+            t_new = t + h_abs * direction
+            if direction * (t_new - t_bound) > 0.0:
+                t_new = t_bound
+            h = t_new - t
+            h_abs = fabs(h)
+            y_new, f_new, error = _rk45_step(fun, t, y, f, h, args)
+            nfev += 6
+            error_norm = _error_norm(error, y, y_new, tolerances)
+            if error_norm < 1.0:
+                factor = _MAX_FACTOR
+                if error_norm != 0.0:
+                    factor = min(_MAX_FACTOR, _SAFETY * error_norm**_ERROR_EXPONENT)
+                if rejected:
+                    factor = min(1.0, factor)
+                h_abs *= factor
+                t = t_new
+                y = y_new
+                f = f_new
+                ts.append(t)
+                ys.append(y * 1.0)
+                accepted = True
+                finished = direction * (t - t_bound) >= 0.0
+            else:
+                h_abs *= max(_MIN_FACTOR, _SAFETY * error_norm**_ERROR_EXPONENT)
+                rejected = True
+        if not accepted:
+            message = "Required step size is less than spacing between numbers."
+            return _result(ts, ys, n, nfev, -1, message)
+    return _result(ts, ys, n, nfev, 0, "The solver successfully reached the end of the integration interval.")

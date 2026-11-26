@@ -385,7 +385,7 @@ and 3.25.
 | 3.19.6 | `fixed_quad`, `dblquad`, `tplquad` and `nquad` | 3 | 3.19.4 | Planned | — | — |
 | 3.19.7 | `solve_ivp` with RK45: step-size control, `t_eval` and `OdeResult`. Built in the sub-rows below | 3 | 3.19.2 | In progress | Claude | — |
 | 3.19.7.1 | Reading a `VectorSpace` state by position, `len(y)` and `y[i]`, read only, an `f64` acting as length 1; amends decision 0065 point 1 (chief designer, card 60) | 1 | 3.19.2 | Done | Claude | [#588](https://github.com/Baryon-Lang/Baryon/pull/588) |
-| 3.19.7.2 | `solve_ivp` with RK45 and SciPy's step-size control, returning `OdeResult` with SciPy's 11 fields; `t_events`, `y_events` and `sol` are `None` | 2 | 3.19.7.1 | Planned | — | — |
+| 3.19.7.2 | `solve_ivp` with RK45 and SciPy's step-size control, returning `OdeResult` with SciPy's 11 fields; `t_events`, `y_events` and `sol` are `None`. Built for `f64` and `Fixed` states; an `Array` state waits on row 1.9.75 | 2 | 3.19.7.1 | Done | Claude | this pull request |
 | 3.19.7.3 | `t_eval=`, and `method=` routed when compiling from a literal (decision 0065 point 2) | 1 | 3.19.7.2 | Planned | — | — |
 | 3.19.8 | DOP853, and dense output for both methods, `sol.sol(t)`, through `__call__` on structs (decision 0058, chief designer, card 43). `__call__` is built first (#466) | 3.5 | 3.19.7 | Planned | — | [#466](https://github.com/Baryon-Lang/Baryon/pull/466) |
 | 3.19.9 | `events=` for `solve_ivp`, in the shape a later card chooses: SciPy keeps the functions in a list, which version 0 cannot hold | 2 | 3.19.7 | Planned | — | — |

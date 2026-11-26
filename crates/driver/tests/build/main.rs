@@ -117,6 +117,7 @@ mod shapes;
 mod shown_holders;
 mod slices;
 mod snappy;
+mod solve_ivp;
 mod sorting;
 mod special;
 mod special_bessel;
