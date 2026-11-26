@@ -14,10 +14,14 @@ libraries write it:
 - A data page is of version 1: a Thrift header, then, compressed together with Snappy, the
   definition levels of a column that may hold `None`, one bit for each row, and the values
   that are there, written plainly (`PLAIN`).
+- A chunk of text starts with a dictionary page when its distinct values fit in one of
+  1,048,576 bytes, which is pyarrow's limit: the distinct values, written plainly and
+  compressed. Its data pages then hold each value's index into the dictionary
+  (`RLE_DICTIONARY`), through `<std>/frame_parquet_dictionary.byn`.
 - The metadata: the schema, the rows, and for each chunk where it starts and how long it
   is, as a Thrift struct in the compact protocol; its length in four bytes; `PAR1`.
 
-No dictionaries and no statistics are written yet.
+Only text gets a dictionary so far, and no statistics are written yet.
 
 A column's kind is a number the compiler passes: 0 `bool`, 1 to 4 `i8` to `i64`, 5 to 8 `u8`
 to `u64`, 9 `f32`, 10 `f64`, 11 `str`, and 100 more when the column may hold `None`.
@@ -27,6 +31,12 @@ put together, so writing takes about twice the frame's size in memory besides th
 """
 
 from frame_parquet_delta import parquet_grow
+from frame_parquet_dictionary import (
+    parquet_code_bits,
+    parquet_codes,
+    parquet_distinct,
+    parquet_entries,
+)
 from parquet_snappy import snappy_compress
 
 
@@ -80,17 +90,39 @@ def thrift_items(out: InOut[list[int]], delta: int, kind: int, count: int) -> No
         thrift_varint(out, count)
 
 
-def _page_header(body: int, stored: int, values: int) -> list[int]:
+def _dictionary_bytes() -> int:
+    """The longest dictionary page written, before compression: 1,048,576 bytes, as in
+    pyarrow. A row group of text with more distinct bytes than that is written plainly."""
+    return 1048576
+
+
+def _dictionary_header(body: int, stored: int, entries: int) -> list[int]:
+    """The Thrift header of a dictionary page that holds `entries` plain values in `body`
+    bytes that are `stored` bytes once compressed."""
+    out: list[int] = []
+    thrift_number(out, 1, 5, 2)
+    thrift_number(out, 1, 5, body)
+    thrift_number(out, 1, 5, stored)
+    out.append(76)
+    thrift_number(out, 1, 5, entries)
+    thrift_number(out, 1, 5, 0)
+    out.append(0)
+    out.append(0)
+    return out
+
+
+def _page_header(body: int, stored: int, values: int, encoding: int) -> list[int]:
     """The Thrift header of a data page of version 1 that holds `values` values, with the
-    missing ones, in `body` bytes that are `stored` bytes once compressed: plain values,
-    and levels as runs."""
+    missing ones, in `body` bytes that are `stored` bytes once compressed: values in the
+    encoding `encoding`, 0 for plain and 8 for indices into a dictionary, and levels as
+    runs."""
     out: list[int] = []
     thrift_number(out, 1, 5, 0)
     thrift_number(out, 1, 5, body)
     thrift_number(out, 1, 5, stored)
     out.append(44)
     thrift_number(out, 1, 5, values)
-    thrift_number(out, 1, 5, 0)
+    thrift_number(out, 1, 5, encoding)
     thrift_number(out, 1, 5, 3)
     thrift_number(out, 1, 5, 3)
     out.append(0)
@@ -135,12 +167,25 @@ def _levels(valid: Array[u8, 1], start: int, end: int, there: int) -> Array[u8, 
     return out
 
 
+def _put(out: InOut[Array[u8, 1]], used: int, head: list[int], packed: Array[u8, 1]) -> int:
+    """Adds a page to the first `used` bytes of `out`, its header `head` then its
+    compressed body `packed`, and returns how many bytes `out` then holds."""
+    parquet_grow(out, used, len(head) + len(packed))
+    for part in range(len(head)):
+        out[used + part] = u8(head[part])
+    at = used + len(head)
+    for part in range(len(packed)):
+        out[at + part] = packed[part]
+    return at + len(packed)
+
+
 def parquet_chunks(
     raw: Array[u8, 1], ends: Array[i64, 1], valid: Array[u8, 1], rows: int, kind: int
 ) -> tuple[Array[u8, 1], list[int]]:
     """The chunks of one column of `rows` rows, one for each row group, end to end, and
-    three numbers for each: its bytes as written, its bytes before compression, both with
-    the page headers, and its values, with the missing ones.
+    four numbers for each: its bytes as written, its bytes before compression, both with
+    the page headers, its values, with the missing ones, and the bytes as written of its
+    dictionary page, which comes first, or 0 when it has none.
 
     `raw` holds the values that are there, in order: the plain bytes of each number end to
     end, 4 for the kinds of 32 bits and 8 for those of 64, one byte, 0 or 1, for each
@@ -166,6 +211,21 @@ def parquet_chunks(
         stop = min(rows, start + parquet_group_rows())
         written = 0
         plain = 0
+        codes = Array.fill((0,), 0)
+        bits = 0
+        if base == 11:
+            held = _count(valid, start, stop) if optional else stop - start
+            found = parquet_distinct(raw, ends, spent, held, _dictionary_bytes(), codes)
+            if len(found) > 0:
+                bits = parquet_code_bits(len(found))
+                entries = parquet_entries(raw, ends, found)
+                packed = snappy_compress(entries)
+                head = _dictionary_header(len(entries), len(packed), len(found))
+                used = _put(out, used, head, packed)
+                written = len(head) + len(packed)
+                plain = len(head) + len(entries)
+        lead = written
+        coded = spent
         row = start
         while row < stop:
             end = min(stop, row + _page_rows())
@@ -173,16 +233,23 @@ def parquet_chunks(
             levels = Array.zeros(0, u8)
             if optional:
                 levels = _levels(valid, row, end, there)
+            indices: list[int] = []
             size = there * width
             if base == 0:
                 size = (there + 7) >> 3
+            elif bits > 0:
+                indices = parquet_codes(codes, spent - coded, there, bits)
+                size = len(indices)
             elif base == 11:
                 size = 4 * there + ends[spent + there] - ends[spent]
             body = Array.zeros(len(levels) + size, u8)
             at = len(levels)
             for part in range(at):
                 body[part] = levels[part]
-            if base == 0:
+            if bits > 0:
+                for part in range(size):
+                    body[at + part] = u8(indices[part])
+            elif base == 0:
                 for k in range(there):
                     spot = at + (k >> 3)
                     body[spot] = body[spot] | (raw[spent + k] << u8(k & 7))
@@ -202,20 +269,15 @@ def parquet_chunks(
                     body[at + part] = raw[first + part]
             spent += there
             packed = snappy_compress(body)
-            head = _page_header(len(body), len(packed), end - row)
-            parquet_grow(out, used, len(head) + len(packed))
-            for part in range(len(head)):
-                out[used + part] = u8(head[part])
-            used += len(head)
-            for part in range(len(packed)):
-                out[used + part] = packed[part]
-            used += len(packed)
+            head = _page_header(len(body), len(packed), end - row, 8 if bits > 0 else 0)
+            used = _put(out, used, head, packed)
             written += len(head) + len(packed)
             plain += len(head) + len(body)
             row = end
         sizes.append(written)
         sizes.append(plain)
         sizes.append(stop - start)
+        sizes.append(lead)
         start = stop
     return (out[:used].copy(), sizes)
 
@@ -253,8 +315,9 @@ def _footer(
 ) -> list[int]:
     """The metadata of the file whose columns are `names` of the kinds `kinds`, with the
     chunks `chunks` as `parquet_chunks` gave them and `rows` rows: the schema, the rows, and
-    each row group with where each of its chunks starts, the groups laid out one after
-    another from byte 4 with their chunks in the columns' order."""
+    each row group with where each of its chunks starts and, for one with a dictionary,
+    where its data pages start, the groups laid out one after another from byte 4 with
+    their chunks in the columns' order."""
     columns = len(names)
     physical = [0, 1, 1, 1, 2, 1, 1, 1, 2, 4, 5, 6]
     out: list[int] = []
@@ -274,16 +337,19 @@ def _footer(
         total = 0
         held = 0
         for column in range(columns):
-            written = chunks[column][1][3 * group]
-            plain = chunks[column][1][3 * group + 1]
-            held = chunks[column][1][3 * group + 2]
+            written = chunks[column][1][4 * group]
+            plain = chunks[column][1][4 * group + 1]
+            held = chunks[column][1][4 * group + 2]
+            lead = chunks[column][1][4 * group + 3]
             total += plain
             thrift_number(out, 2, 6, at)
             out.append(28)
             thrift_number(out, 1, 5, physical[kinds[column] % 100])
-            thrift_items(out, 1, 5, 2)
+            thrift_items(out, 1, 5, 3 if lead > 0 else 2)
             out.append(0)
             out.append(6)
+            if lead > 0:
+                out.append(16)
             thrift_items(out, 1, 8, 1)
             raw = names[column].encode()
             thrift_varint(out, len(raw))
@@ -293,7 +359,9 @@ def _footer(
             thrift_number(out, 1, 6, held)
             thrift_number(out, 1, 6, plain)
             thrift_number(out, 1, 6, written)
-            thrift_number(out, 2, 6, at)
+            thrift_number(out, 2, 6, at + lead)
+            if lead > 0:
+                thrift_number(out, 2, 6, at)
             out.append(0)
             out.append(0)
             at += written
@@ -334,7 +402,7 @@ def parquet_write(
     taken = [0 for column in range(columns)]
     for group in range(groups):
         for column in range(columns):
-            size = chunks[column][1][3 * group]
+            size = chunks[column][1][4 * group]
             first = taken[column]
             for part in range(size):
                 out[at + part] = chunks[column][0][first + part]

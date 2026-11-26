@@ -41,8 +41,9 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   differences, text as lengths or shared prefixes, and split byte streams
   ([Parquet files](docs/reference/parquet-files.md)).
 - `df.to_parquet(path)` writes a DataFrame as a Parquet file that pandas, polars and other
-  readers open with the same columns and types, compressed with Snappy. Values are stored
-  plainly, with no dictionaries or statistics yet
+  readers open with the same columns and types, compressed with Snappy. Text is written
+  through a dictionary, as those libraries write it; numbers are stored plainly, and no
+  statistics are written yet
   ([Parquet files](docs/reference/parquet-files.md#writing-a-file)).
 - Each release now comes with the VS Code extension, `baryon-<version>.vsix`, attached beside the
   archives, so trying the extension no longer needs Node.js

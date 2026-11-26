@@ -1,0 +1,184 @@
+"""Parquet files written in Baryon: the dictionary of a column of text (roadmap 3.14.6.4,
+decision 0045).
+
+A column of text often holds few distinct values, each many times: a symbol, a country, a
+status. A Parquet writer then stores each distinct value once, in a dictionary page, and the
+column as small whole numbers that index it, which is the `RLE_DICTIONARY` encoding. pandas
+and polars write text this way, and `parquet_chunks` of `<std>/frame_parquet_write.byn` does
+with the three functions here, for each row group of a column of `str`:
+
+- `parquet_distinct` finds the distinct values and gives each value its index. It gives up
+  when the dictionary would pass a size, and the row group is then written plainly.
+- `parquet_entries` is the dictionary page: the distinct values, written plainly.
+- `parquet_codes` is what a data page holds in place of the values: the indices as runs.
+
+A program cannot import this file.
+
+Cost: one pass over the bytes of the values to hash them, a table of at most twice as many
+slots as there are distinct values, and eight bytes for each value's index.
+"""
+
+
+def _hash(raw: Array[u8, 1], first: int, last: int) -> int:
+    """A hash of the bytes `raw[first:last]`, from 0 to 2 to the 32 less 1: FNV-1a of 32
+    bits, kept within 64 bits at every step."""
+    value = 2166136261
+    for at in range(first, last):
+        value = ((value ^ int(raw[at])) * 16777619) & 4294967295
+    return value
+
+
+def _same(raw: Array[u8, 1], one: int, other: int, length: int) -> bool:
+    """Whether the `length` bytes of `raw` from `one` are those from `other`."""
+    for part in range(length):
+        if raw[one + part] != raw[other + part]:
+            return False
+    return True
+
+
+def _slot(
+    raw: Array[u8, 1], ends: Array[i64, 1], slots: Array[i64, 1], entries: list[int], value: int
+) -> int:
+    """Where the value `value` belongs in the table `slots`, whose length is a power of two:
+    the slot that holds an entry with the same bytes, or the empty slot a search for it ends
+    at. A slot holds 0 when empty and otherwise one more than an index into `entries`,
+    which holds the value each entry was first seen as. The search starts at the hash and
+    walks forward, around the end; the table is never full."""
+    first = ends[value]
+    length = ends[value + 1] - first
+    mask = len(slots) - 1
+    slot = _hash(raw, first, first + length) & mask
+    while slots[slot] != 0:
+        held = entries[slots[slot] - 1]
+        start = ends[held]
+        if ends[held + 1] - start == length and _same(raw, start, first, length):
+            return slot
+        slot = (slot + 1) & mask
+    return slot
+
+
+def parquet_distinct(
+    raw: Array[u8, 1],
+    ends: Array[i64, 1],
+    first: int,
+    count: int,
+    limit: int,
+    codes: InOut[Array[i64, 1]],
+) -> list[int]:
+    """The dictionary of the `count` values from value `first`, where value `k` is the bytes
+    of `raw` from `ends[k]` to `ends[k + 1]`: for each entry the value it was first seen
+    as, in the order they were first seen. `codes` becomes the index of each value's entry.
+
+    Gives no entries, and indices that mean nothing, when the dictionary page would be
+    longer than `limit` bytes, four for each entry's length and its bytes, or when `count`
+    is 0. The caller then writes the values plainly.
+    """
+    codes = Array.fill((count,), 0)
+    entries: list[int] = []
+    slots = Array.fill((1024,), 0)
+    spent = 0
+    for k in range(count):
+        value = first + k
+        slot = _slot(raw, ends, slots, entries, value)
+        if slots[slot] == 0:
+            spent += 4 + ends[value + 1] - ends[value]
+            if spent > limit:
+                none: list[int] = []
+                return none
+            entries.append(value)
+            slots[slot] = len(entries)
+            if 2 * len(entries) > len(slots):
+                slots = Array.fill((2 * len(slots),), 0)
+                for entry in range(len(entries)):
+                    slots[_slot(raw, ends, slots, entries, entries[entry])] = entry + 1
+                slot = _slot(raw, ends, slots, entries, value)
+        codes[k] = slots[slot] - 1
+    return entries
+
+
+def parquet_entries(raw: Array[u8, 1], ends: Array[i64, 1], entries: list[int]) -> Array[u8, 1]:
+    """The body of a dictionary page, before compression: the values `entries` names, each
+    as its length in four bytes and its bytes (`PLAIN`), in order."""
+    size = 0
+    for entry in entries:
+        size += 4 + ends[entry + 1] - ends[entry]
+    body = Array.zeros(size, u8)
+    at = 0
+    for entry in entries:
+        first = ends[entry]
+        length = ends[entry + 1] - first
+        for part in range(4):
+            body[at + part] = u8((length >> (8 * part)) & 255)
+        at += 4
+        for part in range(length):
+            body[at + part] = raw[first + part]
+        at += length
+    return body
+
+
+def parquet_code_bits(entries: int) -> int:
+    """The bits an index into a dictionary of `entries` entries takes, at least 1."""
+    bits = 1
+    while (1 << bits) < entries:
+        bits += 1
+    return bits
+
+
+def _varint(out: InOut[list[int]], value: int) -> None:
+    """Adds `value`, which is not negative, to `out` as a varint: seven bits to a byte,
+    lowest first, the top bit set on every byte but the last."""
+    rest = value
+    while rest >= 128:
+        out.append((rest & 127) | 128)
+        rest = rest >> 7
+    out.append(rest)
+
+
+def _repeats(codes: Array[i64, 1], at: int, end: int, most: int) -> int:
+    """How many of the indices from `at`, up to `most` and never past `end`, equal the one
+    at `at`. `at` is before `end`."""
+    same = 1
+    while same < most and at + same < end and codes[at + same] == codes[at]:
+        same += 1
+    return same
+
+
+def parquet_codes(codes: Array[i64, 1], first: int, count: int, bits: int) -> list[int]:
+    """What a data page holds for the `count` indices from `codes[first]`, each of `bits`
+    bits: one byte that says `bits`, then the indices as the format's mix of runs.
+
+    Eight or more equal indices in a row are one run: twice their count as a varint, then
+    the index in as many whole bytes as `bits` needs. The others are packed `bits` bits
+    each, lowest bits first, eight indices to a group: the groups, doubled and one added, as
+    a varint, then their bytes. A packed run ends where a run of equal indices starts at a
+    group's edge, and only the page's last group may be padded with zeros.
+    """
+    out: list[int] = [bits]
+    end = first + count
+    at = first
+    while at < end:
+        same = _repeats(codes, at, end, end - at)
+        if same >= 8:
+            _varint(out, same << 1)
+            value = codes[at]
+            for part in range((bits + 7) >> 3):
+                out.append((value >> (8 * part)) & 255)
+            at += same
+        else:
+            stop = min(end, at + 8)
+            while stop < end and _repeats(codes, stop, end, 8) < 8:
+                stop = min(end, stop + 8)
+            groups = (stop - at + 7) >> 3
+            _varint(out, (groups << 1) | 1)
+            held = 0
+            filled = 0
+            for k in range(8 * groups):
+                if at + k < stop:
+                    held = held | (codes[at + k] << filled)
+                filled += bits
+                while filled >= 8:
+                    out.append(held & 255)
+                    held = held >> 8
+                    filled -= 8
+            at = stop
+    return out

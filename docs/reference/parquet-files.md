@@ -110,12 +110,18 @@ the same types:
 - **The rows are cut into row groups** of 1,048,576 rows, which is what pyarrow writes, and
   each column of a group into pages of 65,536 rows. A frame of no rows writes a file with
   the schema and no row group.
+- **Text is written through a dictionary**, as pandas and polars write it: each distinct
+  text of a row group once, and the column as small numbers that point at them
+  (`RLE_DICTIONARY`). A column of symbols or of country names then takes a few bits for
+  each row. A row group whose distinct texts would take more than 1,048,576 bytes, pyarrow's
+  limit, is written plainly, so a column of names that are all different costs nothing
+  more.
 
 The writer has columns of `f64` and `f32`, of every whole number type, of `bool` and of
 `str`, and each of them with `| None`. A column of another type, such as complex numbers, is
-a compile error that names it. Values are stored plainly: no dictionaries and no statistics
-are written yet, so a file with a column of few distinct texts is larger than the one pandas
-writes.
+a compile error that names it. Numbers and booleans are stored plainly: only text has a
+dictionary so far, and no statistics are written yet, so a file with a column of few distinct
+numbers is larger than the one pandas writes.
 
 ## Errors
 
@@ -152,17 +158,17 @@ decoded, one at a time, and the file's bytes are freed before `read_parquet` ret
 column is decoded its values are held twice. The columns of the frame are as large as the
 same columns built any other way.
 
-A file of one million rows and fifteen columns, one of each type the reader has, took 1.9 s
-to read with no compression on the development machine, 2.2 s with Snappy, 2.0 s with LZ4,
-2.7 s with Zstandard and 3.1 s with gzip, where polars 2.1.0 took 0.04 to 0.07 s. The reader
-has not been tuned yet: it decodes on one thread and rebuilds each float from its bytes by
-arithmetic.
+A file of one million rows and fifteen columns of random values, one of each type the
+reader has, took 0.40 s to read with no compression on the development machine, 0.46 s with
+LZ4, 0.50 s with Snappy, 0.85 s with Zstandard and 0.93 s with gzip, in a program built with
+`--release`, where polars 2.1.0 took 0.02 to 0.05 s. The reader has not been tuned yet: it
+decodes on one thread and rebuilds each float from its bytes by arithmetic. Built without
+`--release` the same program takes about four times as long.
 
 `to_parquet` holds each column as plain bytes and again as compressed pages before it puts
 the file together, about twice the frame's size besides the frame, and frees it all before
-it returns. Writing the same fifteen columns took about 3.3 s for each million rows, where
-polars took 0.13 s, and the file of 2.3 million rows was 92 MB, where polars, which writes
-dictionaries, made 69 MB.
+it returns. Writing the same million rows took about 0.8 s, built with `--release`, where
+polars took 0.10 s, and the file was 60.8 MB, where polars made 58.6 MB.
 
 ## Differences from pandas
 
@@ -186,7 +192,7 @@ dictionaries, made 69 MB.
 
 ## Not built yet
 
-- Writing with another codec than Snappy, with dictionaries or with statistics.
+- Writing with another codec than Snappy, with dictionaries for numbers or with statistics.
 - Columns of dates, times, timestamps and decimals, and of bytes that are not text: a frame
   has no column type for them yet.
 - Nested columns: lists, maps and structs.
