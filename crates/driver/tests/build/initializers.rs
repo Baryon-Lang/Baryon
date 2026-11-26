@@ -119,6 +119,67 @@ def main():
     print(\"end of main\")
 ";
 
+/// Generic structs built by their `__init__`: the class's type arguments found from the
+/// arguments, written on the class, found inside another generic function, and joined by
+/// `__init__`'s own type parameter.
+const GENERIC: &str = "\
+class Grid[T: Number](Struct):
+    values: list[T]
+    total: T
+    count: int
+
+    def __init__(self, values: list[T], scale: T):
+        self.values = []
+        self.total = T(0)
+        for v in values:
+            self.values.append(v * scale)
+            self.total = self.total + v * scale
+        self.count = len(values)
+
+    def doubled(self) -> T:
+        return self.total * T(2)
+
+
+class Tagged[T](Struct):
+    tag: str
+    item: T
+
+    def __init__(self, item: Owned[T]):
+        self.tag = \"t\"
+        self.item = item
+
+
+class Sum[T: Number](Struct):
+    total: T
+
+    def __init__[U: Number](self, xs: list[U], zero: T):
+        self.total = zero
+        for x in xs:
+            self.total = self.total + T(x)
+
+
+def make[U: Number](xs: list[U]) -> Grid[U]:
+    grid = Grid(xs, U(1))
+    return grid
+
+
+def main():
+    g = Grid([1.0, 2.0, 3.0], 1.0)
+    print(g.total, g.count, g.doubled())
+    h = Grid([1, 2, 3], 10)
+    print(h.total, h.values)
+    w = Grid[f64]([], 2)
+    print(w.count, w.values)
+    m = make([4, 5])
+    print(m.total)
+    t = Tagged([\"a\", \"b\"])
+    k = Tagged[list[str]]([])
+    print(t.tag, t.item, len(k.item))
+    s = Sum([1, 2, 3], 0.5)
+    r = Sum[i64]([1.5], 0)
+    print(s.total, r.total)
+";
+
 /// [`LINE`] builds and prints what Python prints for the same class.
 #[test]
 fn init_sets_every_field_on_every_path() {
@@ -130,6 +191,13 @@ fn init_sets_every_field_on_every_path() {
 fn init_builds_copy_nested_and_defaulted_structs() {
     let expected = "1.5 3.0 3.0\n3 second 3 [1.0, 2.0, 3.0]\n0.5 28.0 0.4 15.0\n";
     prints("init-shapes", SHAPES, expected).unwrap();
+}
+
+/// [`GENERIC`] builds and prints what Python prints for the same classes.
+#[test]
+fn init_builds_generic_structs() {
+    let expected = "6.0 3 12.0\n60 [10, 20, 30]\n0 []\n9\nt ['a', 'b'] 0\n6.5 1\n";
+    prints("init-generic", GENERIC, expected).unwrap();
 }
 
 /// [`LOGGED`] prints `__del__`'s line once, after `main`'s own.

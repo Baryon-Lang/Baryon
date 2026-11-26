@@ -56,6 +56,18 @@ impl<'db> Body<'db> {
         };
         let type_arguments = nominal.arguments.clone();
         let callee = self.tree.text(function, self.text).to_owned();
+        if let Some(initializer) =
+            crate::initializers::initializer(self.db, self.lowerer.package, nominal)
+        {
+            let class = (callee.as_str(), built);
+            return Some(self.written_initialized(
+                node,
+                class,
+                (file, name),
+                initializer,
+                arguments,
+            ));
+        }
         let item = Item::new(self.db, self.lowerer.package, file, name);
         let Declaration::Struct { fields, .. } = self.db.declaration(item).declaration.clone()
         else {

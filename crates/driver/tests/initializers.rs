@@ -179,8 +179,8 @@ error: `Grid` takes 2 arguments, found 3
     );
 }
 
-/// An `__init__` that declares a return type, returns a value, belongs to a generic
-/// struct or has no `self` is reported where it is written.
+/// An `__init__` that declares a return type, returns a value or has no `self` is reported
+/// where it is written.
 #[test]
 fn init_has_one_shape() {
     let program = r"
@@ -197,13 +197,6 @@ class Gives(Struct):
     def __init__(self, x: f64):
         self.x = x
         return self
-
-
-class Box[T: Number](Struct):
-    item: T
-
-    def __init__(self, item: T):
-        self.item = item
 
 
 class Plain(Struct):
@@ -232,18 +225,53 @@ error: `__init__` returns nothing
    |                ^^^^ a value
    = note: calling the class gives the struct; write `return` alone
 
-error: `__init__` on a generic struct is not built yet
+error: `__init__` takes `self` first, with no type
   --> main.byn:19:9
    |
-19 |     def __init__(self, item: T):
-   |         ^^^^^^^^ in a generic struct
-   = note: build the struct from its fields for now, or give it a class function
-
-error: `__init__` takes `self` first, with no type
-  --> main.byn:26:9
-   |
-26 |     def __init__(x: f64):
+19 |     def __init__(x: f64):
    |         ^^^^^^^^ no `self`
    = note: write `def __init__(self, x: f64):`"
+    );
+}
+
+/// A generic struct's `__init__` finds the class's type arguments from its arguments, as the
+/// constructor does. One no argument fixes is reported at the call, and is fine once written
+/// on the class; a written one is checked against its parameter's bound.
+#[test]
+fn generic_init_finds_the_class_type_arguments() {
+    let program = r"
+class Box[T: Number](Struct):
+    item: T
+
+    def __init__(self, item: T):
+        self.item = item
+
+
+class Holder[T](Struct):
+    items: list[T]
+
+    def __init__(self):
+        self.items = []
+
+
+def main():
+    print(Box(1.5).item, Holder[f64]().items)
+    empty = Holder()
+    text = Box[str]('a')
+";
+    assert_eq!(
+        check_one(program),
+        r"error: `Holder` does not say what `T` is from its arguments
+  --> main.byn:17:13
+   |
+17 |     empty = Holder()
+   |             ^^^^^^^^ type argument not found
+   = note: write it on the class, for example `Holder[f64](...)`
+
+error: `Box` needs `T` to be a `Number`, found `str`
+  --> main.byn:18:12
+   |
+18 |     text = Box[str]('a')
+   |            ^^^^^^^^ bound not satisfied"
     );
 }

@@ -56,8 +56,9 @@ pub(crate) fn initializer<'db>(
 impl<'db> Lowerer<'db> {
     /// The signature callers see for the `__init__` declared by the statement `function`, from
     /// its written `parameters`, `self` first, and its written return type `returns`: the
-    /// parameters after `self`, returning the struct. A return type other than `None`, a
-    /// generic struct and a missing `self` are reported, since this slice builds none of them.
+    /// parameters after `self`, returning the struct. A return type other than `None` and a
+    /// missing `self` are reported. A generic struct's `__init__` keeps only its own type
+    /// parameters here; a call of the class adds the class's (`body::initializer_calls`).
     pub(crate) fn initializer_signature(
         &mut self,
         function: NodeId,
@@ -78,16 +79,6 @@ impl<'db> Lowerer<'db> {
                     "calling the class gives the struct `__init__` builds; remove the return \
                      type, and let a bad argument panic (decision 0068)",
                 ),
-            );
-        }
-        if matches!(built.kind(self.db), TypeKind::Struct(nominal) if !nominal.arguments.is_empty())
-        {
-            let name = self.tree.child(function, Role::Name).unwrap_or(function);
-            self.error(
-                name,
-                "`__init__` on a generic struct is not built yet",
-                "in a generic struct",
-                Some("build the struct from its fields for now, or give it a class function"),
             );
         }
         let has_self = self

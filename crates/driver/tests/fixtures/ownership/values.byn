@@ -220,3 +220,26 @@ def initialized():
     show(holder.second)
     initialized_keep(holder)
     initialized_keep(InitializedHolder(make(3), 2))
+
+
+# site: initialized_generic
+# A generic struct built by `__init__`, its type argument found from the arguments: two `Owned`
+# parameters, each moved into a different field on each of two paths, one returning early.
+class InitializedPair[T](Struct):
+    first: T
+    rest: list[T]
+
+    def __init__(self, a: Owned[T], b: Owned[T], k: int):
+        if k > 1:
+            self.first = a
+            self.rest = [b]
+            return
+        self.first = b
+        self.rest = [a]
+
+
+def initialized_generic():
+    pair = InitializedPair(NEW1, NEW2, 1)
+    show(pair.first)
+    other = InitializedPair(make(3), make(4), 2)
+    show(other.rest[0])

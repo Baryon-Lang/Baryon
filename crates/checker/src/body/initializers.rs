@@ -20,7 +20,7 @@ use super::calls::Arguments;
 use crate::outline::{Base, Kind, outline};
 use database::{Definition, File};
 use syntax::{NodeId, Role, SyntaxKind};
-use types::{Callee, Declaration, Item, Nominal, Type};
+use types::{Declaration, Item, Nominal, Type};
 
 /// What checking an `__init__` body needs to know about the struct it builds.
 pub(super) struct Initializer<'db> {
@@ -34,12 +34,12 @@ pub(super) struct Initializer<'db> {
 
 impl<'db> Body<'db> {
     /// The `__init__` a call of the class `name`, of kind `kind` in `file`, calls: `None` for
-    /// anything but a non-generic struct that defines one, which is built from its fields.
+    /// anything but a struct that defines one, which is built from its fields.
     pub(super) fn initializer(&self, kind: &Kind, file: File, name: NodeId) -> Option<Item<'db>> {
         let Kind::Class(class) = kind else {
             return None;
         };
-        if class.base != Base::Struct || !class.type_parameters.is_empty() {
+        if class.base != Base::Struct {
             return None;
         }
         let nominal = Nominal {
@@ -48,29 +48,6 @@ impl<'db> Body<'db> {
             arguments: Vec::new(),
         };
         crate::initializers::initializer(self.db, self.lowerer.package, &nominal)
-    }
-
-    /// The call `node` of a class, written `callee`, that calls its `__init__`, `initializer`:
-    /// checked against `__init__`'s parameters after `self`, and giving the struct.
-    pub(super) fn initialized(
-        &mut self,
-        node: NodeId,
-        callee: &str,
-        initializer: Item<'db>,
-        arguments: &Arguments,
-    ) -> Type<'db> {
-        let Declaration::Function(signature) = &self.db.declaration(initializer).declaration else {
-            return self.untyped(arguments);
-        };
-        let signature = signature.clone();
-        self.check_call(
-            node,
-            callee,
-            &signature,
-            None,
-            Callee::Method(initializer),
-            arguments,
-        )
     }
 
     /// Starts checking the body of `__init__`, the statement `function` of the class `class`:
