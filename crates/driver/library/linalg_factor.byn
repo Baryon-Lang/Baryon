@@ -43,13 +43,80 @@ def lu_factor[T: Float](a: Array[T, 2]) -> Raises[tuple[Array[T, 2], Array[int, 
     return lu, piv
 
 
-def lu_solve[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]:
+def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 1]) -> Array[f64, 1]:
     """The vector `x` with `a @ x == b`, from `lu_factor(a)`'s `lu` and `piv`, as
     `scipy.linalg.lu_solve((lu, piv), b)`.
 
     Swaps `b`'s rows as `piv` says, then solves with `L` forward and `U` backward: about 2n²
     multiply-adds, so factoring once and solving many times saves the n³ work. Panics when the
     lengths do not fit.
+    """
+    return _lu_solve_vector(lu, piv, b)
+
+
+def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 1]) -> Array[f32, 1]:
+    """`lu_solve` of an `f32` factorization and vector, worked in `f32`."""
+    return _lu_solve_vector(lu, piv, b)
+
+
+def lu_solve(lu: Array[f64, 2], piv: Array[int, 1], b: Array[f64, 2]) -> Array[f64, 2]:
+    """The matrix `x` with `a @ x == b`, one column for each column of `b`, from `lu_factor(a)`'s
+    `lu` and `piv`, as `scipy.linalg.lu_solve((lu, piv), b)` for a two-dimensional `b`.
+
+    About 2n² multiply-adds for each of `b`'s k columns. Panics when `b` has not as many rows as
+    `lu`.
+    """
+    return _lu_solve_matrix(lu, piv, b)
+
+
+def lu_solve(lu: Array[f32, 2], piv: Array[int, 1], b: Array[f32, 2]) -> Array[f32, 2]:
+    """`lu_solve` of an `f32` factorization and matrix, worked in `f32`."""
+    return _lu_solve_matrix(lu, piv, b)
+
+
+def solve(a: Array[f64, 2], b: Array[f64, 1]) -> Raises[Array[f64, 1], LinAlgError]:
+    """The vector `x` with `a @ x == b`, for a square matrix `a`, as `numpy.linalg.solve`.
+
+    `lu_factor` then `lu_solve`, LAPACK's `gesv` order unblocked: about 2n³/3 multiply-adds and
+    one n × n copy of `a`. Raises `LinAlgError` when a pivot is exactly zero; panics when `a` is
+    not square or `b`'s length is not `a`'s.
+    """
+    assert len(b) == a.shape[0], "solve needs b as long as a has rows"
+    lu, piv = lu_factor(a)
+    return _lu_solve_vector(lu, piv, b)
+
+
+def solve(a: Array[f32, 2], b: Array[f32, 1]) -> Raises[Array[f32, 1], LinAlgError]:
+    """`solve` of an `f32` matrix and vector, worked in `f32`."""
+    assert len(b) == a.shape[0], "solve needs b as long as a has rows"
+    lu, piv = lu_factor(a)
+    return _lu_solve_vector(lu, piv, b)
+
+
+def solve(a: Array[f64, 2], b: Array[f64, 2]) -> Raises[Array[f64, 2], LinAlgError]:
+    """The matrix `x` with `a @ x == b`, one column for each column of `b`, for a square matrix
+    `a`, as `numpy.linalg.solve` for a two-dimensional `b`.
+
+    Factors `a` once, about 2n³/3 multiply-adds, then solves each of `b`'s k columns in about 2n²
+    more. Raises `LinAlgError` when a pivot is exactly zero; panics when `a` is not square or `b`
+    has not as many rows as `a`.
+    """
+    assert b.shape[0] == a.shape[0], "solve needs b with as many rows as a"
+    lu, piv = lu_factor(a)
+    return _lu_solve_matrix(lu, piv, b)
+
+
+def solve(a: Array[f32, 2], b: Array[f32, 2]) -> Raises[Array[f32, 2], LinAlgError]:
+    """`solve` of an `f32` matrix and a matrix of right-hand sides, worked in `f32`."""
+    assert b.shape[0] == a.shape[0], "solve needs b with as many rows as a"
+    lu, piv = lu_factor(a)
+    return _lu_solve_matrix(lu, piv, b)
+
+
+def _lu_solve_vector[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> Array[T, 1]:
+    """The body of `lu_solve` for one right-hand side: the swaps of `piv`, then forward and back
+    substitution, in the order LAPACK's `getrs` uses, so each `x[i]` adds its terms left to
+    right.
     """
     n = lu.shape[0]
     assert lu.shape[1] == n, "lu_solve needs a square lu"
@@ -75,16 +142,23 @@ def lu_solve[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 1]) -> A
     return x
 
 
-def solve[T: Float](a: Array[T, 2], b: Array[T, 1]) -> Raises[Array[T, 1], LinAlgError]:
-    """The vector `x` with `a @ x == b`, for a square matrix `a`, as `numpy.linalg.solve`.
-
-    `lu_factor` then `lu_solve`, LAPACK's `gesv` order unblocked: about 2n³/3 multiply-adds and
-    one n × n copy of `a`. Raises `LinAlgError` when a pivot is exactly zero; panics when `a` is
-    not square or `b`'s length is not `a`'s.
+def _lu_solve_matrix[T: Float](lu: Array[T, 2], piv: Array[int, 1], b: Array[T, 2]) -> Array[T, 2]:
+    """The body of `lu_solve` for a matrix of right-hand sides: each column of `b` is copied out,
+    solved by `_lu_solve_vector`, and copied into the result, so every column gets the bits it
+    would get alone.
     """
-    assert len(b) == a.shape[0], "solve needs b as long as a has rows"
-    lu, piv = lu_factor(a)
-    return lu_solve(lu, piv, b)
+    n = lu.shape[0]
+    assert b.shape[0] == n, "lu_solve needs b with as many rows as lu"
+    columns = b.shape[1]
+    x = Array.zeros((n, columns), T)
+    column = Array.zeros(n, T)
+    for j in range(columns):
+        for i in range(n):
+            column[i] = b[i, j]
+        solved = _lu_solve_vector(lu, piv, column)
+        for i in range(n):
+            x[i, j] = solved[i]
+    return x
 
 
 def det[T: Float](a: Array[T, 2]) -> T:
@@ -119,7 +193,7 @@ def inv[T: Float](a: Array[T, 2]) -> Raises[Array[T, 2], LinAlgError]:
     for j in range(n):
         column.fill(0.0)
         column[j] = 1.0
-        x = lu_solve(lu, piv, column)
+        x = _lu_solve_vector(lu, piv, column)
         for i in range(n):
             result[i, j] = x[i]
     return result

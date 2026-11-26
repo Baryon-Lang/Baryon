@@ -207,6 +207,75 @@ def main() -> Raises[None, LinAlgError]:
     .unwrap();
 }
 
+/// `solve` of a 4 × 4 system with a 4 × 3 matrix of right-hand sides, `lu_solve` with the first
+/// two of those columns, and the same `solve` in `f32` (roadmap 3.10.3): the overloads for a
+/// matrix `b` (decision 0067). `NumPy` and `SciPy` print the same lines, from
+///
+/// ```python
+/// g = numpy.random.Generator(numpy.random.Philox(key=31))
+/// v = g.random(4 * 7).reshape(4, 7)
+/// a, b = v[:, :4], v[:, 4:]
+/// numpy.linalg.solve(a, b)
+/// scipy.linalg.lu_solve(scipy.linalg.lu_factor(a), b[:, :2])
+/// numpy.linalg.solve(a.astype(numpy.float32), b.astype(numpy.float32))
+/// ```
+#[test]
+fn several_right_hand_sides_match_numpy() {
+    let program = r#"
+from linalg import LinAlgError, lu_factor, lu_solve, solve
+from random import Philox
+
+
+def show(x: Array[f64, 2]):
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            print(f"{x[i, j]:.12g}", end=" ")
+    print()
+
+
+def show32(x: Array[f32, 2]):
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            print(f"{x[i, j]:.4g}", end=" ")
+    print()
+
+
+def main() -> Raises[None, LinAlgError]:
+    generator = Philox(31)
+    a = Array.zeros((4, 4))
+    b = Array.zeros((4, 3))
+    for i in range(4):
+        for j in range(7):
+            if j < 4:
+                a[i, j] = generator.uniform()
+            else:
+                b[i, j - 4] = generator.uniform()
+    show(solve(a, b))
+    lu, piv = lu_factor(a)
+    first = Array.zeros((4, 2))
+    for i in range(4):
+        for j in range(2):
+            first[i, j] = b[i, j]
+    show(lu_solve(lu, piv, first))
+    a32 = Array.zeros((4, 4), f32)
+    b32 = Array.zeros((4, 3), f32)
+    for i in range(4):
+        for j in range(4):
+            a32[i, j] = f32(a[i, j])
+        for j in range(3):
+            b32[i, j] = f32(b[i, j])
+    show32(solve(a32, b32))
+"#;
+    prints(
+        "linalg-several",
+        program.trim_start(),
+        "0.858426054397 -0.0393383490743 0.0515755862443 -1.50659609996 1.02499770277 1.45882744976 0.1751739331 0.30082169857 0.293282535827 0.698593944947 -0.460786269459 -0.409254044931 \n\
+         0.858426054397 -0.0393383490743 -1.50659609996 1.02499770277 0.1751739331 0.30082169857 0.698593944947 -0.460786269459 \n\
+         0.8584 -0.03934 0.05158 -1.507 1.025 1.459 0.1752 0.3008 0.2933 0.6986 -0.4608 -0.4093 \n",
+    )
+    .unwrap();
+}
+
 /// A right-hand side whose length is not the matrix's panics, as mismatched shapes in
 /// whole-array arithmetic do, pointing into the library and naming the caller's line.
 #[test]
@@ -226,7 +295,7 @@ def main() -> Raises[None, LinAlgError]:
     assert_eq!(
         panic_report(&ran),
         "panic: assertion failed: len(b) == a.shape[0], \"solve needs b as long as a has rows\"\n  \
-         --> <std>/linalg_factor.byn:85:5\n"
+         --> <std>/linalg_factor.byn:84:5\n"
     );
 }
 
@@ -292,9 +361,9 @@ fn f32_matrices_match_numpy() {
 }
 
 /// A library function is compiled only into a program that calls it: a program that never
-/// calls `solve` has no `solve` in its module, so the library costs it nothing. `solve` is
-/// generic over its float type, so the program that calls it gets its `f64` instance, named for
-/// the internal file that defines it, `linalg_factor` (decision 0062).
+/// calls `solve` has no `solve` in its module, so the library costs it nothing. The program that
+/// calls it gets the `f64` overload, named for the internal file that defines it, `linalg_factor`
+/// (decision 0062), and the `f64` instance of the generic helper it calls.
 #[test]
 fn library_functions_are_compiled_only_when_called() {
     let compiled = |program: &str| {
@@ -309,7 +378,8 @@ fn library_functions_are_compiled_only_when_called() {
          def main() -> Raises[None, LinAlgError]:\n    print(solve(Array.fill((1, 1), 2.0), Array([1.0])))\n",
     );
     assert!(
-        used.contains("@\"<std>.linalg_factor.solve[f64]\""),
+        used.contains("@\"<std>.linalg_factor.solve\"")
+            && used.contains("@\"<std>.linalg_factor._lu_solve_vector[f64]\""),
         "{used}"
     );
 }
