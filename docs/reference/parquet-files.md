@@ -6,11 +6,10 @@ into programs yet.
 A Parquet file is a table stored column by column, compressed, with the name and type of each
 column written in the file. Data warehouses, Spark, pandas and polars all write it, and it is
 the usual format for a table too large to keep as text. `DataFrame.read_parquet(path)` reads
-one into a [`DataFrame`](dataframes.md), with the name pandas has
-([decision 0045](../decisions/0045-dataframe.md), roadmap 3.14.6.3). The reader is written in
-Baryon from the format's specification, so a program that reads Parquet needs no other
-library. Writing a frame as Parquet, `df.to_parquet(path)`, is not built yet (roadmap
-3.14.6.4).
+one into a [`DataFrame`](dataframes.md) and `df.to_parquet(path)` writes a frame as one, with
+the names pandas has ([decision 0045](../decisions/0045-dataframe.md), roadmap 3.14.6.3 and
+3.14.6.4). The reader and the writer are written in Baryon from the format's specification,
+so a program that uses Parquet needs no other library.
 
 ## Reading a file
 
@@ -77,8 +76,46 @@ The reader has what the common writers use by default:
   `PLAIN_DICTIONARY`), and booleans stored as runs (`RLE`);
 - data pages of version 1 and version 2.
 
+## Writing a file
+
+`df.to_parquet(path)` writes a frame as a Parquet file and gives nothing back. A file that is
+there already is replaced.
+
+```python
+def main() -> Raises[None, OSError]:
+    trades = DataFrame({
+        "symbol": Array(["AAPL", "MSFT", "BRK,B"]),
+        "price": Array([189.5, None, 171.0]),
+        "volume": Array([100, 250, 50]),
+    })
+    trades.to_parquet("trades.parquet")
+```
+
+pandas, polars and any other Parquet reader open the file and find the same columns, with
+the same types:
+
+- **Each column keeps its type.** An `f64` is a `DOUBLE` and an `f32` a `FLOAT`. An `i64` or
+  a `u64` is an `INT64` and a narrower whole number an `INT32`, each marked with its width
+  and whether it has a sign, so an `i8` reads back as an `int8` and a `u64` as a `uint64`.
+  A `bool` is a `BOOLEAN`, and a `str` is bytes marked as UTF-8 text.
+- **`None` is a missing value**, in a column of any type that may hold it; such a column is
+  marked optional and the others required. A NaN is written as a NaN, so the two stay
+  apart, and an empty text stays apart from a missing one. Every float comes back bit for
+  bit, except that any NaN is written as the one quiet NaN.
+- **The pages are compressed with Snappy**, the codec pandas uses when none is named.
+- **The rows are cut into row groups** of 1,048,576 rows, which is what pyarrow writes, and
+  each column of a group into pages of 65,536 rows. A frame of no rows writes a file with
+  the schema and no row group.
+
+The writer has columns of `f64` and `f32`, of every whole number type, of `bool` and of
+`str`, and each of them with `| None`. A column of another type, such as complex numbers, is
+a compile error that names it. Values are stored plainly: no dictionaries and no statistics
+are written yet, so a file with a column of few distinct texts is larger than the one pandas
+writes.
+
 ## Errors
 
+`to_parquet` can fail with `OSError` alone, when the file cannot be made or written.
 `DataFrame.read_parquet` can fail in two ways, and the function that calls it handles both or
 lists them in its `Raises`, as with any [error](errors.md).
 
@@ -117,6 +154,12 @@ to read with no compression on the development machine, 2.2 s with Snappy, 2.0 s
 has not been tuned yet: it decodes on one thread and rebuilds each float from its bytes by
 arithmetic.
 
+`to_parquet` holds each column as plain bytes and again as compressed pages before it puts
+the file together, about twice the frame's size besides the frame, and frees it all before
+it returns. Writing the same fifteen columns took about 3.3 s for each million rows, where
+polars took 0.13 s, and the file of 2.3 million rows was 92 MB, where polars, which writes
+dictionaries, made 69 MB.
+
 ## Differences from pandas
 
 - **The types are given, never taken from the file.** pandas gives each column the type the
@@ -126,15 +169,20 @@ arithmetic.
   column the schema does not name is skipped, and one it names that the file lacks is an
   error.
 - **A number too large for its field is an error**, never wrapped around.
-- **No keywords yet.** `columns=`, `engine=`, `filters=` and the rest are compile errors that
-  name the keyword, never ignored.
+- **No keywords yet.** `columns=`, `engine=`, `filters=` and the rest of `read_parquet`, and
+  `compression=`, `index=` and the rest of `to_parquet`, are compile errors that name the
+  keyword, never ignored.
 - **No index.** A file pandas wrote with a named index holds it as one more column, which a
   field of that name reads like any other. A frame has no index here
-  ([decision 0045](../decisions/0045-dataframe.md)).
+  ([decision 0045](../decisions/0045-dataframe.md)), so `to_parquet` writes none, and the
+  file carries none of the notes pandas adds for itself: pandas reads it with a plain row
+  index and the types the file names.
+- **`to_parquet` needs a path.** In pandas, `df.to_parquet()` with no path gives the bytes
+  back.
 
 ## Not built yet
 
-- Writing: `df.to_parquet(path)` (roadmap 3.14.6.4).
+- Writing with another codec than Snappy, with dictionaries or with statistics.
 - Columns of dates, times, timestamps and decimals, and of bytes that are not text: a frame
   has no column type for them yet.
 - Nested columns: lists, maps and structs.
@@ -142,7 +190,9 @@ arithmetic.
   and `BYTE_STREAM_SPLIT`, which some writers use when asked for the format's version 2, and
   the Brotli, LZO and older LZ4 codecs.
 - Reading some of the row groups, or a file larger than memory.
-- Files written by pandas with pyarrow have not been tested yet. The tests read files
-  written by polars and files built by hand from the specification, and files from Apache's
+- Tests with pyarrow. Two files written by pyarrow 26.0.1 were read here, and pyarrow read a
+  file written here with every value matching, but both were checked by hand and not in the
+  tests. The tests read files written by polars and files built by hand from the
+  specification, and polars reads the files written here. Files from Apache's
   `parquet-testing` collection, written by Impala, by parquet-mr and by Arrow's C++ library,
   were read by hand with the values polars reads from them.

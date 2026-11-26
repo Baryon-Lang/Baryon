@@ -1,0 +1,356 @@
+"""Parquet files written in Baryon: the pages of a column and the file around them (roadmap
+3.14.6.4, decision 0045).
+
+The compiler calls a function of `<std>/frame_parquet_put.byn` for each column of
+`df.to_parquet(path)`, which turns the column into plain bytes and hands them to
+`parquet_chunks` here, and then `parquet_write` with what those calls gave. A program cannot
+import this file.
+
+The file is laid out as the readers of `<std>/frame_parquet.byn` expect, and as other
+libraries write it:
+
+- `PAR1`, then the row groups: 1,048,576 rows each, the last one shorter. A row group holds
+  one chunk for each column, and a chunk holds data pages of 65,536 rows.
+- A data page is of version 1: a Thrift header, then, compressed together with Snappy, the
+  definition levels of a column that may hold `None`, one bit for each row, and the values
+  that are there, written plainly (`PLAIN`).
+- The metadata: the schema, the rows, and for each chunk where it starts and how long it
+  is, as a Thrift struct in the compact protocol; its length in four bytes; `PAR1`.
+
+No dictionaries and no statistics are written yet.
+
+A column's kind is a number the compiler passes: 0 `bool`, 1 to 4 `i8` to `i64`, 5 to 8 `u8`
+to `u64`, 9 `f32`, 10 `f64`, 11 `str`, and 100 more when the column may hold `None`.
+
+Cost: every column is held as plain bytes and again as compressed pages before the file is
+put together, so writing takes about twice the frame's size in memory besides the frame.
+"""
+
+from parquet_snappy import snappy_compress
+
+
+def parquet_group_rows() -> int:
+    """The rows of a row group, 1,048,576, which is what pyarrow writes."""
+    return 1048576
+
+
+def _page_rows() -> int:
+    """The rows of a data page. It divides `parquet_group_rows()` and is a multiple of 8, so
+    every page starts at a whole byte of the validity bitmap."""
+    return 65536
+
+
+def thrift_varint(out: InOut[list[int]], value: int) -> None:
+    """Adds `value`, which is not negative, to `out` as a varint: seven bits to a byte,
+    lowest first, the top bit set on every byte but the last."""
+    rest = value
+    while rest >= 128:
+        out.append((rest & 127) | 128)
+        rest = rest >> 7
+    out.append(rest)
+
+
+def thrift_number(out: InOut[list[int]], delta: int, kind: int, value: int) -> None:
+    """Adds a field that holds the whole number `value`, which is not negative: the header
+    byte for a field `delta` past the last one, of the compact type `kind` (5 for 32 bits, 6
+    for 64), and the value as a zigzag varint."""
+    out.append((delta << 4) | kind)
+    thrift_varint(out, value << 1)
+
+
+def thrift_text(out: InOut[list[int]], delta: int, text: str) -> None:
+    """Adds a field `delta` past the last one that holds `text`: the header byte, the length
+    of its UTF-8 bytes as a varint, and the bytes."""
+    out.append((delta << 4) | 8)
+    raw = text.encode()
+    thrift_varint(out, len(raw))
+    for byte in raw:
+        out.append(int(byte))
+
+
+def thrift_items(out: InOut[list[int]], delta: int, kind: int, count: int) -> None:
+    """Adds the start of a field `delta` past the last one that holds a list of `count`
+    items of the compact type `kind`: the header byte and the list's header."""
+    out.append((delta << 4) | 9)
+    if count < 15:
+        out.append((count << 4) | kind)
+    else:
+        out.append(240 | kind)
+        thrift_varint(out, count)
+
+
+def _page_header(body: int, stored: int, values: int) -> list[int]:
+    """The Thrift header of a data page of version 1 that holds `values` values, with the
+    missing ones, in `body` bytes that are `stored` bytes once compressed: plain values,
+    and levels as runs."""
+    out: list[int] = []
+    thrift_number(out, 1, 5, 0)
+    thrift_number(out, 1, 5, body)
+    thrift_number(out, 1, 5, stored)
+    out.append(44)
+    thrift_number(out, 1, 5, values)
+    thrift_number(out, 1, 5, 0)
+    thrift_number(out, 1, 5, 3)
+    thrift_number(out, 1, 5, 3)
+    out.append(0)
+    out.append(0)
+    return out
+
+
+def parquet_room(raw: InOut[Array[u8, 1]], used: int, more: int) -> None:
+    """Makes room in `raw` for `more` bytes after its first `used`: when it is too short it
+    is replaced by an array twice as long as is needed, holding the same first bytes, so
+    adding a few bytes at a time costs a constant on average."""
+    if used + more <= len(raw):
+        return
+    longer = Array.zeros(2 * (used + more), u8)
+    for at in range(used):
+        longer[at] = raw[at]
+    raw = longer
+
+
+def _count(valid: Array[u8, 1], start: int, end: int) -> int:
+    """How many rows from `start` to `end` have their bit set in the validity bitmap
+    `valid`. `start` is a multiple of 8."""
+    there = 0
+    for row in range(start, end):
+        there += (int(valid[row >> 3]) >> (row & 7)) & 1
+    return there
+
+
+def _levels(valid: Array[u8, 1], start: int, end: int, there: int) -> Array[u8, 1]:
+    """The definition levels of the rows `start` to `end`, of which `there` hold a value, as
+    a data page of version 1 stores them: their length in four bytes, then one run when
+    every row has a value or none has, and otherwise the bits of `valid` for those rows as
+    one bit-packed run, the bits past the last row left 0. `start` is a multiple of 8."""
+    rows = end - start
+    run: list[int] = []
+    if there == rows or there == 0:
+        thrift_varint(run, rows << 1)
+        run.append(1 if there == rows else 0)
+    else:
+        groups = (rows + 7) >> 3
+        thrift_varint(run, (groups << 1) | 1)
+        for group in range(groups):
+            byte = int(valid[(start >> 3) + group])
+            left = rows - 8 * group
+            if left < 8:
+                byte = byte & ((1 << left) - 1)
+            run.append(byte)
+    out = Array.zeros(4 + len(run), u8)
+    size = len(run)
+    for part in range(4):
+        out[part] = u8((size >> (8 * part)) & 255)
+    for at in range(size):
+        out[4 + at] = u8(run[at])
+    return out
+
+
+def parquet_chunks(
+    raw: Array[u8, 1], ends: Array[i64, 1], valid: Array[u8, 1], rows: int, kind: int
+) -> tuple[Array[u8, 1], list[int]]:
+    """The chunks of one column of `rows` rows, one for each row group, end to end, and
+    three numbers for each: its bytes as written, its bytes before compression, both with
+    the page headers, and its values, with the missing ones.
+
+    `raw` holds the values that are there, in order: the plain bytes of each number end to
+    end, 4 for the kinds of 32 bits and 8 for those of 64, one byte, 0 or 1, for each
+    `bool`, and the UTF-8 bytes of each `str` end to end, where `ends[k]` is where value `k`
+    starts and `ends[k + 1]` where it ends. `valid` is the validity bitmap of a column whose
+    `kind` is 100 or more, and is not read for another.
+    """
+    optional = kind >= 100
+    base = kind % 100
+    width = 0
+    if base == 0:
+        width = 1
+    elif base == 4 or base == 8 or base == 10:
+        width = 8
+    elif base != 11:
+        width = 4
+    out = Array.zeros(len(raw) // 2 + 64, u8)
+    used = 0
+    sizes: list[int] = []
+    spent = 0
+    start = 0
+    while start < rows:
+        stop = min(rows, start + parquet_group_rows())
+        written = 0
+        plain = 0
+        row = start
+        while row < stop:
+            end = min(stop, row + _page_rows())
+            there = _count(valid, row, end) if optional else end - row
+            levels = Array.zeros(0, u8)
+            if optional:
+                levels = _levels(valid, row, end, there)
+            size = there * width
+            if base == 0:
+                size = (there + 7) >> 3
+            elif base == 11:
+                size = 4 * there + ends[spent + there] - ends[spent]
+            body = Array.zeros(len(levels) + size, u8)
+            at = len(levels)
+            for part in range(at):
+                body[part] = levels[part]
+            if base == 0:
+                for k in range(there):
+                    spot = at + (k >> 3)
+                    body[spot] = body[spot] | (raw[spent + k] << u8(k & 7))
+            elif base == 11:
+                for k in range(spent, spent + there):
+                    first = ends[k]
+                    length = ends[k + 1] - first
+                    for part in range(4):
+                        body[at + part] = u8((length >> (8 * part)) & 255)
+                    at += 4
+                    for part in range(length):
+                        body[at + part] = raw[first + part]
+                    at += length
+            else:
+                first = spent * width
+                for part in range(size):
+                    body[at + part] = raw[first + part]
+            spent += there
+            packed = snappy_compress(body)
+            head = _page_header(len(body), len(packed), end - row)
+            parquet_room(out, used, len(head) + len(packed))
+            for part in range(len(head)):
+                out[used + part] = u8(head[part])
+            used += len(head)
+            for part in range(len(packed)):
+                out[used + part] = packed[part]
+            used += len(packed)
+            written += len(head) + len(packed)
+            plain += len(head) + len(body)
+            row = end
+        sizes.append(written)
+        sizes.append(plain)
+        sizes.append(stop - start)
+        start = stop
+    return (out[:used].copy(), sizes)
+
+
+def _leaf(out: InOut[list[int]], name: str, kind: int) -> None:
+    """Adds the schema element of the column `name` of the kind `kind` to `out`: its
+    physical type, whether a value may be missing, its name, and for text and for the whole
+    numbers that are not a plain `INT32` or `INT64` the annotation that says what the bytes
+    mean, in both the older and the newer form."""
+    base = kind % 100
+    physical = [0, 1, 1, 1, 2, 1, 1, 1, 2, 4, 5, 6]
+    converted = [-1, 15, 16, -1, -1, 11, 12, 13, 14, -1, -1, 0]
+    bits = [0, 8, 16, 0, 0, 8, 16, 32, 64, 0, 0, 0]
+    thrift_number(out, 1, 5, physical[base])
+    thrift_number(out, 2, 5, 1 if kind >= 100 else 0)
+    thrift_text(out, 1, name)
+    if converted[base] >= 0:
+        thrift_number(out, 2, 5, converted[base])
+        out.append(76)
+        if base == 11:
+            out.append(28)
+            out.append(0)
+        else:
+            out.append(172)
+            out.append(19)
+            out.append(bits[base])
+            out.append(17 if base < 5 else 18)
+            out.append(0)
+        out.append(0)
+    out.append(0)
+
+
+def _footer(
+    names: list[str], kinds: list[int], chunks: list[tuple[Array[u8, 1], list[int]]], rows: int
+) -> list[int]:
+    """The metadata of the file whose columns are `names` of the kinds `kinds`, with the
+    chunks `chunks` as `parquet_chunks` gave them and `rows` rows: the schema, the rows, and
+    each row group with where each of its chunks starts, the groups laid out one after
+    another from byte 4 with their chunks in the columns' order."""
+    columns = len(names)
+    physical = [0, 1, 1, 1, 2, 1, 1, 1, 2, 4, 5, 6]
+    out: list[int] = []
+    thrift_number(out, 1, 5, 1)
+    thrift_items(out, 1, 12, columns + 1)
+    thrift_text(out, 4, "schema")
+    thrift_number(out, 1, 5, columns)
+    out.append(0)
+    for column in range(columns):
+        _leaf(out, names[column], kinds[column])
+    thrift_number(out, 1, 6, rows)
+    groups = (rows + parquet_group_rows() - 1) // parquet_group_rows()
+    thrift_items(out, 1, 12, groups)
+    at = 4
+    for group in range(groups):
+        thrift_items(out, 1, 12, columns)
+        total = 0
+        held = 0
+        for column in range(columns):
+            written = chunks[column][1][3 * group]
+            plain = chunks[column][1][3 * group + 1]
+            held = chunks[column][1][3 * group + 2]
+            total += plain
+            thrift_number(out, 2, 6, at)
+            out.append(28)
+            thrift_number(out, 1, 5, physical[kinds[column] % 100])
+            thrift_items(out, 1, 5, 2)
+            out.append(0)
+            out.append(6)
+            thrift_items(out, 1, 8, 1)
+            raw = names[column].encode()
+            thrift_varint(out, len(raw))
+            for byte in raw:
+                out.append(int(byte))
+            thrift_number(out, 1, 5, 1)
+            thrift_number(out, 1, 6, held)
+            thrift_number(out, 1, 6, plain)
+            thrift_number(out, 1, 6, written)
+            thrift_number(out, 2, 6, at)
+            out.append(0)
+            out.append(0)
+            at += written
+        thrift_number(out, 1, 6, total)
+        thrift_number(out, 1, 6, held)
+        out.append(0)
+    thrift_text(out, 2, "Baryon")
+    out.append(0)
+    return out
+
+
+def parquet_write(
+    path: str,
+    names: list[str],
+    kinds: list[int],
+    chunks: list[tuple[Array[u8, 1], list[int]]],
+    rows: int,
+) -> Raises[None, OSError]:
+    """Writes the Parquet file `path` of `rows` rows: the columns `names`, of the kinds
+    `kinds` this file's documentation lists, whose chunks `parquet_chunks` gave. A file
+    that is there already is replaced. A frame of no rows writes a file of no row groups.
+
+    Raises `OSError` when the file cannot be made or written.
+    """
+    columns = len(names)
+    footer = _footer(names, kinds, chunks, rows)
+    total = 12 + len(footer)
+    for column in range(columns):
+        total += len(chunks[column][0])
+    out = Array.zeros(total, u8)
+    magic = "PAR1".encode()
+    for part in range(4):
+        out[part] = magic[part]
+        out[total - 4 + part] = magic[part]
+        out[total - 8 + part] = u8((len(footer) >> (8 * part)) & 255)
+    at = 4
+    groups = (rows + parquet_group_rows() - 1) // parquet_group_rows()
+    taken = [0 for column in range(columns)]
+    for group in range(groups):
+        for column in range(columns):
+            size = chunks[column][1][3 * group]
+            first = taken[column]
+            for part in range(size):
+                out[at + part] = chunks[column][0][first + part]
+            taken[column] = first + size
+            at += size
+    for part in range(len(footer)):
+        out[at + part] = u8(footer[part])
+    out.tofile(path)

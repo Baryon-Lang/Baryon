@@ -1,4 +1,6 @@
-//! `DataFrame.read_parquet` (roadmap 3.14.6.3, decision 0045), built and run: Parquet files
+//! `DataFrame.read_parquet` and `to_parquet` (roadmap 3.14.6.3 and 3.14.6.4, decision 0045),
+//! built and run. A frame written is read back as it was, and the bytes written are those of
+//! a file polars reads as the same table. Reading: Parquet files
 //! written by polars, and two written by hand with version 2 data pages, are read into frames
 //! whose columns hold what polars reads from the same files, and a file unlike the schema, cut
 //! short or not Parquet at all raises `ValueError` with a message that names the column.
@@ -337,4 +339,107 @@ fn a_file_unlike_the_schema_is_an_error() {
          2    1.5      3     c   -1\n"
     );
     assert_eq!(String::from_utf8_lossy(&ran.stdout), expected);
+}
+
+/// The program of `a_frame_written_is_the_file_polars_reads`: every type of column read from
+/// a file polars wrote, written, read back and written as CSV; then a frame of no rows.
+const WRITTEN: &str = r#"
+class All(Struct):
+    f: f64 | None
+    g: f32
+    a: i8 | None
+    b: i16
+    c: i32 | None
+    d: i64 | None
+    p: u8
+    q: u16 | None
+    r: u32
+    s: u64 | None
+    t: bool | None
+    u: bool
+    w: str | None
+    x: str
+    z: f64 | None
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    frame: DataFrame[All] = DataFrame.read_parquet("types_snappy.parquet")
+    frame.to_parquet("back.parquet")
+    again: DataFrame[All] = DataFrame.read_parquet("back.parquet")
+    again.to_csv("back.csv", na_rep="<none>")
+    frame.head(0).to_parquet("empty.parquet")
+    empty: DataFrame[All] = DataFrame.read_parquet("empty.parquet")
+    print(len(again), len(empty))
+"#;
+
+/// A frame with a column of every type the writer has, with and without `None`, is written
+/// byte for byte as `types_written.parquet`, a file polars reads as the table it wrote into
+/// `types_snappy.parquet`, with the same types. Read back here, it holds what the first file
+/// held. A frame of no rows writes a file that reads as no rows.
+#[test]
+fn a_frame_written_is_the_file_polars_reads() {
+    let files = ["types_snappy.parquet"];
+    let (ran, directory) = run("frame_parquet_written", WRITTEN, &files).unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stderr), "");
+    assert_eq!(String::from_utf8_lossy(&ran.stdout), "120 0\n");
+    let fixture = |name: &str| fs::read(Path::new(FIXTURES).join(name)).unwrap();
+    let written = fs::read(directory.join("back.parquet")).unwrap();
+    assert!(
+        written == fixture("types_written.parquet"),
+        "the bytes written have changed"
+    );
+    let back = fs::read(directory.join("back.csv")).unwrap();
+    assert!(
+        back == fixture("types.csv"),
+        "the file written was read back differently"
+    );
+}
+
+/// The program of `special_values_are_written`.
+const SPECIAL: &str = r#"
+from math import inf, nan
+
+
+class Row(Struct):
+    x: f64
+    y: f64 | None
+    name: str | None
+    flag: bool | None
+
+
+def main() -> Raises[None, OSError | ValueError]:
+    frame = DataFrame({
+        "x": Array([nan, inf, -inf, -0.0, 5e-324, 1.7976931348623157e308]),
+        "y": Array([None, nan, 1.5, None, None, -2.5]),
+        "name": Array(["", None, "日本語", "a\nb", None, "x"]),
+        "flag": Array([True, None, False, None, None, True]),
+    })
+    frame.to_parquet("special.parquet")
+    back: DataFrame[Row] = DataFrame.read_parquet("special.parquet")
+    print(back["x"])
+    print(back["y"])
+    print(back["name"])
+    print(back["flag"])
+    try:
+        frame.to_parquet("no/such/directory/special.parquet")
+    except OSError as error:
+        print(error.filename)
+"#;
+
+/// NaN, the infinities, signed zero and the smallest and largest floats are written and read
+/// back, a NaN that is there stays apart from a value that is missing, an empty text stays
+/// apart from a missing one. A path that cannot be written is an `OSError`.
+#[test]
+fn special_values_are_written() {
+    let (ran, _directory) = run("frame_parquet_special", SPECIAL, &[]).unwrap();
+    assert_eq!(String::from_utf8_lossy(&ran.stderr), "");
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout),
+        "[             nan              inf             -inf -0.00000000e+000\n  \
+         5.00000000e-324  1.79769313e+308]\n\
+         [None nan 1.5 None None -2.5]\n\
+         ['' None '日本語' 'a\\nb' None 'x']\n\
+         [True None False None None True]\n\
+         no/such/directory/special.parquet\n"
+    );
 }
