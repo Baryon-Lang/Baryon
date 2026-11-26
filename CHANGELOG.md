@@ -12,6 +12,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
 - `linalg.solve(a, b)` and `lu_solve` take a matrix `b` of several right-hand sides, as NumPy and
   SciPy do, factoring `a` once for all its columns
   ([`linalg.solve`](docs/reference/linear-algebra.md#linalgsolve)).
+- `fft.fftn` and `fft.ifftn` transform an array of one to four dimensions along every axis, as
+  NumPy's do ([`fft.fftn`](docs/reference/linear-algebra.md#fftfftn-and-fftifftn)).
 - The documentation has a website, the [Learn site](https://baryon-lang.github.io/Baryon/): every
   page of `docs/`, with a sidebar and search, opening on
   [Learn Baryon](docs/guide/learn.md), which says where each kind of reader should start. It is
