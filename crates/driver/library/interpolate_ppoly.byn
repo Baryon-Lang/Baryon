@@ -1,0 +1,278 @@
+"""`PPoly` for `interpolate` (roadmap 3.21.2): a piecewise polynomial, SciPy's
+`scipy.interpolate.PPoly`, and the kernels every spline of the module evaluates through.
+
+A `PPoly` holds breakpoints `x` and one polynomial per interval between them. Column `i` of the
+coefficients `c` is the polynomial on `[x[i], x[i + 1]]`, highest power first, in the local
+variable `s = t - x[i]`:
+
+    p(t) = c[0, i] * s**(k - 1) + c[1, i] * s**(k - 2) + ... + c[k - 1, i]
+
+The kernels are SciPy 1.18's `_ppoly` Cython ported operation for operation: the interval
+search, the power-by-power evaluation of a piece and of its derivatives and antiderivatives,
+`fix_continuity`, and `integrate`. A call, a derivative, an antiderivative and an integral
+therefore give the bits SciPy gives, and a test compares them with `==`. One `f64` is evaluated
+per call (decision 0069 point 1).
+
+The compiler reads this file for `<std>/interpolate.byn`, which re-exports `PPoly` (decision
+0062); a program cannot import it.
+"""
+
+from math import fmod, nan
+
+
+class PPoly(Struct):
+    """A piecewise polynomial, SciPy's `PPoly(c, x, extrapolate=None)`: `c` of shape `(k, m)`
+    holds `m` polynomials of order `k`, one for each interval of the `m + 1` breakpoints `x`,
+    highest power first. Called as `p(t)` it gives the polynomial of the interval holding `t`
+    at `t`. Holds copies of `c` and `x`, `(k + 1) * m + 1` numbers."""
+
+    # The coefficients: row `r` holds the power `k - 1 - r` of every interval.
+    c: Array[f64, 2]
+    # The breakpoints, increasing.
+    x: Array[f64, 1]
+    # Whether a point outside `x` is read from the first or last polynomial, rather than NaN.
+    extrapolate: bool
+    # Whether a point outside `x` is first brought into it by the period `x[-1] - x[0]`, SciPy's
+    # `extrapolate="periodic"`, set by `CubicSpline` with `bc_type="periodic"`.
+    _periodic: bool
+
+    def __init__(self, c: Array[f64, 2], x: Array[f64, 1], extrapolate: bool | None = None):
+        """Checks the shapes and copies `c` and `x`. Panics with SciPy's message where SciPy
+        raises `ValueError`: fewer than two breakpoints, no coefficients, `m` other than
+        `len(x) - 1`, or breakpoints that go down. A decreasing `x`, which SciPy accepts, is not
+        built yet."""
+        assert c.shape[0] > 0, "polynomial must be at least of order 0"
+        assert len(x) >= 2, "at least 2 breakpoints are needed"
+        assert c.shape[1] == len(x) - 1, "number of coefficients != len(x)-1"
+        for i in range(len(x) - 1):
+            assert x[i + 1] >= x[i], "`x` must be increasing; a decreasing `x` is not built yet"
+        self.c = c.copy()
+        self.x = x.copy()
+        self.extrapolate = True if extrapolate is None else extrapolate
+        self._periodic = False
+
+    def __call__(self, x: f64, nu: int = 0, extrapolate: bool | None = None) -> f64:
+        """The polynomial's `nu`-th derivative at `x`, SciPy's `PPoly.__call__` on one point.
+
+        A point outside the breakpoints is read from the nearest piece when extrapolating, is
+        brought into them by the period first when periodic, and is NaN otherwise, as is a NaN
+        `x`. `extrapolate` overrides the polynomial's own choice for this call. Panics when `nu`
+        is negative. Costs a bisection of `x` and `k` multiply-adds.
+        """
+        assert nu >= 0, "Order of derivative cannot be negative"
+        extend = self.extrapolate
+        point = x
+        if extrapolate is not None:
+            extend = extrapolate
+        elif self._periodic:
+            start = self.x[0]
+            point = start + _remainder(x - start, self.x[len(self.x) - 1] - start)
+            extend = False
+        return _evaluate(self.c, self.x, point, nu, extend)
+
+    def derivative(self, nu: int = 1) -> PPoly:
+        """The `nu`-th derivative as a new `PPoly` of order `k - nu`, at least 1, SciPy's
+        `PPoly.derivative`: each coefficient times the falling factorial of its power. A
+        negative `nu` gives the antiderivative of order `-nu`. Keeps the periodicity."""
+        if nu < 0:
+            return self.antiderivative(-nu)
+        k = self.c.shape[0]
+        m = self.c.shape[1]
+        rows = k - nu if k - nu > 0 else 1
+        c: Array[f64, 2] = Array.zeros((rows, m))
+        if k - nu > 0:
+            for r in range(rows):
+                factor = _poch(f64(rows - r), f64(nu))
+                for i in range(m):
+                    c[r, i] = self.c[r, i] * factor
+        result = PPoly(c, self.x, self.extrapolate)
+        result._periodic = self._periodic
+        return result
+
+    def antiderivative(self, nu: int = 1) -> PPoly:
+        """The `nu`-th antiderivative as a new `PPoly` of order `k + nu`, SciPy's
+        `PPoly.antiderivative`: zero at `x[0]` and continuous across every breakpoint, with its
+        first `nu - 1` derivatives. A negative `nu` gives the derivative of order `-nu`. A
+        periodic polynomial's antiderivative is not periodic, and does not extrapolate."""
+        if nu <= 0:
+            return self.derivative(-nu)
+        k = self.c.shape[0]
+        m = self.c.shape[1]
+        c: Array[f64, 2] = Array.zeros((k + nu, m))
+        for r in range(k):
+            factor = _poch(f64(k - r), f64(nu))
+            for i in range(m):
+                c[r, i] = self.c[r, i] / factor
+        _fix_continuity(c, self.x, nu - 1)
+        extend = False if self._periodic else self.extrapolate
+        return PPoly(c, self.x, extend)
+
+    def integrate(self, a: f64, b: f64, extrapolate: bool | None = None) -> f64:
+        """The integral of the polynomial from `a` to `b`, SciPy's `PPoly.integrate`: negative
+        when `b < a`, and NaN when a bound lies outside the breakpoints and the polynomial does
+        not extrapolate. A periodic polynomial counts whole periods and then the remainder.
+        `extrapolate` overrides the polynomial's own choice."""
+        sign = 1.0
+        low = a
+        high = b
+        if high < low:
+            low = b
+            high = a
+            sign = -1.0
+        if extrapolate is not None or not self._periodic:
+            extend = self.extrapolate if extrapolate is None else extrapolate
+            return _integrate(self.c, self.x, low, high, extend) * sign
+        start = self.x[0]
+        end = self.x[len(self.x) - 1]
+        period = end - start
+        periods, left = _divmod(high - low, period)
+        total = 0.0
+        if periods > 0.0:
+            total = _integrate(self.c, self.x, start, end, False) * periods
+        low = start + _remainder(low - start, period)
+        high = low + left
+        if high <= end:
+            total += _integrate(self.c, self.x, low, high, False)
+        else:
+            total += _integrate(self.c, self.x, low, end, False)
+            total += _integrate(self.c, self.x, start, start + left + low - end, False)
+        return total * sign
+
+
+def _find_interval(x: Array[f64, 1], point: f64, previous: int, extrapolate: bool) -> int:
+    """The interval of the breakpoints `x` that holds `point`, SciPy's `find_interval`: the `i`
+    with `x[i] <= point < x[i + 1]`, the last interval for `point == x[-1]`, the first or last
+    for a point outside when extrapolating, and -1 for NaN or a point outside otherwise. The
+    bisection starts from `previous`, as SciPy's does, so repeated breakpoints give its
+    answer too."""
+    count = len(x)
+    if not (x[0] <= point and point <= x[count - 1]):
+        if point < x[0] and extrapolate:
+            return 0
+        if point > x[count - 1] and extrapolate:
+            return count - 2
+        return -1
+    if point == x[count - 1]:
+        return count - 2
+    interval = previous if previous >= 0 and previous < count else 0
+    low = 0
+    high = interval
+    if point >= x[interval]:
+        low = interval
+        high = count - 2
+    if point < x[low + 1]:
+        high = low
+    while low < high:
+        middle = (high + low) // 2
+        if point < x[middle]:
+            high = middle
+        elif point >= x[middle + 1]:
+            low = middle + 1
+        else:
+            return middle
+    return low
+
+
+def _piece(s: f64, c: Array[f64, 2], interval: int, nu: int) -> f64:
+    """The polynomial of `interval` at the local point `s`, differentiated `nu` times, or
+    integrated `-nu` times from 0 when `nu` is negative: SciPy's `evaluate_poly1`, which adds
+    the terms lowest power first, each `c * s**p * factor`, rather than by Horner's rule."""
+    k = c.shape[0]
+    total = 0.0
+    power = 1.0
+    if nu < 0:
+        for _ in range(-nu):
+            power *= s
+    for p in range(k):
+        factor = 1.0
+        if nu > 0:
+            if p < nu:
+                continue
+            for j in range(p, p - nu, -1):
+                factor *= f64(j)
+        elif nu < 0:
+            for j in range(p, p - nu):
+                factor /= f64(j + 1)
+        total = total + c[k - p - 1, interval] * power * factor
+        if p < k - 1 and p >= nu:
+            power *= s
+    return total
+
+
+def _evaluate(c: Array[f64, 2], x: Array[f64, 1], point: f64, nu: int, extrapolate: bool) -> f64:
+    """The `nu`-th derivative of the piecewise polynomial `c` on `x` at `point`, SciPy's
+    `_ppoly.evaluate` for one point: NaN where `_find_interval` finds none."""
+    interval = _find_interval(x, point, 0, extrapolate)
+    if interval < 0:
+        return nan
+    return _piece(point - x[interval], c, interval, nu)
+
+
+def _integrate(c: Array[f64, 2], x: Array[f64, 1], a: f64, b: f64, extrapolate: bool) -> f64:
+    """The integral of the piecewise polynomial `c` on `x` from `a` to `b`, `a <= b`, SciPy's
+    `_ppoly.integrate`: each piece's antiderivative at its two ends, summed piece by piece.
+    NaN when a bound has no interval."""
+    first = _find_interval(x, a, 0, extrapolate)
+    last = _find_interval(x, b, 0, extrapolate)
+    if first < 0 or last < 0:
+        return nan
+    total = 0.0
+    for i in range(first, last + 1):
+        upper = b - x[i] if i == last else x[i + 1] - x[i]
+        lower = a - x[i] if i == first else 0.0
+        total = total + _piece(upper, c, i, -1) - _piece(lower, c, i, -1)
+    return total
+
+
+def _fix_continuity(c: InOut[Array[f64, 2]], x: Array[f64, 1], order: int):
+    """Sets the lowest `order + 1` coefficients of each interval after the first so that the
+    piecewise polynomial `c` on `x` and its first `order` derivatives are continuous at each
+    breakpoint, SciPy's `fix_continuity`: each is the previous piece's derivative at the
+    breakpoint over the factorial of its order."""
+    k = c.shape[0]
+    for i in range(1, len(x) - 1):
+        point = x[i]
+        interval = _find_interval(x, point, i, True)
+        for derivative in range(order, -1, -1):
+            value = _piece(point - x[interval - 1], c, interval - 1, derivative)
+            factorial = 1.0
+            for j in range(1, derivative + 1):
+                factorial *= f64(j)
+            c[k - derivative - 1, interval] = value / factorial
+
+
+def _poch(a: f64, m: f64) -> f64:
+    """The rising factorial `a (a + 1) ... (a + m - 1)` for a whole `m`, multiplied from the
+    largest factor down, as SciPy's `special.poch` reduces it."""
+    result = 1.0
+    count = m
+    while count >= 1.0:
+        if a + count == 1.0:
+            break
+        count -= 1.0
+        result *= a + count
+    return result
+
+
+def _divmod(a: f64, b: f64) -> tuple[f64, f64]:
+    """Python's `divmod(a, b)` of two floats with `a >= 0` and `b > 0`: the floor of the
+    quotient and the remainder, rounded as CPython and NumPy round them. The quotient's floor
+    is taken as `q - fmod(q, 1.0)`, exact for `q >= 0`."""
+    remainder = fmod(a, b)
+    quotient = (a - remainder) / b
+    if quotient == 0.0:
+        return 0.0, _remainder(a, b)
+    whole = quotient - fmod(quotient, 1.0)
+    if quotient - whole > 0.5:
+        whole += 1.0
+    return whole, _remainder(a, b)
+
+
+def _remainder(a: f64, b: f64) -> f64:
+    """Python's `a % b` of two floats with `b > 0`: `fmod`, moved up by `b` when negative."""
+    remainder = fmod(a, b)
+    if remainder != 0.0:
+        if remainder < 0.0:
+            remainder += b
+        return remainder
+    return 0.0

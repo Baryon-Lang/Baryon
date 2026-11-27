@@ -136,6 +136,7 @@ mod special_parabolic;
 mod special_polynomials;
 mod special_waves;
 mod spectral;
+mod splines;
 mod statements;
 mod states;
 mod statistics;
