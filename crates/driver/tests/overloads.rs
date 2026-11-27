@@ -197,6 +197,37 @@ error: `solve` already has a generic overload, `def solve[T: Float](x: T) -> T`
     );
 }
 
+/// An argument with an error of its own is the only error its call reports: its unknown type
+/// would fit every overload, and an "ambiguous call" on top of the real error hid it
+/// (roadmap 1.9.78). One argument's error comes from name resolution, the other's from the
+/// body's check.
+#[test]
+fn an_argument_error_is_not_also_an_ambiguous_call() {
+    let program = r#"
+from special import loggamma
+
+
+def main():
+    print(loggamma(nothing))
+    print(loggamma(1.0 + "a"))
+"#;
+    assert_eq!(
+        check_one(program),
+        "\
+error: undefined name `nothing`
+ --> main.byn:5:20
+  |
+5 |     print(loggamma(nothing))
+  |                    ^^^^^^^ not defined in this scope
+
+error: `+` cannot combine `f64` and `str`
+ --> main.byn:6:20
+  |
+6 |     print(loggamma(1.0 + \"a\"))
+  |                    ^^^^^^^^^ no such operation"
+    );
+}
+
 #[test]
 fn an_argument_that_moves_is_checked_once() {
     // Choosing the overload reads the arguments' types; the move in `first(xs)` must still

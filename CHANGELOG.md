@@ -106,6 +106,8 @@ Changes merged since 0.3.0. They become the notes of 0.4.0, due 2026-12-09.
   ([Generics](docs/reference/types.md#generics)).
 - A standard-library module that defines two generic overloads of one name is an error where
   the second is defined, as decision 0067 says; before, each call of the name failed instead.
+- A call of an overloaded function whose argument has an error of its own, such as an
+  undefined name, reports that error alone, with no "ambiguous call" error after it.
 
 ## 0.3.0: missing values, CSV files and SciPy's special functions
 

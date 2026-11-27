@@ -63,7 +63,9 @@ impl<'db> Body<'db> {
 
     /// The overload of `overloads`, defined in `file`, that the call `node` runs, or an error
     /// naming the overloads when none fits or two fit equally well. `callee` is the name as
-    /// written.
+    /// written. When an argument has an error of its own, the call reports nothing more: the
+    /// argument's unknown type would fit every overload and read as an ambiguous call, and the
+    /// caller's check of the arguments reports the argument's error alone.
     pub(super) fn choose_overload(
         &mut self,
         node: NodeId,
@@ -72,7 +74,13 @@ impl<'db> Body<'db> {
         overloads: &[NodeId],
         arguments: &Arguments,
     ) -> Result<NodeId, Type<'db>> {
-        let given = self.given(arguments);
+        let (given, failed) = self.given(arguments);
+        let unknown = |(_, given): &(Option<String>, Given<'db>)| {
+            matches!(given.ty.kind(self.db), TypeKind::Unknown)
+        };
+        if failed || given.iter().any(unknown) {
+            return Err(self.lowerer.unknown());
+        }
         let signatures: Vec<(NodeId, Signature<'db>)> = overloads
             .iter()
             .filter_map(|&overload| {
@@ -279,7 +287,10 @@ impl<'db> Body<'db> {
     /// Each argument's type and literal kind, checked without an expected type. The check is a
     /// trial: what it reports is discarded, and the ownership state it changed, such as a move
     /// or a borrow, is put back, since the chosen overload's check reads the arguments again.
-    fn given(&mut self, arguments: &Arguments) -> Vec<(Option<String>, Given<'db>)> {
+    /// The flag says whether the check of an argument reported an error; an argument whose
+    /// error was reported before the body's check, such as an undefined name, has the type
+    /// `Unknown` instead.
+    fn given(&mut self, arguments: &Arguments) -> (Vec<(Option<String>, Given<'db>)>, bool) {
         let before = self.lowerer.diagnostics.len();
         let state = self.state.clone();
         let mut given = Vec::new();
@@ -304,9 +315,10 @@ impl<'db> Body<'db> {
                 },
             ));
         }
+        let failed = self.lowerer.diagnostics.len() > before;
         self.lowerer.diagnostics.truncate(before);
         self.state = state;
-        given
+        (given, failed)
     }
 
     /// The kind of number literal `node` is, looking through a sign.
